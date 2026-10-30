@@ -1,0 +1,25 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-slate-950 text-slate-100 antialiased selection:bg-sky-500 selection:text-white;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  }
+}
+
+/* Custom styled ranges for mobile touch-friendliness */
+input[type="range"] {
+  @apply h-2.5 bg-slate-800 rounded-lg appearance-none cursor-pointer;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  @apply appearance-none w-6 h-6 rounded-full border-2 border-white shadow-lg cursor-pointer transition-all active:scale-125;
+  background-color: var(--thumb-color, #10b981);
+}
+
+input[type="range"]::-moz-range-thumb {
+  @apply w-6 h-6 rounded-full border-2 border-white shadow-lg cursor-pointer transition-all active:scale-125;
+  background-color: var(--thumb-color, #10b981);
+}
