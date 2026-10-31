@@ -41,3 +41,16 @@ export interface WeightRecord {
   weight: number;           // float in kg (ex: 78.5)
   created_at?: string;
 }
+
+export interface TrainingSession {
+  id: string;
+  date: string;            // AAAA-MM-DD
+  start_time: string;      // HH:MM[:SS]
+  end_time?: string | null;
+  name: string;
+  training_type: string;   // mesmo tipo usado na PSE do atleta
+  expected_pse: number;    // 1-10
+  notes?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}

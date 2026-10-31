@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Flame, HeartPulse, Scale, ShieldAlert, LogOut, Loader2, User } from 'lucide-react';
+import { Flame, HeartPulse, Scale, ShieldAlert, LogOut, Loader2, User, CalendarDays } from 'lucide-react';
+import { TrainingSchedule } from './coach/TrainingSchedule';
 import { PseForm } from './PseForm';
 import { PsrForm } from './PsrForm';
 import { WeightForm } from './WeightForm';
@@ -9,6 +10,7 @@ import { PseRecord, PsrRecord, WeightRecord } from '../types';
 import { isSupabaseConfigured } from '../lib/supabase';
 import {
   AthleteSession,
+  getAthleteSchedule,
   logoutAthlete,
   restoreAthleteSession,
   submitPse,
@@ -16,11 +18,20 @@ import {
   submitWeight,
 } from '../lib/athleteAuth';
 
+type AthleteTab = 'pse' | 'psr' | 'weight' | 'schedule';
+
+const ATHLETE_TABS: { id: AthleteTab; label: string; short: string; icon: typeof Flame; active: string }[] = [
+  { id: 'pse', label: 'PSE (Esforço)', short: 'PSE', icon: Flame, active: 'bg-orange-500 text-slate-950 shadow-md shadow-orange-500/20' },
+  { id: 'psr', label: 'PSR (Bem-Estar)', short: 'PSR', icon: HeartPulse, active: 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20' },
+  { id: 'weight', label: 'Peso', short: 'Peso', icon: Scale, active: 'bg-sky-500 text-slate-950 shadow-md shadow-sky-500/20' },
+  { id: 'schedule', label: 'Cronograma', short: 'Agenda', icon: CalendarDays, active: 'bg-violet-500 text-slate-950 shadow-md shadow-violet-500/20' },
+];
+
 export const AthleteArea: React.FC = () => {
   const [session, setSession] = useState<AthleteSession | null>(null);
   const [checkingSession, setCheckingSession] = useState(isSupabaseConfigured);
   const [notice, setNotice] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'pse' | 'psr' | 'weight'>('pse');
+  const [activeTab, setActiveTab] = useState<AthleteTab>('pse');
 
   // Retoma a sessão salva neste aparelho (atleta não precisa logar todo dia)
   useEffect(() => {
@@ -142,49 +153,32 @@ export const AthleteArea: React.FC = () => {
         </button>
       </div>
 
-      {/* 2. Abas de Seleção de Questionário */}
-      <div className="grid grid-cols-3 gap-2 p-1.5 bg-slate-900/90 border border-slate-800 rounded-2xl">
-        <button
-          type="button"
-          onClick={() => setActiveTab('pse')}
-          className={`py-3 px-2 rounded-xl text-xs sm:text-sm font-bold flex flex-col sm:flex-row items-center justify-center gap-1.5 transition-all ${
-            activeTab === 'pse'
-              ? 'bg-orange-500 text-slate-950 shadow-md shadow-orange-500/20'
-              : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-          }`}
-        >
-          <Flame className="w-4 h-4" />
-          <span>PSE (Esforço)</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('psr')}
-          className={`py-3 px-2 rounded-xl text-xs sm:text-sm font-bold flex flex-col sm:flex-row items-center justify-center gap-1.5 transition-all ${
-            activeTab === 'psr'
-              ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
-              : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-          }`}
-        >
-          <HeartPulse className="w-4 h-4" />
-          <span>PSR (Bem-Estar)</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('weight')}
-          className={`py-3 px-2 rounded-xl text-xs sm:text-sm font-bold flex flex-col sm:flex-row items-center justify-center gap-1.5 transition-all ${
-            activeTab === 'weight'
-              ? 'bg-sky-500 text-slate-950 shadow-md shadow-sky-500/20'
-              : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-          }`}
-        >
-          <Scale className="w-4 h-4" />
-          <span>Controle de Peso</span>
-        </button>
+      {/* 2. Abas */}
+      <div className="grid grid-cols-4 gap-1.5 sm:gap-2 p-1.5 bg-slate-900/90 border border-slate-800 rounded-2xl">
+        {ATHLETE_TABS.map(({ id, label, short, icon: Icon, active }) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setActiveTab(id)}
+            className={`py-3 px-1 sm:px-2 rounded-xl text-xs sm:text-sm font-bold flex flex-col sm:flex-row items-center justify-center gap-1.5 transition-all ${
+              activeTab === id ? active : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+            }`}
+          >
+            <Icon className="w-4 h-4" />
+            <span className="sm:hidden">{short}</span>
+            <span className="hidden sm:inline">{label}</span>
+          </button>
+        ))}
       </div>
 
-      {/* 3. Área do Formulário Ativo */}
+      {/* 3. Cronograma (somente leitura) ou formulário ativo */}
+      {activeTab === 'schedule' ? (
+        <TrainingSchedule
+          readOnly
+          listOnly
+          fetchSessions={(from, to) => getAthleteSchedule(session.token, from, to)}
+        />
+      ) : (
       <div className="bg-slate-900/50 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-2xl backdrop-blur">
         {activeTab === 'pse' && (
           <PseForm athleteId={athlete.id} athleteName={athlete.nome} onSubmit={handlePseSubmit} />
@@ -196,6 +190,7 @@ export const AthleteArea: React.FC = () => {
           <WeightForm athleteId={athlete.id} athleteName={athlete.nome} onSubmit={handleWeightSubmit} />
         )}
       </div>
+      )}
     </div>
   );
 };

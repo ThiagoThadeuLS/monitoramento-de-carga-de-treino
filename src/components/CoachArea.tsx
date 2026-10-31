@@ -1,15 +1,26 @@
 import React, { useState, useEffect } from 'react';
-import { LogOut, BarChart3, Users, Loader2 } from 'lucide-react';
+import { LogOut, BarChart3, Users, Loader2, LineChart, CalendarDays } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { CoachLogin } from './CoachLogin';
 import { DailyOverview } from './coach/DailyOverview';
+import { PeriodAnalysis } from './coach/PeriodAnalysis';
+import { TrainingSchedule } from './coach/TrainingSchedule';
 import { AthleteManagement } from './coach/AthleteManagement';
 import { Athlete } from '../types';
+
+type CoachTab = 'overview' | 'period' | 'schedule' | 'athletes';
+
+const COACH_TABS: { id: CoachTab; label: string; short: string; icon: typeof BarChart3 }[] = [
+  { id: 'overview', label: 'Visão Geral do Dia', short: 'Dia', icon: BarChart3 },
+  { id: 'period', label: 'Análise do Período', short: 'Período', icon: LineChart },
+  { id: 'schedule', label: 'Cronograma', short: 'Agenda', icon: CalendarDays },
+  { id: 'athletes', label: 'Gestão do Elenco', short: 'Elenco', icon: Users },
+];
 
 export const CoachArea: React.FC = () => {
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'athletes'>('overview');
+  const [activeTab, setActiveTab] = useState<CoachTab>('overview');
   const [athleteToEdit, setAthleteToEdit] = useState<Athlete | null>(null);
 
   const checkSession = async () => {
@@ -100,38 +111,31 @@ export const CoachArea: React.FC = () => {
       </div>
 
       {/* Navegação entre Módulos do Treinador */}
-      <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
-        <button
-          type="button"
-          onClick={() => setActiveTab('overview')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all ${
-            activeTab === 'overview'
-              ? 'bg-sky-500 text-slate-950 shadow-lg shadow-sky-500/20'
-              : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-          }`}
-        >
-          <BarChart3 className="w-4 h-4" />
-          <span>Visão Geral do Dia</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('athletes')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all ${
-            activeTab === 'athletes'
-              ? 'bg-sky-500 text-slate-950 shadow-lg shadow-sky-500/20'
-              : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-          }`}
-        >
-          <Users className="w-4 h-4" />
-          <span>Gestão do Elenco</span>
-        </button>
+      <div className="grid grid-cols-4 sm:flex sm:flex-wrap sm:items-center gap-1.5 sm:gap-2 border-b border-slate-800 pb-2">
+        {COACH_TABS.map(({ id, label, short, icon: Icon }) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setActiveTab(id)}
+            className={`flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all ${
+              activeTab === id
+                ? 'bg-sky-500 text-slate-950 shadow-lg shadow-sky-500/20'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+            }`}
+          >
+            <Icon className="w-4 h-4" />
+            <span className="sm:hidden">{short}</span>
+            <span className="hidden sm:inline">{label}</span>
+          </button>
+        ))}
       </div>
 
       {/* Conteúdo da Aba Ativa */}
       {activeTab === 'overview' && (
         <DailyOverview onEditAthlete={handleEditAthleteFromOverview} />
       )}
+      {activeTab === 'period' && <PeriodAnalysis />}
+      {activeTab === 'schedule' && <TrainingSchedule />}
       {activeTab === 'athletes' && (
         <AthleteManagement
           athleteToEdit={athleteToEdit}

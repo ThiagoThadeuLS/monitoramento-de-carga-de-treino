@@ -6,7 +6,7 @@ import { todayLocalISO } from '../../lib/date';
 
 interface AthleteDailyStatus {
   athlete: Athlete;
-  pse?: PseRecord;
+  pses: PseRecord[]; // o atleta pode responder mais de uma PSE no dia
   psr?: PsrRecord;
   weight?: WeightRecord;
 }
@@ -55,7 +55,9 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({ onEditAthlete }) =
       // Agrupa os dados por atleta
       const combined: AthleteDailyStatus[] = athletes.map((a) => ({
         athlete: a,
-        pse: pseData?.find((p) => p.athlete_id === a.id),
+        pses: (pseData ?? [])
+          .filter((p) => p.athlete_id === a.id)
+          .sort((x, y) => (x.created_at ?? '').localeCompare(y.created_at ?? '')),
         psr: psrData?.find((r) => r.athlete_id === a.id),
         weight: weightData?.find((w) => w.athlete_id === a.id),
       }));
@@ -74,12 +76,13 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({ onEditAthlete }) =
 
   // Contadores
   const totalAthletes = statuses.length;
-  const pseAnswered = statuses.filter((s) => s.pse).length;
+  const pseAnswered = statuses.filter((s) => s.pses.length > 0).length;
+  const pseTotal = statuses.reduce((sum, s) => sum + s.pses.length, 0);
   const psrAnswered = statuses.filter((s) => s.psr).length;
   const weightAnswered = statuses.filter((s) => s.weight).length;
 
   // Média de esforço do dia
-  const validPseScores = statuses.filter((s) => s.pse && s.pse.rpe_score !== null).map((s) => s.pse!.rpe_score!);
+  const validPseScores = statuses.flatMap((s) => s.pses.filter((p) => p.rpe_score !== null).map((p) => p.rpe_score!));
   const avgPse = validPseScores.length > 0
     ? (validPseScores.reduce((a, b) => a + b, 0) / validPseScores.length).toFixed(1)
     : '—';
@@ -132,6 +135,7 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({ onEditAthlete }) =
           </div>
           <span className="text-[11px] text-orange-400 font-semibold flex items-center gap-1">
             <Flame className="w-3 h-3" /> Média PSE: {avgPse}
+            {pseTotal > pseAnswered && <span className="text-slate-500 font-normal">({pseTotal} respostas)</span>}
           </span>
         </div>
 
@@ -193,18 +197,17 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({ onEditAthlete }) =
               <thead className="bg-slate-950/80 border-b border-slate-800 text-xs font-semibold uppercase text-slate-400 tracking-wider">
                 <tr>
                   <th className="py-3 px-4">Atleta</th>
-                  <th className="py-3 px-3">PSE (Esforço)</th>
-                  <th className="py-3 px-3">Tipo de Treino</th>
+                  <th className="py-3 px-3" colSpan={2}>PSE (Esforço) • Tipo de Treino</th>
                   <th className="py-3 px-3">PSR (Bem-Estar)</th>
                   <th className="py-3 px-3">Peso</th>
                   <th className="py-3 px-4">Status / Alertas</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
-                {statuses.map(({ athlete, pse, psr, weight }) => {
+                {statuses.map(({ athlete, pses, psr, weight }) => {
                   const hasMusclePain = psr && psr.muscle_soreness_score <= 3;
                   const hasHighFatigue = psr && psr.fatigue_score <= 3;
-                  const hasExtremeEffort = pse && pse.rpe_score && pse.rpe_score >= 9;
+                  const hasExtremeEffort = pses.some((p) => (p.rpe_score ?? 0) >= 9);
 
                   return (
                     <tr key={athlete.id} className="hover:bg-slate-800/40 transition-colors">
@@ -231,39 +234,42 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({ onEditAthlete }) =
                         </div>
                       </td>
 
-                      {/* PSE */}
-                      <td className="py-3 px-3">
-                        {pse ? (
-                          pse.did_not_train ? (
-                            <span className="text-xs px-2 py-0.5 rounded bg-amber-950/50 text-amber-300 border border-amber-800 font-semibold">
-                              Não Treinou
-                            </span>
-                          ) : (
-                            <span
-                              className={`text-xs px-2.5 py-1 rounded-lg border font-bold ${
-                                (pse.rpe_score || 0) >= 8
-                                  ? 'bg-red-500/20 text-red-300 border-red-500/40'
-                                  : (pse.rpe_score || 0) >= 5
-                                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                                  : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                              }`}
-                            >
-                              PSE: {pse.rpe_score} / 10
-                            </span>
-                          )
-                        ) : (
+                      {/* PSE: todas as respostas do atleta no dia */}
+                      <td className="py-3 px-3" colSpan={2}>
+                        {pses.length === 0 ? (
                           <span className="text-xs text-slate-500 italic">Pendente</span>
-                        )}
-                      </td>
-
-                      {/* Tipo de Treino */}
-                      <td className="py-3 px-3 text-xs">
-                        {pse?.training_type ? (
-                          <span className="font-medium text-slate-200">
-                            {pse.training_type}
-                          </span>
                         ) : (
-                          <span className="text-slate-600">—</span>
+                          <ul className="space-y-1.5">
+                            {pses.map((p) => (
+                              <li key={p.id} className="flex flex-wrap items-center gap-2">
+                                {p.did_not_train ? (
+                                  <span className="text-xs px-2 py-0.5 rounded bg-amber-950/50 text-amber-300 border border-amber-800 font-semibold">
+                                    Não Treinou
+                                  </span>
+                                ) : (
+                                  <span
+                                    className={`text-xs px-2.5 py-1 rounded-lg border font-bold whitespace-nowrap ${
+                                      (p.rpe_score || 0) >= 8
+                                        ? 'bg-red-500/20 text-red-300 border-red-500/40'
+                                        : (p.rpe_score || 0) >= 5
+                                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                                        : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                    }`}
+                                  >
+                                    PSE: {p.rpe_score} / 10
+                                  </span>
+                                )}
+                                <span className="text-xs font-medium text-slate-200">
+                                  {p.training_type || (p.did_not_train ? '' : '—')}
+                                </span>
+                                {p.created_at && (
+                                  <span className="text-[10px] text-slate-500">
+                                    {new Date(p.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
                         )}
                       </td>
 
@@ -321,7 +327,7 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({ onEditAthlete }) =
                               Esforço Máximo
                             </span>
                           )}
-                          {!hasMusclePain && !hasHighFatigue && !hasExtremeEffort && (pse || psr) && (
+                          {!hasMusclePain && !hasHighFatigue && !hasExtremeEffort && (pses.length > 0 || psr) && (
                             <span className="text-[10px] font-semibold text-emerald-400 flex items-center gap-1">
                               <CheckCircle2 className="w-3 h-3" /> Normal
                             </span>

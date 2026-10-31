@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import { onlyCpfDigits } from './cpf';
-import { PseRecord, PsrRecord, WeightRecord } from '../types';
+import { PseRecord, PsrRecord, TrainingSession, WeightRecord } from '../types';
 
 // Login do atleta: CPF + senha, validados por funções no banco
 // (ver supabase_login_atleta.sql). Atletas não usam o Supabase Auth,
@@ -155,6 +155,13 @@ export async function submitWeight(token: string, r: NewRecord<WeightRecord>): P
     p_weight: r.weight,
   });
   if (error) throw toAuthError(error);
+}
+
+/** Cronograma da semana (somente leitura para o atleta). */
+export async function getAthleteSchedule(token: string, from: string, to: string): Promise<TrainingSession[]> {
+  const { data, error } = await client().rpc('athlete_get_schedule', { p_token: token, p_from: from, p_to: to });
+  if (error) throw toAuthError(error);
+  return (data ?? []) as TrainingSession[];
 }
 
 /** Treinador logado volta a senha do atleta para a inicial (nome completo). */
