@@ -28,6 +28,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   senha_curta: 'A nova senha precisa ter pelo menos 6 caracteres.',
   senha_igual_inicial: 'A nova senha não pode ser igual à senha inicial (seu nome completo).',
   senha_ja_definida: 'Sua senha já foi definida. Entre novamente com ela.',
+  pse_motivo_nao_treinou: 'Informe o motivo de não ter treinado.',
 };
 
 export class AthleteAuthError extends Error {

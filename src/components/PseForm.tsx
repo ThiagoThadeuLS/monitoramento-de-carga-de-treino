@@ -45,6 +45,10 @@ export const PseForm: React.FC<PseFormProps> = ({ athleteId, athleteName, onSubm
       setErrorMsg('Por favor, selecione seu nome no topo antes de enviar.');
       return;
     }
+    if (didNotTrain && !observations.trim()) {
+      setErrorMsg('Informe o motivo de não ter treinado.');
+      return;
+    }
 
     setSubmitting(true);
     setErrorMsg('');
@@ -212,17 +216,24 @@ export const PseForm: React.FC<PseFormProps> = ({ athleteId, athleteName, onSubm
         <div className="bg-amber-950/20 border border-amber-600/30 rounded-2xl p-5 text-center text-amber-300">
           <p className="font-semibold text-sm">Registro de Ausência de Treino</p>
           <p className="text-xs text-amber-300/80 mt-1">
-            Por favor, informe no campo de observações abaixo o motivo de não ter treinado (ex: dor muscular, lesão, compromisso, etc.).
+            Informe abaixo, no campo Motivo (obrigatório), por que não treinou (ex: dor muscular, lesão, compromisso, etc.).
           </p>
         </div>
       )}
 
       {/* Observações */}
       <div>
-        <label className="block text-sm font-semibold text-slate-300 mb-2">
-          Observações {didNotTrain && <span className="text-amber-400 font-normal">(Recomendado preencher o motivo)</span>}
+        <label htmlFor="pse-observacoes" className="block text-sm font-semibold text-slate-300 mb-2">
+          {didNotTrain ? (
+            <>Motivo de não ter treinado <span className="text-amber-400">*</span></>
+          ) : (
+            'Observações'
+          )}
         </label>
         <textarea
+          id="pse-observacoes"
+          required={didNotTrain}
+          aria-invalid={didNotTrain && !observations.trim()}
           value={observations}
           onChange={(e) => setObservations(e.target.value)}
           placeholder={
@@ -231,8 +242,13 @@ export const PseForm: React.FC<PseFormProps> = ({ athleteId, athleteName, onSubm
               : "Ex: Treino muito pesado no final; senti cansaço nos últimos 20 minutos..."
           }
           rows={3}
-          className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3.5 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent text-sm resize-none"
+          className={`w-full bg-slate-900 border rounded-xl p-3.5 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent text-sm resize-none ${
+            didNotTrain && !observations.trim() ? 'border-amber-500/70' : 'border-slate-700'
+          }`}
         />
+        {didNotTrain && (
+          <p className="mt-1.5 text-xs text-amber-300/90">Obrigatório: a comissão técnica vê esse motivo.</p>
+        )}
       </div>
 
       {/* Feedback Messages */}
@@ -256,7 +272,7 @@ export const PseForm: React.FC<PseFormProps> = ({ athleteId, athleteName, onSubm
       {/* Submit Button */}
       <button
         type="submit"
-        disabled={submitting || !athleteId}
+        disabled={submitting || !athleteId || (didNotTrain && !observations.trim())}
         className="w-full py-4 px-6 rounded-xl font-bold text-base bg-sky-500 hover:bg-sky-400 active:scale-[0.99] text-slate-950 shadow-lg shadow-sky-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
       >
         <Send className="w-5 h-5" />

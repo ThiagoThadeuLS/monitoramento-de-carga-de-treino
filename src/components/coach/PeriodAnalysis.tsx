@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { CalendarRange, RefreshCw, Flame, HeartPulse, AlertCircle, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { CalendarRange, RefreshCw, Flame, HeartPulse, AlertCircle, Loader2, ChevronLeft, ChevronRight, Ban, X, StickyNote } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { addDaysISO, todayLocalISO } from '../../lib/date';
 import { Athlete, PseRecord, PsrRecord, TrainingSession } from '../../types';
@@ -303,6 +303,13 @@ export const PeriodAnalysis: React.FC = () => {
   }, [dayPsrG, athletes]);
 
   const lowPsrCount = lowPsrByAthlete.reduce((sum, g) => sum + g.records.length, 0);
+
+  // Quem marcou "não treinei" no dia (com o motivo informado)
+  const notTrained = useMemo(
+    () => dayPseG.filter((r) => r.did_not_train).sort((a, b) => nameOf(a.athlete_id).localeCompare(nameOf(b.athlete_id), 'pt-BR') || byCreated(a, b)),
+    [dayPseG, athletes]
+  );
+  const [reasonOpen, setReasonOpen] = useState<PseRecord | null>(null);
 
   const applyPreset = (n: number) => {
     const today = todayLocalISO();
@@ -649,6 +656,90 @@ export const PeriodAnalysis: React.FC = () => {
               </>
             )}
           </section>
+
+          {/* Tabela: quem não treinou (toque para ver o motivo) */}
+          <section className="bg-slate-900/90 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+            <header className="p-4 border-b border-slate-800 flex items-center justify-between gap-3">
+              <div>
+                <h3 className="font-bold text-white text-sm sm:text-base flex items-center gap-2">
+                  <Ban className="w-4 h-4 text-amber-400" />
+                  Não treinaram • {brDate(tableDay)}
+                </h3>
+                <p className="text-xs text-slate-500">Toque no atleta para ver o motivo.</p>
+              </div>
+              <span className="text-xs text-slate-400 flex-shrink-0">
+                {notTrained.length} {notTrained.length === 1 ? 'atleta' : 'atletas'}
+              </span>
+            </header>
+
+            {notTrained.length === 0 ? (
+              <p className="py-10 text-center text-sm text-slate-500">Ninguém marcou "não treinei" neste dia.</p>
+            ) : (
+              <ul className="divide-y divide-slate-800/60">
+                {notTrained.map((r) => (
+                  <li key={r.id}>
+                    <button
+                      type="button"
+                      onClick={() => setReasonOpen(r)}
+                      className="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-slate-800/40 transition-colors"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="font-bold text-white text-sm truncate">{nameOf(r.athlete_id)}</p>
+                        <p className="text-xs text-slate-400 truncate">
+                          Enviado às {timeOf(r.created_at)} • {r.observations?.trim() || 'sem motivo informado'}
+                        </p>
+                      </div>
+                      <span className="text-[11px] font-semibold text-amber-300 flex items-center gap-1 flex-shrink-0">
+                        <StickyNote className="w-3.5 h-3.5" /> Ver motivo
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          {/* Motivo de não ter treinado */}
+          {reasonOpen && (
+            <div
+              className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4"
+              onClick={() => setReasonOpen(null)}
+            >
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-label={`Motivo de ${nameOf(reasonOpen.athlete_id)}`}
+                className="bg-slate-900 border border-slate-700 rounded-t-3xl sm:rounded-3xl w-full max-w-md max-h-[85vh] flex flex-col shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="px-5 py-4 border-b border-slate-800 flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs text-amber-300 font-semibold flex items-center gap-1">
+                      <Ban className="w-3.5 h-3.5" /> Não treinou • {brDate(reasonOpen.date)}
+                    </p>
+                    <h3 className="text-lg font-bold text-white break-words">{nameOf(reasonOpen.athlete_id)}</h3>
+                    <p className="text-xs text-slate-400">Enviado às {timeOf(reasonOpen.created_at)}</p>
+                  </div>
+                  <button type="button" onClick={() => setReasonOpen(null)} className="p-1.5 rounded-xl hover:bg-slate-800 text-slate-400 hover:text-white flex-shrink-0" title="Fechar">
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                <div className="p-5 overflow-y-auto">
+                  <p className="text-[10px] uppercase font-bold text-slate-500 mb-1.5 flex items-center gap-1">
+                    <StickyNote className="w-3.5 h-3.5" /> Motivo informado pelo atleta
+                  </p>
+                  {reasonOpen.observations?.trim() ? (
+                    <p className="text-sm text-slate-200 whitespace-pre-wrap break-words bg-slate-950 border border-slate-800 rounded-xl p-3">
+                      {reasonOpen.observations}
+                    </p>
+                  ) : (
+                    <p className="text-sm text-slate-500 italic">Sem motivo informado (resposta enviada antes da regra que tornou o motivo obrigatório).</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Tabela: variáveis da PSR abaixo de 5, por atleta */}
           <section className="bg-slate-900/90 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">

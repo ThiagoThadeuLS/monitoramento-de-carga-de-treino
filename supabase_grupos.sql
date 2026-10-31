@@ -1,5 +1,5 @@
 -- ============================================================
--- MIGRAÇÃO: GRUPOS DE ATLETAS + PÚBLICO DOS TREINOS
+-- MIGRAÇÃO: GRUPOS DE ATLETAS + PÚBLICO DOS TREINOS + MOTIVO DO "NÃO TREINEI"
 -- Como aplicar: Supabase -> SQL Editor -> New query -> cole este arquivo -> Run.
 -- Rode depois de supabase_plataforma.sql (é o último da lista).
 -- Pode ser executado mais de uma vez e NÃO apaga dados.
@@ -14,6 +14,7 @@
 --      exceto   -> todos, menos os grupos e/ou atletas escolhidos
 --  * O atleta só recebe os treinos destinados a ele.
 --  * Treinos que já existem ficam como "todos".
+--  * PSE: quem marca "não treinei" precisa informar o motivo.
 -- ============================================================
 
 -- ------------------------------------------------------------
@@ -195,6 +196,19 @@ begin
     execute format('create policy %I on public.%I for update to authenticated using (club_id = public.current_club_id() and public.support_club_id() is null) with check (club_id = public.current_club_id())', 'Clube: alteração', t);
     execute format('create policy %I on public.%I for delete to authenticated using (club_id = public.current_club_id() and public.support_club_id() is null)', 'Clube: exclusão', t);
   end loop;
+end $$;
+
+-- ------------------------------------------------------------
+-- 5. PSE: "não treinei" exige o motivo
+--    (NOT VALID: vale para respostas novas; registros antigos não são barrados)
+-- ------------------------------------------------------------
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'pse_motivo_nao_treinou') then
+    alter table public.pse_records
+      add constraint pse_motivo_nao_treinou
+      check (not did_not_train or length(trim(coalesce(observations, ''))) > 0) not valid;
+  end if;
 end $$;
 
 revoke execute on function public.group_members_check() from public, anon, authenticated;
