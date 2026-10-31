@@ -1,20 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { LogOut, BarChart3, Users, Loader2, LineChart, CalendarDays } from 'lucide-react';
+import { LogOut, BarChart3, Users, Loader2, LineChart, CalendarDays, Shield } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { CoachLogin } from './CoachLogin';
 import { DailyOverview } from './coach/DailyOverview';
 import { PeriodAnalysis } from './coach/PeriodAnalysis';
 import { TrainingSchedule } from './coach/TrainingSchedule';
 import { AthleteManagement } from './coach/AthleteManagement';
+import { AdversaryManagement } from './coach/AdversaryManagement';
 import { Athlete } from '../types';
 
-type CoachTab = 'overview' | 'period' | 'schedule' | 'athletes';
+type CoachTab = 'overview' | 'period' | 'schedule' | 'athletes' | 'adversaries';
 
 const COACH_TABS: { id: CoachTab; label: string; short: string; icon: typeof BarChart3 }[] = [
   { id: 'overview', label: 'Visão Geral do Dia', short: 'Dia', icon: BarChart3 },
   { id: 'period', label: 'Análise do Período', short: 'Período', icon: LineChart },
   { id: 'schedule', label: 'Cronograma', short: 'Agenda', icon: CalendarDays },
   { id: 'athletes', label: 'Gestão do Elenco', short: 'Elenco', icon: Users },
+  { id: 'adversaries', label: 'Atletas Adversários', short: 'Adversários', icon: Shield },
 ];
 
 export const CoachArea: React.FC = () => {
@@ -111,7 +113,7 @@ export const CoachArea: React.FC = () => {
       </div>
 
       {/* Navegação entre Módulos do Treinador */}
-      <div className="grid grid-cols-4 sm:flex sm:flex-wrap sm:items-center gap-1.5 sm:gap-2 border-b border-slate-800 pb-2">
+      <div className="grid grid-cols-5 sm:flex sm:flex-wrap sm:items-center gap-1.5 sm:gap-2 border-b border-slate-800 pb-2">
         {COACH_TABS.map(({ id, label, short, icon: Icon }) => (
           <button
             key={id}
@@ -142,6 +144,7 @@ export const CoachArea: React.FC = () => {
           onClearAthleteToEdit={() => setAthleteToEdit(null)}
         />
       )}
+      {activeTab === 'adversaries' && <AdversaryManagement />}
     </div>
   );
 };
