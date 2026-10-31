@@ -4,6 +4,8 @@ import { supabase } from '../../lib/supabase';
 import { Athlete, PseRecord, PsrRecord, WeightRecord } from '../../types';
 import { todayLocalISO } from '../../lib/date';
 import { useClub } from '../../lib/club';
+import { useClubGroups } from '../../lib/groups';
+import { AthleteSelection, EMPTY_SELECTION, GroupFilter, resolveSelection } from './GroupFilter';
 
 interface AthleteDailyStatus {
   athlete: Athlete;
@@ -19,6 +21,8 @@ interface DailyOverviewProps {
 export const DailyOverview: React.FC<DailyOverviewProps> = ({ onEditAthlete }) => {
   const { club } = useClub();
   const [selectedDate, setSelectedDate] = useState(todayLocalISO);
+  const { groups } = useClubGroups();
+  const [selection, setSelection] = useState<AthleteSelection>(EMPTY_SELECTION);
   const [statuses, setStatuses] = useState<AthleteDailyStatus[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -76,21 +80,25 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({ onEditAthlete }) =
     loadDailyData();
   }, [selectedDate]);
 
+  // Filtro por grupos e/ou atletas específicos (vazio = todos)
+  const selected = resolveSelection(selection, groups);
+  const shown = selected ? statuses.filter((st) => selected.has(st.athlete.id)) : statuses;
+
   // Contadores
-  const totalAthletes = statuses.length;
-  const pseAnswered = statuses.filter((s) => s.pses.length > 0).length;
-  const pseTotal = statuses.reduce((sum, s) => sum + s.pses.length, 0);
-  const psrAnswered = statuses.filter((s) => s.psr).length;
-  const weightAnswered = statuses.filter((s) => s.weight).length;
+  const totalAthletes = shown.length;
+  const pseAnswered = shown.filter((s) => s.pses.length > 0).length;
+  const pseTotal = shown.reduce((sum, s) => sum + s.pses.length, 0);
+  const psrAnswered = shown.filter((s) => s.psr).length;
+  const weightAnswered = shown.filter((s) => s.weight).length;
 
   // Média de esforço do dia
-  const validPseScores = statuses.flatMap((s) => s.pses.filter((p) => p.rpe_score !== null).map((p) => p.rpe_score!));
+  const validPseScores = shown.flatMap((s) => s.pses.filter((p) => p.rpe_score !== null).map((p) => p.rpe_score!));
   const avgPse = validPseScores.length > 0
     ? (validPseScores.reduce((a, b) => a + b, 0) / validPseScores.length).toFixed(1)
     : '—';
 
   // Média de recuperação do dia
-  const validPsrScores = statuses.filter((s) => s.psr).map((s) => s.psr!.psr_score);
+  const validPsrScores = shown.filter((s) => s.psr).map((s) => s.psr!.psr_score);
   const avgPsr = validPsrScores.length > 0
     ? (validPsrScores.reduce((a, b) => a + b, 0) / validPsrScores.length).toFixed(1)
     : '—';
@@ -99,8 +107,8 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({ onEditAthlete }) =
     <div className="space-y-6">
       {/* Top Bar: Seletor de Data + Botão Atualizar */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-slate-900/80 border border-slate-800 p-4 rounded-2xl">
-        <div className="flex items-center gap-3">
-          <Calendar className="w-5 h-5 text-sky-400" />
+        <div className="flex flex-wrap items-end gap-3">
+          <Calendar className="w-5 h-5 text-sky-400 mb-1.5" />
           <div>
             <label className="text-[10px] uppercase font-bold text-slate-400 block">
               Data de Monitoramento
@@ -112,6 +120,13 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({ onEditAthlete }) =
               className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-1 text-white font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 cursor-pointer"
             />
           </div>
+          <GroupFilter
+            groups={groups}
+            athletes={statuses.map((st) => ({ id: st.athlete.id, nome: st.athlete.nome }))}
+            value={selection}
+            onChange={setSelection}
+            className="flex-1 sm:w-64 sm:flex-none"
+          />
         </div>
 
         <button
@@ -185,7 +200,7 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({ onEditAthlete }) =
       <div className="bg-slate-900/90 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
         <div className="p-4 border-b border-slate-800 flex items-center justify-between">
           <h3 className="font-bold text-white text-base">Acompanhamento Individual por Atleta</h3>
-          <span className="text-xs text-slate-400">{statuses.length} atletas listados</span>
+          <span className="text-xs text-slate-400">{shown.length} atletas listados</span>
         </div>
 
         {loading ? (
@@ -206,7 +221,7 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({ onEditAthlete }) =
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
-                {statuses.map(({ athlete, pses, psr, weight }) => {
+                {shown.map(({ athlete, pses, psr, weight }) => {
                   const hasMusclePain = psr && psr.muscle_soreness_score <= 3;
                   const hasHighFatigue = psr && psr.fatigue_score <= 3;
                   const hasExtremeEffort = pses.some((p) => (p.rpe_score ?? 0) >= 9);

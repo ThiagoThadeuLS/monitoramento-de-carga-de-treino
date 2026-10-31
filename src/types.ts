@@ -51,6 +51,10 @@ export interface TrainingSession {
   training_type: string;   // mesmo tipo usado na PSE do atleta
   expected_pse: number;    // 1-10
   notes?: string | null;
+  /** Público: todos | somente (incluir) | todos exceto (exceto) */
+  audience?: 'todos' | 'incluir' | 'exceto';
+  target_group_ids?: string[];
+  target_athlete_ids?: string[];
   created_at?: string;
   updated_at?: string;
 }

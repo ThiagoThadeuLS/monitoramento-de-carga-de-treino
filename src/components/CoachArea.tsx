@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { LogOut, BarChart3, Users, Loader2, LineChart, CalendarDays, Shield, AlertTriangle, UserCog, Settings2 } from 'lucide-react';
+import { LogOut, BarChart3, Users, Loader2, LineChart, CalendarDays, Shield, AlertTriangle, UserCog, Settings2, UsersRound } from 'lucide-react';
 import { exitSupport } from '../lib/platform';
 import { TeamManagement } from './coach/TeamManagement';
+import { GroupManagement } from './coach/GroupManagement';
 import { CoachChangePassword } from './CoachChangePassword';
 import { ClubCrest, ClubInfo, useClub } from '../lib/club';
 import { supabase } from '../lib/supabase';
@@ -14,7 +15,7 @@ import { AdversaryManagement } from './coach/AdversaryManagement';
 import { Athlete } from '../types';
 
 type CoachTab = 'overview' | 'period' | 'schedule' | 'management' | 'adversaries';
-type ManagementSection = 'athletes' | 'team';
+type ManagementSection = 'athletes' | 'groups' | 'team';
 
 const COACH_TABS: { id: CoachTab; label: string; short: string; icon: typeof BarChart3 }[] = [
   { id: 'overview', label: 'Visão Geral do Dia', short: 'Dia', icon: BarChart3 },
@@ -285,10 +286,12 @@ export const CoachArea: React.FC = () => {
       {currentTab === 'schedule' && <TrainingSchedule />}
       {currentTab === 'management' && (
         <div className="space-y-4">
-          {/* Seções da Gestão: atletas para todos; treinadores só para admin */}
-          {isAdmin && (
-            <div className="grid grid-cols-2 sm:inline-grid sm:w-auto p-1 bg-slate-900/90 border border-slate-800 rounded-xl" role="tablist" aria-label="Seções da gestão">
-              {([['athletes', 'Atletas', Users], ['team', 'Treinadores', UserCog]] as const).map(([id, label, Icon]) => (
+          {/* Seções da Gestão: atletas e grupos para todos; treinadores só para admin */}
+          {(
+            <div className={`grid ${isAdmin ? 'grid-cols-3' : 'grid-cols-2'} sm:inline-flex sm:w-auto p-1 bg-slate-900/90 border border-slate-800 rounded-xl`} role="tablist" aria-label="Seções da gestão">
+              {([['athletes', 'Atletas', Users], ['groups', 'Grupos', UsersRound], ['team', 'Treinadores', UserCog]] as const)
+                .filter(([id]) => id !== 'team' || isAdmin)
+                .map(([id, label, Icon]) => (
                 <button
                   key={id}
                   type="button"
@@ -305,7 +308,8 @@ export const CoachArea: React.FC = () => {
               ))}
             </div>
           )}
-          {(!isAdmin || managementSection === 'athletes') && (
+          {managementSection === 'groups' && <GroupManagement />}
+          {(managementSection === 'athletes' || (managementSection === 'team' && !isAdmin)) && (
             <AthleteManagement
               athleteToEdit={athleteToEdit}
               onClearAthleteToEdit={() => setAthleteToEdit(null)}

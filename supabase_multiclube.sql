@@ -6,6 +6,7 @@
 -- Pode ser executado mais de uma vez e NÃO apaga dados.
 -- ⚠️ Se rodar este arquivo de novo, rode depois supabase_plataforma.sql
 --    (ele redefine funções e regras daqui para o modo suporte e clubes novos).
+-- ⚠️ E depois supabase_grupos.sql (ele redefine a leitura do cronograma pelo atleta).
 -- ⚠️ Se rodar de novo supabase_login_atleta.sql ou supabase_cronograma.sql,
 --    rode este arquivo logo depois (ele redefine funções daqueles arquivos
 --    para separar os dados por clube).

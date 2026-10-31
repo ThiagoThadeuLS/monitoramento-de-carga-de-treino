@@ -6,6 +6,8 @@ import { Athlete, PseRecord, PsrRecord, TrainingSession } from '../../types';
 import { ChartLine, DailyStatsChart, DailyPoint, ExpectedPoint, ExpectedSwatch, LineSwatch, MarkerShape } from './DailyStatsChart';
 import { TRAINING_TYPES } from '../../data/constants';
 import { STATS, formatNumber, mean, median, modes } from '../../lib/stats';
+import { sessionAppliesTo, useClubGroups } from '../../lib/groups';
+import { AthleteSelection, EMPTY_SELECTION, GroupFilter, resolveSelection, selectionLabel } from './GroupFilter';
 
 const PSE_LIMIT = 6; // tabela: PSE acima de 6
 const PSR_LIMIT = 5; // tabela: variáveis da PSR abaixo de 5
@@ -102,7 +104,10 @@ export const PeriodAnalysis: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showAllPse, setShowAllPse] = useState(false);
-  const [sessions, setSessions] = useState<Pick<TrainingSession, 'date' | 'expected_pse' | 'training_type'>[]>([]);
+  const [sessions, setSessions] = useState<TrainingSession[]>([]);
+  // Filtro por grupos e/ou atletas específicos (vazio = todos os atletas)
+  const { groups } = useClubGroups();
+  const [selection, setSelection] = useState<AthleteSelection>(EMPTY_SELECTION);
   // Gráfico de PSE: tipos de treino incluídos e forma de exibir
   const [selectedTypes, setSelectedTypes] = useState<string[]>(TRAINING_TYPES);
   const [pseView, setPseView] = useState<'grouped' | 'split'>('grouped');
@@ -166,10 +171,10 @@ export const PeriodAnalysis: React.FC = () => {
       // Cronograma (PSE esperada). Se a tabela ainda não existir, o gráfico segue sem a marcação.
       const { data: sessionRows } = await supabase
         .from('training_sessions')
-        .select('date, expected_pse, training_type')
+        .select('*')
         .gte('date', from)
         .lte('date', to);
-      setSessions(sessionRows ?? []);
+      setSessions((sessionRows ?? []) as TrainingSession[]);
     } catch (err: any) {
       console.error('Erro ao carregar período:', err);
       setError(`Não foi possível carregar os dados: ${err.message ?? err}`);
@@ -183,23 +188,39 @@ export const PeriodAnalysis: React.FC = () => {
   }, [from, to]);
 
   const days = useMemo(() => (rangeError ? [] : daysBetween(from, to)), [from, to, rangeError]);
+
+  // Seleção: respostas só dos atletas escolhidos; PSE esperada só dos treinos destinados a eles
+  const athleteList = useMemo(
+    () => Array.from(athletes.values()).map((a) => ({ id: a.id, nome: a.nome })).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')),
+    [athletes]
+  );
+  const selected = useMemo(() => resolveSelection(selection, groups), [selection, groups]);
+  const inGroup = (athleteId: string) => !selected || selected.has(athleteId);
+  const pseG = useMemo(() => pse.filter((r) => inGroup(r.athlete_id)), [pse, selected]);
+  const psrG = useMemo(() => psr.filter((r) => inGroup(r.athlete_id)), [psr, selected]);
+  const dayPseG = useMemo(() => dayPse.filter((r) => inGroup(r.athlete_id)), [dayPse, selected]);
+  const dayPsrG = useMemo(() => dayPsr.filter((r) => inGroup(r.athlete_id)), [dayPsr, selected]);
+  const sessionsG = useMemo(
+    () => (selected ? sessions.filter((s) => Array.from(selected).some((a) => sessionAppliesTo(s, a, groups))) : sessions),
+    [sessions, selected, groups]
+  );
   const pseValue = (r: PseRecord) => (r.did_not_train ? null : r.rpe_score);
   const pseInTypes = useMemo(
-    () => pse.filter((r) => r.training_type && selectedTypes.includes(r.training_type)),
-    [pse, selectedTypes]
+    () => pseG.filter((r) => r.training_type && selectedTypes.includes(r.training_type)),
+    [pseG, selectedTypes]
   );
   const pseDaily = useMemo(() => dailyStats(pseInTypes, days, pseValue), [pseInTypes, days]);
   const pseByType = useMemo(
     () => TRAINING_TYPES.filter((t) => selectedTypes.includes(t)).map((t) => ({
       type: t,
-      daily: dailyStats(pse.filter((r) => r.training_type === t), days, pseValue),
+      daily: dailyStats(pseG.filter((r) => r.training_type === t), days, pseValue),
     })),
-    [pse, days, selectedTypes]
+    [pseG, days, selectedTypes]
   );
   // PSE esperada por dia (média dos treinos programados), do grupo ou de um tipo
   const expectedFor = (types: string[]): (ExpectedPoint | null)[] => {
     const byDay = new Map<string, number[]>();
-    for (const s of sessions) {
+    for (const s of sessionsG) {
       if (!types.includes(s.training_type)) continue;
       byDay.set(s.date, [...(byDay.get(s.date) ?? []), s.expected_pse]);
     }
@@ -208,7 +229,7 @@ export const PeriodAnalysis: React.FC = () => {
       return list ? { value: mean(list), sessions: list.length } : null;
     });
   };
-  const psrDaily = useMemo(() => dailyStats(psr, days, (r) => r.psr_score), [psr, days]);
+  const psrDaily = useMemo(() => dailyStats(psrG, days, (r) => r.psr_score), [psrG, days]);
 
   // Valor e texto do dia para a estatística escolhida (na moda, mostra todos os empatados)
   const valueOf = (d: DailyPoint, stat: PseStat) => d[stat];
@@ -248,6 +269,7 @@ export const PeriodAnalysis: React.FC = () => {
     values: psrDaily.map((d) => d.mean),
     counts: psrDaily.map((d) => d.count),
   }];
+  const groupLabel = selected ? ` • ${selectionLabel(selection, groups, athleteList)}` : '';
   const typesLabel =
     selectedTypes.length === TRAINING_TYPES.length ? 'todos os tipos' : selectedTypes.map((t) => TYPE_STYLES[t].short).join(' + ');
 
@@ -260,16 +282,16 @@ export const PeriodAnalysis: React.FC = () => {
 
   const highPse = useMemo(
     () =>
-      dayPse
+      dayPseG
         .filter((r) => !r.did_not_train && (r.rpe_score ?? 0) > PSE_LIMIT)
         .sort((a, b) => (b.rpe_score ?? 0) - (a.rpe_score ?? 0) || byCreated(a, b)),
-    [dayPse]
+    [dayPseG]
   );
 
   // PSR com ao menos uma variável abaixo de 5, agrupada por atleta
   const lowPsrByAthlete = useMemo(() => {
     const groups = new Map<string, PsrRecord[]>();
-    for (const r of dayPsr) {
+    for (const r of dayPsrG) {
       if (!PSR_VARIABLES.some((v) => (r[v.key] as number) < PSR_LIMIT)) continue;
       const list = groups.get(r.athlete_id) ?? [];
       list.push(r);
@@ -278,7 +300,7 @@ export const PeriodAnalysis: React.FC = () => {
     return [...groups.entries()]
       .map(([athleteId, records]) => ({ athleteId, records: records.sort(byCreated) }))
       .sort((a, b) => nameOf(a.athleteId).localeCompare(nameOf(b.athleteId), 'pt-BR'));
-  }, [dayPsr, athletes]);
+  }, [dayPsrG, athletes]);
 
   const lowPsrCount = lowPsrByAthlete.reduce((sum, g) => sum + g.records.length, 0);
 
@@ -349,6 +371,16 @@ export const PeriodAnalysis: React.FC = () => {
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             <span>Atualizar</span>
           </button>
+        </div>
+
+        {/* Atletas (grupos e/ou pessoas): vale para os gráficos e para os alertas do dia */}
+        <div className="pt-3 border-t border-slate-800 flex flex-col sm:flex-row sm:items-end gap-2">
+          <GroupFilter groups={groups} athletes={athleteList} value={selection} onChange={setSelection} className="sm:w-72" />
+          {selected && (
+            <p className="text-[11px] text-slate-400 sm:pb-2.5">
+              Mostrando só {selected.size} atleta{selected.size === 1 ? '' : 's'} selecionado{selected.size === 1 ? '' : 's'} e a PSE esperada dos treinos destinados a essa seleção.
+            </p>
+          )}
         </div>
 
         {/* Gráfico de PSE: tipos de treino e forma de exibir */}
@@ -448,7 +480,7 @@ export const PeriodAnalysis: React.FC = () => {
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           <DailyStatsChart
             title={pseView === 'grouped' ? `${pseStatInfo.title} do grupo por dia` : `${pseStatInfo.title} por tipo de treino`}
-            subtitle={`Esforço (1–10) • ${from === to ? brDate(from) : `${brDate(from)} a ${brDate(to)}`} • ${typesLabel} • sem contar quem não treinou`}
+            subtitle={`Esforço (1–10) • ${from === to ? brDate(from) : `${brDate(from)} a ${brDate(to)}`} • ${typesLabel}${groupLabel} • sem contar quem não treinou`}
             dates={days}
             lines={pseLines}
             actions={
@@ -490,7 +522,7 @@ export const PeriodAnalysis: React.FC = () => {
           />
           <DailyStatsChart
             title="Média de PSR do grupo por dia"
-            subtitle={`Recuperação (1–10) • ${from === to ? brDate(from) : `${brDate(from)} a ${brDate(to)}`}`}
+            subtitle={`Recuperação (1–10) • ${from === to ? brDate(from) : `${brDate(from)} a ${brDate(to)}`}${groupLabel}`}
             dates={days}
             lines={psrLines}
           />
