@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Flame, CheckCircle2, AlertCircle, Send, Target, Swords, Dumbbell } from 'lucide-react';
 import { PseRecord } from '../types';
+import { todayLocalISO } from '../lib/date';
 
 interface PseFormProps {
   athleteId: string;
@@ -48,7 +49,7 @@ export const PseForm: React.FC<PseFormProps> = ({ athleteId, athleteName, onSubm
     setSubmitting(true);
     setErrorMsg('');
 
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = todayLocalISO();
 
     const ok = await onSubmit({
       athlete_id: athleteId,

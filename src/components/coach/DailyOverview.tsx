@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, Flame, HeartPulse, Scale, AlertTriangle, RefreshCw, Loader2, CheckCircle2, Edit3 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Athlete, PseRecord, PsrRecord, WeightRecord } from '../../types';
+import { todayLocalISO } from '../../lib/date';
 
 interface AthleteDailyStatus {
   athlete: Athlete;
@@ -15,7 +16,7 @@ interface DailyOverviewProps {
 }
 
 export const DailyOverview: React.FC<DailyOverviewProps> = ({ onEditAthlete }) => {
-  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState(todayLocalISO);
   const [statuses, setStatuses] = useState<AthleteDailyStatus[]>([]);
   const [loading, setLoading] = useState(true);
 

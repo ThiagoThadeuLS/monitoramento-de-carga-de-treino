@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Scale, Send, CheckCircle2, AlertCircle, Plus, Minus } from 'lucide-react';
 import { WeightRecord } from '../types';
+import { todayLocalISO } from '../lib/date';
 
 interface WeightFormProps {
   athleteId: string;
@@ -36,7 +37,7 @@ export const WeightForm: React.FC<WeightFormProps> = ({ athleteId, athleteName, 
     setSubmitting(true);
     setErrorMsg('');
 
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = todayLocalISO();
 
     const ok = await onSubmit({
       athlete_id: athleteId,

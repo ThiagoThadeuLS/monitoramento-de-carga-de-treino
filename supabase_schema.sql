@@ -1,6 +1,10 @@
 -- ============================================================
 -- BANCO DE DADOS: MONITORAMENTO DE CARGA DE TREINO (SUPABASE)
 -- ============================================================
+-- ⚠️ ATENÇÃO: este arquivo APAGA e recria todas as tabelas (perde os dados).
+--    Use só na criação inicial do banco. Depois dele, rode também
+--    supabase_login_atleta.sql (CPF + login do atleta).
+-- ============================================================
 
 -- Remove tabelas antigas se existirem (para recriar do zero)
 drop table if exists public.pse_records cascade;

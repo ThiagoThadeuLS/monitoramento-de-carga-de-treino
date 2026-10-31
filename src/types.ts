@@ -1,6 +1,7 @@
 export interface Athlete {
   id: string;
   nome: string;
+  cpf?: string | null; // só números (11 dígitos)
   classe?: string;
   categoria?: string;
   celular?: string;

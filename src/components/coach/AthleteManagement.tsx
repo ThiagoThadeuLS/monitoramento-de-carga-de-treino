@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { UserPlus, Search, Edit3, Trash2, CheckCircle2, AlertCircle, X, Loader2, Phone } from 'lucide-react';
+import { UserPlus, Search, Edit3, Trash2, CheckCircle2, AlertCircle, X, Loader2, Phone, IdCard, KeyRound } from 'lucide-react';
 import { Athlete } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { CLASSES, CATEGORIAS } from '../../data/constants';
+import { formatCpf, isValidCpf, onlyCpfDigits } from '../../lib/cpf';
+import { resetAthletePassword } from '../../lib/athleteAuth';
 
 interface AthleteManagementProps {
   athleteToEdit?: Athlete | null;
@@ -21,11 +23,14 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
 
   // Form State
   const [nome, setNome] = useState('');
+  const [cpf, setCpf] = useState('');
   const [classe, setClasse] = useState(CLASSES[0]);
   const [categoria, setCategoria] = useState(CATEGORIAS[0]);
   const [celular, setCelular] = useState('');
   const [sexo, setSexo] = useState('Masculino');
   const [submitting, setSubmitting] = useState(false);
+  const [resettingPassword, setResettingPassword] = useState(false);
+  const [modalError, setModalError] = useState('');
   const [feedbackMsg, setFeedbackMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const loadAthletes = async () => {
@@ -63,6 +68,8 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
   const handleOpenAddModal = () => {
     setEditingAthlete(null);
     setNome('');
+    setCpf('');
+    setModalError('');
     setClasse(CLASSES[0]);
     setCategoria(CATEGORIAS[0]);
     setCelular('');
@@ -73,6 +80,8 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
   const handleOpenEditModal = (athlete: Athlete) => {
     setEditingAthlete(athlete);
     setNome(athlete.nome);
+    setCpf(formatCpf(athlete.cpf || ''));
+    setModalError('');
     setClasse(athlete.classe || CLASSES[0]);
     setCategoria(athlete.categoria || CATEGORIAS[0]);
     setCelular(athlete.celular || '');
@@ -82,13 +91,19 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
 
   const handleSaveAthlete = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Erros de validação aparecem dentro do modal (o aviso geral fica escondido atrás dele)
     if (!nome.trim()) {
-      setFeedbackMsg({ type: 'error', text: 'O nome do atleta é obrigatório.' });
+      setModalError('O nome do atleta é obrigatório.');
+      return;
+    }
+    if (!isValidCpf(cpf)) {
+      setModalError('Informe um CPF válido. Ele será o login do atleta.');
       return;
     }
 
     if (!supabase) return;
     setSubmitting(true);
+    setModalError('');
     setFeedbackMsg(null);
 
     try {
@@ -98,6 +113,7 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
           .from('athletes')
           .update({
             nome: nome.trim(),
+            cpf: onlyCpfDigits(cpf),
             classe: classe.trim(),
             categoria: categoria.trim(),
             celular: celular.trim(),
@@ -112,6 +128,7 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
         const { error } = await supabase.from('athletes').insert([
           {
             nome: nome.trim(),
+            cpf: onlyCpfDigits(cpf),
             classe: classe.trim(),
             categoria: categoria.trim(),
             celular: celular.trim(),
@@ -121,16 +138,48 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
         ]);
 
         if (error) throw error;
-        setFeedbackMsg({ type: 'success', text: `Atleta "${nome.trim()}" cadastrado com sucesso!` });
+        setFeedbackMsg({
+          type: 'success',
+          text: `Atleta "${nome.trim()}" cadastrado! Login: CPF • Senha inicial: nome completo junto e minúsculo.`,
+        });
       }
 
       setIsModalOpen(false);
       await loadAthletes();
-      setTimeout(() => setFeedbackMsg(null), 4000);
+      setTimeout(() => setFeedbackMsg(null), 6000);
     } catch (err: any) {
-      setFeedbackMsg({ type: 'error', text: `Erro ao salvar atleta: ${err.message}` });
+      if (err.code === '23505' && String(err.message).includes('cpf')) {
+        setModalError('Já existe um atleta cadastrado com este CPF.');
+      } else if (err.code === 'PGRST204' || String(err.message).includes("'cpf' column")) {
+        setModalError('O banco ainda não tem o campo CPF. Rode o arquivo supabase_login_atleta.sql no Supabase.');
+      } else {
+        setModalError(`Erro ao salvar atleta: ${err.message}`);
+      }
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (!editingAthlete) return;
+    if (!window.confirm(
+      `Voltar a senha de "${editingAthlete.nome}" para a senha inicial (nome completo junto e minúsculo)? ` +
+      'O atleta terá que criar uma nova senha no próximo acesso.'
+    )) {
+      return;
+    }
+
+    setResettingPassword(true);
+    setModalError('');
+    try {
+      await resetAthletePassword(editingAthlete.id);
+      setIsModalOpen(false);
+      setFeedbackMsg({ type: 'success', text: `Senha de "${editingAthlete.nome}" redefinida para a senha inicial.` });
+      setTimeout(() => setFeedbackMsg(null), 6000);
+    } catch (err: any) {
+      setModalError(err.message);
+    } finally {
+      setResettingPassword(false);
     }
   };
 
@@ -151,8 +200,10 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
     }
   };
 
+  const searchDigits = onlyCpfDigits(search);
   const filteredAthletes = athletes.filter((a) =>
     a.nome.toLowerCase().includes(search.toLowerCase()) ||
+    (searchDigits.length >= 3 && a.cpf?.includes(searchDigits)) ||
     (a.categoria && a.categoria.toLowerCase().includes(search.toLowerCase())) ||
     (a.classe && a.classe.toLowerCase().includes(search.toLowerCase()))
   );
@@ -165,7 +216,7 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
           <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
-            placeholder="Buscar por nome, categoria ou classe..."
+            placeholder="Buscar por nome, CPF, categoria ou classe..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500"
@@ -234,8 +285,13 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
                   </span>
                 </div>
 
+                <p className={`text-xs flex items-center gap-1.5 pt-1 ${athlete.cpf ? 'text-slate-400' : 'text-amber-400'}`}>
+                  <IdCard className="w-3.5 h-3.5 text-sky-400" />
+                  <span>{athlete.cpf ? formatCpf(athlete.cpf) : 'Sem CPF — atleta não consegue entrar'}</span>
+                </p>
+
                 {athlete.celular && (
-                  <p className="text-xs text-slate-400 flex items-center gap-1.5 pt-1">
+                  <p className="text-xs text-slate-400 flex items-center gap-1.5">
                     <Phone className="w-3.5 h-3.5 text-sky-400" />
                     <span>{athlete.celular}</span>
                   </p>
@@ -272,6 +328,7 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
                 <thead className="bg-slate-950/80 border-b border-slate-800 text-xs font-semibold uppercase text-slate-400 tracking-wider">
                   <tr>
                     <th className="py-3.5 px-4">Nome do Atleta</th>
+                    <th className="py-3.5 px-3">CPF</th>
                     <th className="py-3.5 px-3">Classe</th>
                     <th className="py-3.5 px-3">Categoria</th>
                     <th className="py-3.5 px-3">Celular</th>
@@ -284,6 +341,9 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
                     <tr key={athlete.id} className="hover:bg-slate-800/40 transition-colors">
                       <td className="py-3.5 px-4 font-bold text-white">
                         {athlete.nome}
+                      </td>
+                      <td className={`py-3.5 px-3 text-xs whitespace-nowrap ${athlete.cpf ? 'text-slate-400' : 'text-amber-400'}`}>
+                        {athlete.cpf ? formatCpf(athlete.cpf) : 'Sem CPF'}
                       </td>
                       <td className="py-3.5 px-3">
                         <span className="px-2.5 py-1 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold text-xs">
@@ -363,6 +423,25 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
                   placeholder="ex: Arthur Silva"
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
                 />
+                <p className="mt-1 text-[11px] text-slate-500">
+                  A senha inicial do atleta será o nome completo, tudo junto e minúsculo.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5">
+                  CPF *
+                </label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  required
+                  value={cpf}
+                  onChange={(e) => setCpf(formatCpf(e.target.value))}
+                  placeholder="000.000.000-00"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+                />
+                <p className="mt-1 text-[11px] text-slate-500">Usado pelo atleta para entrar no app.</p>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -427,6 +506,30 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
                   </select>
                 </div>
               </div>
+
+              {editingAthlete && (
+                <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 flex items-center justify-between gap-3">
+                  <p className="text-[11px] text-slate-400">
+                    Atleta esqueceu a senha? Volte para a senha inicial.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleResetPassword}
+                    disabled={resettingPassword}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-bold transition-colors flex-shrink-0 disabled:opacity-50"
+                  >
+                    {resettingPassword ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <KeyRound className="w-3.5 h-3.5" />}
+                    Redefinir senha
+                  </button>
+                </div>
+              )}
+
+              {modalError && (
+                <div className="p-3 rounded-xl bg-red-950/60 border border-red-700 flex items-center gap-2.5 text-xs text-red-300">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0 text-red-400" />
+                  <span>{modalError}</span>
+                </div>
+              )}
 
               {/* Modal Buttons */}
               <div className="pt-4 flex items-center justify-end gap-3 border-t border-slate-800">

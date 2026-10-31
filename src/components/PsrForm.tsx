@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Activity, Battery, Moon, Zap, Smile, HeartPulse, Send, CheckCircle2, AlertCircle } from 'lucide-react';
 import { PsrRecord } from '../types';
+import { todayLocalISO } from '../lib/date';
 
 interface PsrFormProps {
   athleteId: string;
@@ -135,7 +136,7 @@ export const PsrForm: React.FC<PsrFormProps> = ({ athleteId, athleteName, onSubm
     setSubmitting(true);
     setErrorMsg('');
 
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = todayLocalISO();
 
     const ok = await onSubmit({
       athlete_id: athleteId,
