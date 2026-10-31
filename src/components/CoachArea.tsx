@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LogOut, BarChart3, Users, Loader2, LineChart, CalendarDays, Shield, AlertTriangle, UserCog } from 'lucide-react';
+import { LogOut, BarChart3, Users, Loader2, LineChart, CalendarDays, Shield, AlertTriangle, UserCog, Settings2 } from 'lucide-react';
 import { exitSupport } from '../lib/platform';
 import { TeamManagement } from './coach/TeamManagement';
 import { CoachChangePassword } from './CoachChangePassword';
@@ -13,15 +13,15 @@ import { AthleteManagement } from './coach/AthleteManagement';
 import { AdversaryManagement } from './coach/AdversaryManagement';
 import { Athlete } from '../types';
 
-type CoachTab = 'overview' | 'period' | 'schedule' | 'athletes' | 'adversaries' | 'team';
+type CoachTab = 'overview' | 'period' | 'schedule' | 'management' | 'adversaries';
+type ManagementSection = 'athletes' | 'team';
 
-const COACH_TABS: { id: CoachTab; label: string; short: string; icon: typeof BarChart3; adminOnly?: boolean }[] = [
+const COACH_TABS: { id: CoachTab; label: string; short: string; icon: typeof BarChart3 }[] = [
   { id: 'overview', label: 'Visão Geral do Dia', short: 'Dia', icon: BarChart3 },
   { id: 'period', label: 'Análise do Período', short: 'Período', icon: LineChart },
   { id: 'schedule', label: 'Cronograma', short: 'Agenda', icon: CalendarDays },
-  { id: 'athletes', label: 'Gestão do Elenco', short: 'Elenco', icon: Users },
   { id: 'adversaries', label: 'Atletas Adversários', short: 'Adversários', icon: Shield },
-  { id: 'team', label: 'Equipe', short: 'Equipe', icon: UserCog, adminOnly: true },
+  { id: 'management', label: 'Gestão', short: 'Gestão', icon: Settings2 },
 ];
 
 type ProfileClub = ClubInfo & { status: 'ativo' | 'suspenso' };
@@ -49,6 +49,7 @@ export const CoachArea: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<CoachTab>('overview');
   const [athleteToEdit, setAthleteToEdit] = useState<Athlete | null>(null);
+  const [managementSection, setManagementSection] = useState<ManagementSection>('athletes');
 
   const checkSession = async () => {
     if (!supabase) {
@@ -133,7 +134,8 @@ export const CoachArea: React.FC = () => {
 
   const handleEditAthleteFromOverview = (athlete: Athlete) => {
     setAthleteToEdit(athlete);
-    setActiveTab('athletes');
+    setManagementSection('athletes');
+    setActiveTab('management');
   };
 
   if (loading) {
@@ -223,7 +225,7 @@ export const CoachArea: React.FC = () => {
 
   const viewClub = coach!.club;
   const isAdmin = coach!.role === 'admin';
-  const tabs = COACH_TABS.filter((t) => !t.adminOnly || isAdmin);
+  const tabs = COACH_TABS;
   const currentTab: CoachTab = tabs.some((t) => t.id === activeTab) ? activeTab : tabs[0].id;
 
   return (
@@ -281,16 +283,40 @@ export const CoachArea: React.FC = () => {
       )}
       {currentTab === 'period' && <PeriodAnalysis />}
       {currentTab === 'schedule' && <TrainingSchedule />}
-      {currentTab === 'athletes' && (
-        <AthleteManagement
-          athleteToEdit={athleteToEdit}
-          onClearAthleteToEdit={() => setAthleteToEdit(null)}
-        />
+      {currentTab === 'management' && (
+        <div className="space-y-4">
+          {/* Seções da Gestão: atletas para todos; treinadores só para admin */}
+          {isAdmin && (
+            <div className="grid grid-cols-2 sm:inline-grid sm:w-auto p-1 bg-slate-900/90 border border-slate-800 rounded-xl" role="tablist" aria-label="Seções da gestão">
+              {([['athletes', 'Atletas', Users], ['team', 'Treinadores', UserCog]] as const).map(([id, label, Icon]) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  aria-selected={managementSection === id}
+                  onClick={() => setManagementSection(id)}
+                  className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-colors ${
+                    managementSection === id ? 'bg-sky-500 text-slate-950' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+          {(!isAdmin || managementSection === 'athletes') && (
+            <AthleteManagement
+              athleteToEdit={athleteToEdit}
+              onClearAthleteToEdit={() => setAthleteToEdit(null)}
+            />
+          )}
+          {isAdmin && managementSection === 'team' && (
+            <TeamManagement currentUserId={session.user.id} club={coach!.club} onClubChanged={reloadProfile} />
+          )}
+        </div>
       )}
       {currentTab === 'adversaries' && <AdversaryManagement />}
-      {currentTab === 'team' && isAdmin && (
-        <TeamManagement currentUserId={session.user.id} club={coach!.club} onClubChanged={reloadProfile} />
-      )}
       </div>
     </div>
   );
