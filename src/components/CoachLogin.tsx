@@ -1,12 +1,26 @@
 import React, { useState } from 'react';
 import { Lock, Mail, Eye, EyeOff, ShieldCheck, AlertCircle, Loader2 } from 'lucide-react';
+import { ClubCrest } from '../lib/club';
 import { supabase } from '../lib/supabase';
 
 interface CoachLoginProps {
   onLoginSuccess: () => void;
+  /** Textos da tela (a Área Restrita usa a mesma tela com outros textos) */
+  title?: string;
+  subtitle?: string;
+  emailLabel?: string;
+  submitLabel?: string;
+  note?: string;
 }
 
-export const CoachLogin: React.FC<CoachLoginProps> = ({ onLoginSuccess }) => {
+export const CoachLogin: React.FC<CoachLoginProps> = ({
+  onLoginSuccess,
+  title = 'Comissão Técnica',
+  subtitle = 'Acesso administrativo restrito a treinadores e preparadores físicos',
+  emailLabel = 'E-mail do Treinador',
+  submitLabel = 'Entrar no Painel',
+  note = '🔒 Área restrita. Os acessos são cadastrados internamente pela coordenação esportiva do clube.',
+}) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -58,20 +72,16 @@ export const CoachLogin: React.FC<CoachLoginProps> = ({ onLoginSuccess }) => {
   return (
     <div className="max-w-md mx-auto px-4 py-8">
       <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl backdrop-blur space-y-6">
-        {/* Header com Escudo MTC */}
+        {/* Ícone da plataforma (o clube aparece depois do login) */}
         <div className="text-center space-y-3">
-          <img
-            src="/minas-tenis-clube.svg"
-            alt="Minas Tênis Clube"
-            className="w-16 h-20 mx-auto object-contain drop-shadow-lg"
-          />
+          <ClubCrest club={null} className="w-16 h-16 mx-auto" />
           <div>
             <h2 className="text-xl font-black tracking-tight text-white flex items-center justify-center gap-2">
               <ShieldCheck className="w-5 h-5 text-sky-400" />
-              Comissão Técnica
+              {title}
             </h2>
             <p className="text-xs text-slate-400 mt-1">
-              Acesso administrativo restrito a treinadores e preparadores físicos
+              {subtitle}
             </p>
           </div>
         </div>
@@ -82,14 +92,14 @@ export const CoachLogin: React.FC<CoachLoginProps> = ({ onLoginSuccess }) => {
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5 flex items-center gap-1.5">
               <Mail className="w-3.5 h-3.5 text-sky-400" />
-              E-mail do Treinador
+              {emailLabel}
             </label>
             <input
               type="email"
               autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="ex: treinador@minastc.com.br"
+              placeholder="ex: treinador@seuclube.com.br"
               className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent text-sm transition-all"
             />
           </div>
@@ -140,7 +150,7 @@ export const CoachLogin: React.FC<CoachLoginProps> = ({ onLoginSuccess }) => {
                 Autenticando...
               </>
             ) : (
-              'Entrar no Painel'
+              submitLabel
             )}
           </button>
         </form>
@@ -148,7 +158,7 @@ export const CoachLogin: React.FC<CoachLoginProps> = ({ onLoginSuccess }) => {
         {/* Aviso de Segurança */}
         <div className="border-t border-slate-800 pt-4 text-center">
           <p className="text-[11px] text-slate-500">
-            🔒 Área restrita. Os acessos são cadastrados internamente pela coordenação esportiva do clube.
+            {note}
           </p>
         </div>
       </div>

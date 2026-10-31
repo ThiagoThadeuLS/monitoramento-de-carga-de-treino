@@ -9,6 +9,16 @@ export const isSupabaseConfigured = Boolean(
   !supabaseUrl.includes('placeholder')
 );
 
-export const supabase = isSupabaseConfigured 
+export const supabase = isSupabaseConfigured
   ? createClient(supabaseUrl, supabaseAnonKey)
   : null;
+
+/**
+ * Cliente separado e descartável para criar a conta de OUTRA pessoa (convite)
+ * sem derrubar a sessão de quem está logado: não guarda nem renova sessão.
+ */
+export function createDetachedClient() {
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, storageKey: 'convite-temporario' },
+  });
+}

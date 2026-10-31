@@ -3,6 +3,7 @@ import { Calendar, Flame, HeartPulse, Scale, AlertTriangle, RefreshCw, Loader2, 
 import { supabase } from '../../lib/supabase';
 import { Athlete, PseRecord, PsrRecord, WeightRecord } from '../../types';
 import { todayLocalISO } from '../../lib/date';
+import { useClub } from '../../lib/club';
 
 interface AthleteDailyStatus {
   athlete: Athlete;
@@ -16,6 +17,7 @@ interface DailyOverviewProps {
 }
 
 export const DailyOverview: React.FC<DailyOverviewProps> = ({ onEditAthlete }) => {
+  const { club } = useClub();
   const [selectedDate, setSelectedDate] = useState(todayLocalISO);
   const [statuses, setStatuses] = useState<AthleteDailyStatus[]>([]);
   const [loading, setLoading] = useState(true);
@@ -173,8 +175,8 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({ onEditAthlete }) =
             <span className="text-2xl font-black text-white">{totalAthletes}</span>
             <span className="text-xs text-slate-400 font-medium">atletas ativos</span>
           </div>
-          <span className="text-[11px] text-slate-400 font-semibold">
-            Minas Tênis Clube
+          <span className="text-[11px] text-slate-400 font-semibold truncate block">
+            {club?.nome}
           </span>
         </div>
       </div>

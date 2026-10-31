@@ -2,6 +2,8 @@
 -- MIGRAÇÃO: CPF + LOGIN DO ATLETA
 -- Como aplicar: Supabase -> SQL Editor -> New query -> cole este arquivo -> Run.
 -- Pode ser executado mais de uma vez e NÃO apaga dados existentes.
+-- ⚠️ Depois de rodar este arquivo, rode também supabase_multiclube.sql
+--    (ele refaz algumas funções daqui para separar os dados por clube).
 --
 -- Regras:
 --  * Só atletas cadastrados pelo treinador (e ativos) conseguem entrar.

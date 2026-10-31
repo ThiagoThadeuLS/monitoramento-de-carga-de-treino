@@ -9,11 +9,14 @@ import { resetAthletePassword } from '../../lib/athleteAuth';
 interface AthleteManagementProps {
   athleteToEdit?: Athlete | null;
   onClearAthleteToEdit?: () => void;
+  /** Modo suporte (Área Restrita): só visualiza, sem cadastrar/editar/excluir */
+  readOnly?: boolean;
 }
 
 export const AthleteManagement: React.FC<AthleteManagementProps> = ({
   athleteToEdit,
   onClearAthleteToEdit,
+  readOnly = false,
 }) => {
   const [athletes, setAthletes] = useState<Athlete[]>([]);
   const [loading, setLoading] = useState(true);
@@ -223,14 +226,14 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
           />
         </div>
 
-        <button
+        {!readOnly && <button
           type="button"
           onClick={handleOpenAddModal}
           className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-sm shadow-lg shadow-sky-500/20 active:scale-95 transition-all"
         >
           <UserPlus className="w-4 h-4" />
           <span>Cadastrar Novo Atleta</span>
-        </button>
+        </button>}
       </div>
 
       {/* Feedback Toast */}
@@ -255,7 +258,7 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
       {loading ? (
         <div className="py-16 flex flex-col items-center justify-center gap-3 text-slate-400 bg-slate-900/60 border border-slate-800 rounded-2xl">
           <Loader2 className="w-6 h-6 animate-spin text-sky-400" />
-          <p className="text-sm">Carregando elenco do Minas Tênis Clube...</p>
+          <p className="text-sm">Carregando elenco...</p>
         </div>
       ) : filteredAthletes.length === 0 ? (
         <div className="py-16 text-center text-slate-400 space-y-2 bg-slate-900/60 border border-slate-800 rounded-2xl">
@@ -298,7 +301,7 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
                 )}
 
                 {/* BOTÕES DE AÇÃO DESTACADOS NO MOBILE */}
-                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800/80">
+                {!readOnly && <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800/80">
                   <button
                     type="button"
                     onClick={() => handleOpenEditModal(athlete)}
@@ -316,7 +319,7 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
                     <Trash2 className="w-3.5 h-3.5" />
                     <span>Excluir</span>
                   </button>
-                </div>
+                </div>}
               </div>
             ))}
           </div>
@@ -360,7 +363,7 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
                         {athlete.sexo || '—'}
                       </td>
                       <td className="py-3.5 px-4 text-right">
-                        <div className="inline-flex items-center gap-2">
+                        {!readOnly && <div className="inline-flex items-center gap-2">
                           <button
                             type="button"
                             onClick={() => handleOpenEditModal(athlete)}
@@ -379,7 +382,7 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
-                        </div>
+                        </div>}
                       </td>
                     </tr>
                   ))}

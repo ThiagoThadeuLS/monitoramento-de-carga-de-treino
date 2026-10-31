@@ -2,6 +2,8 @@
 -- MIGRAÇÃO: CRONOGRAMA DE TREINOS DA SEMANA
 -- Como aplicar: Supabase -> SQL Editor -> New query -> cole este arquivo -> Run.
 -- Pode ser executado mais de uma vez e NÃO apaga dados existentes.
+-- ⚠️ Depois de rodar este arquivo, rode também supabase_multiclube.sql
+--    (ele refaz algumas funções daqui para separar os dados por clube).
 -- Acesso: a comissão técnica edita; atletas logados só visualizam
 --         (rode antes o supabase_login_atleta.sql).
 -- Janela: só é possível programar a semana atual e a próxima; a semana

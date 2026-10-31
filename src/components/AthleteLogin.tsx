@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Lock, IdCard, Eye, EyeOff, User, AlertCircle, Loader2, Info } from 'lucide-react';
+import { ClubCrest } from '../lib/club';
 import { formatCpf, isValidCpf } from '../lib/cpf';
 import { AthleteSession, loginAthlete } from '../lib/athleteAuth';
 
@@ -40,11 +41,7 @@ export const AthleteLogin: React.FC<AthleteLoginProps> = ({ onLoginSuccess }) =>
     <div className="max-w-md mx-auto px-4 py-8">
       <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl backdrop-blur space-y-6">
         <div className="text-center space-y-3">
-          <img
-            src="/minas-tenis-clube.svg"
-            alt="Minas Tênis Clube"
-            className="w-16 h-20 mx-auto object-contain drop-shadow-lg"
-          />
+          <ClubCrest club={null} className="w-16 h-16 mx-auto" />
           <div>
             <h2 className="text-xl font-black tracking-tight text-white flex items-center justify-center gap-2">
               <User className="w-5 h-5 text-emerald-400" />

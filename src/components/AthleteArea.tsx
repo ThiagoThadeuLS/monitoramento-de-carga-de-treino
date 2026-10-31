@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Flame, HeartPulse, Scale, ShieldAlert, LogOut, Loader2, User, CalendarDays } from 'lucide-react';
 import { TrainingSchedule } from './coach/TrainingSchedule';
+import { useClub } from '../lib/club';
 import { PseForm } from './PseForm';
 import { PsrForm } from './PsrForm';
 import { WeightForm } from './WeightForm';
@@ -29,6 +30,12 @@ const ATHLETE_TABS: { id: AthleteTab; label: string; short: string; icon: typeof
 
 export const AthleteArea: React.FC = () => {
   const [session, setSession] = useState<AthleteSession | null>(null);
+  const { setClub } = useClub();
+
+  // Cabeçalho mostra o clube do atleta logado
+  useEffect(() => {
+    setClub(session?.club ?? null);
+  }, [session?.club?.id]);
   const [checkingSession, setCheckingSession] = useState(isSupabaseConfigured);
   const [notice, setNotice] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<AthleteTab>('pse');

@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { onlyCpfDigits } from './cpf';
+import type { ClubInfo } from './club';
 import { PseRecord, PsrRecord, TrainingSession, WeightRecord } from '../types';
 
 // Login do atleta: CPF + senha, validados por funções no banco
@@ -15,6 +16,7 @@ export interface AthleteSession {
     classe?: string | null;
     categoria?: string | null;
   };
+  club: ClubInfo | null;
 }
 
 const TOKEN_KEY = 'athlete_session_token';
@@ -58,6 +60,7 @@ function parseSession(data: any): AthleteSession {
     token: data.token,
     mustChangePassword: Boolean(data.must_change_password),
     athlete: data.athlete,
+    club: data.club ?? null,
   };
 }
 

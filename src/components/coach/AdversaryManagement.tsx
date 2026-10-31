@@ -12,7 +12,8 @@ interface Adversario {
   observacao?: string;
 }
 
-export function AdversaryManagement() {
+/** readOnly: modo suporte (Área Restrita) — só visualiza */
+export function AdversaryManagement({ readOnly = false }: { readOnly?: boolean } = {}) {
   const [adversarios, setAdversarios] = useState<Adversario[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   
@@ -30,6 +31,10 @@ export function AdversaryManagement() {
   }, []);
 
   async function fetchAdversarios() {
+    if (!supabase) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     const { data, error } = await supabase.from('adversarios').select('*').order('nome');
     if (error) {
@@ -46,6 +51,7 @@ export function AdversaryManagement() {
       alert('Por favor, preencha todos os campos obrigatórios.');
       return;
     }
+    if (!supabase) return;
 
     const payload = {
       nome,
@@ -94,6 +100,7 @@ export function AdversaryManagement() {
 
   async function handleDelete(id: string) {
     if (!confirm('Tem certeza que deseja excluir este adversário?')) return;
+    if (!supabase) return;
 
     const { error } = await supabase.from('adversarios').delete().eq('id', id);
     if (error) {
@@ -129,7 +136,7 @@ export function AdversaryManagement() {
       </div>
 
       {/* Formulário no mesmo estilo escuro */}
-      <form onSubmit={handleSubmit} className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl grid grid-cols-1 md:grid-cols-2 gap-4">
+      {!readOnly && <form onSubmit={handleSubmit} className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">Nome do Atleta</label>
           <input
@@ -233,7 +240,7 @@ export function AdversaryManagement() {
             <span>{editingId ? 'Atualizar Adversário' : 'Cadastrar Adversário'}</span>
           </button>
         </div>
-      </form>
+      </form>}
 
       {/* Lista de Adversários */}
       <div className="bg-slate-900/90 border border-slate-800 rounded-2xl shadow-xl overflow-hidden">
@@ -274,6 +281,7 @@ export function AdversaryManagement() {
                     </td>
                     <td className="px-6 py-4 text-sm text-slate-400 max-w-xs truncate">{adv.observacao || '-'}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      {!readOnly && <>
                       <button
                         onClick={() => handleEdit(adv)}
                         className="p-2 text-slate-400 hover:text-sky-400 transition-colors inline-block"
@@ -288,6 +296,7 @@ export function AdversaryManagement() {
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
+                      </>}
                     </td>
                   </tr>
                 ))}

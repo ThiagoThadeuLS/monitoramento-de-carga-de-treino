@@ -84,8 +84,9 @@ export const TrainingSchedule: React.FC<TrainingScheduleProps> = ({ readOnly = f
         setSessions(await fetchSessions(weekStart, weekEnd));
         return;
       }
-      // Apaga treinos mais antigos que a semana passada (reforço caso o pg_cron não esteja ativo)
-      await supabase.rpc('purge_old_training_sessions');
+      // Apaga treinos mais antigos que a semana passada (reforço caso o pg_cron não esteja ativo).
+      // Em modo só leitura (suporte) não altera nada.
+      if (!readOnly) await supabase.rpc('purge_old_training_sessions');
       const { data, error } = await supabase
         .from('training_sessions')
         .select('*')

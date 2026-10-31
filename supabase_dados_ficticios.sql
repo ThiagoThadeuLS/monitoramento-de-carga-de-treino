@@ -1,7 +1,7 @@
 -- ============================================================
 -- DADOS FICTÍCIOS PARA TESTE: 50 ATLETAS + PSE + PSR (BEM-ESTAR)
 -- Como aplicar: Supabase -> SQL Editor -> New query -> cole este arquivo -> Run.
--- Rode depois de supabase_login_atleta.sql e supabase_cronograma.sql.
+-- Rode depois de supabase_login_atleta.sql, supabase_cronograma.sql e supabase_multiclube.sql.
 --
 -- Baseado na programação real de 19/10 a 31/10/2026 (20 treinos, exportada
 -- do cronograma). Os treinos estão escritos aqui dentro, então o resultado é o
@@ -47,7 +47,8 @@ begin
 end;
 $$;
 
-insert into public.athletes (nome, cpf, classe, categoria, celular, sexo, active)
+-- Atletas do Minas Tênis Clube (clube criado em supabase_multiclube.sql)
+insert into public.athletes (nome, cpf, classe, categoria, celular, sexo, active, club_id)
 select
   nomes.primeiro || ' ' || sobrenomes.ultimo || ' ' || sobrenomes2.ultimo,
   pg_temp.cpf_valido(731000000 + n * 7919),
@@ -58,7 +59,8 @@ select
   end,
   'FICTICIO',
   case when n % 2 = 0 then 'Masculino' else 'Feminino' end,
-  true
+  true,
+  '00000000-0000-4000-8000-000000000001'::uuid
 from generate_series(1, 50) as n
 cross join lateral (
   select case when n % 2 = 0
