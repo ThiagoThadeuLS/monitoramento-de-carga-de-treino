@@ -39,3 +39,5 @@ coverage
 .vercel
 
 .claude/
+# Dados fictícios gerados para teste
+dados_ficticios/

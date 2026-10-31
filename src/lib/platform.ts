@@ -44,6 +44,7 @@ export function platformError(err: any): string {
   const code = Object.keys(MESSAGES).find((k) => msg.includes(k));
   if (code) return MESSAGES[code];
   if (msg.includes('Could not find the function')) return 'O painel da plataforma ainda não foi ativado no banco. Rode o arquivo supabase_plataforma.sql no Supabase.';
+  if (/rate limit/i.test(msg)) return 'O Supabase bloqueou o envio de e-mails por excesso de tentativas. Desligue "Confirm email" em Authentication → Sign In / Providers → Email e tente de novo.';
   if (/Database error saving new user/i.test(msg)) return MESSAGES.cadastro_sem_convite;
   if (/already registered/i.test(msg)) return MESSAGES.email_ja_cadastrado;
   if (/signups? (not allowed|are disabled)/i.test(msg)) return 'Cadastros estão desligados no Supabase. Ligue "Allow new users to sign up" em Authentication.';
