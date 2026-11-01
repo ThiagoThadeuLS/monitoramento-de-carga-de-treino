@@ -109,7 +109,7 @@ export const WeightReminderSettings: React.FC = () => {
           </p>
           <p className="text-xs text-slate-400">
             Nos dias marcados, os atletas recebem o lembrete a partir do horário escolhido, repetindo a cada 30 min até registrarem o peso.
-            Os lembretes de PSE e PSR saem automaticamente pelos horários do cronograma.
+            PSE: 20 min após o fim de cada treino. PSR: a partir do início do horário das notificações, nos dias com treino. Ambos repetem a cada 20 min até a resposta.
           </p>
         </div>
       </div>

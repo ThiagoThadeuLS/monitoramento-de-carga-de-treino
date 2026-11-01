@@ -20,6 +20,34 @@ export const isMobileDevice = () =>
 export const isStandalone = () =>
   window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone === true;
 
+// Android/Chrome: guarda o pedido de instalação para o botão "Instalar app"
+let installPrompt: any = null;
+const installListeners = new Set<() => void>();
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    installPrompt = e;
+    installListeners.forEach((fn) => fn());
+  });
+  window.addEventListener('appinstalled', () => {
+    installPrompt = null;
+    installListeners.forEach((fn) => fn());
+  });
+}
+export const canPromptInstall = () => !!installPrompt;
+export const onInstallChange = (fn: () => void) => {
+  installListeners.add(fn);
+  return () => void installListeners.delete(fn);
+};
+/** Abre o pedido de instalação do Chrome. Retorna true se o atleta aceitou. */
+export async function promptInstall(): Promise<boolean> {
+  if (!installPrompt) return false;
+  installPrompt.prompt();
+  const { outcome } = await installPrompt.userChoice;
+  installPrompt = null;
+  return outcome === 'accepted';
+}
+
 /** Registra o service worker (chamado ao abrir o app). */
 export function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
@@ -45,7 +73,9 @@ async function currentSubscription(): Promise<PushSubscription | null> {
 }
 
 export async function getPushState(): Promise<PushState> {
-  if (isIOS() && !isStandalone()) return 'needs-install';
+  // No celular, só funciona como app instalado: a notificação aparece com o nome e o ícone do app
+  // (e não como "Chrome"), e o Android não a trata como possível spam de site.
+  if (isMobileDevice() && !isStandalone()) return 'needs-install';
   if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window) || !VAPID_PUBLIC_KEY) {
     return 'unsupported';
   }

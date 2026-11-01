@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { BellRing, Bell, BellOff, Loader2, Share, PlusSquare, LogOut, RefreshCw, Smartphone } from 'lucide-react';
-import { PushState, enablePush, getPushState, isIOS } from '../lib/push';
+import React, { useEffect, useState } from 'react';
+import { BellRing, Bell, BellOff, Loader2, Share, PlusSquare, LogOut, RefreshCw, Smartphone, Download, MoreVertical } from 'lucide-react';
+import { PushState, canPromptInstall, enablePush, getPushState, isIOS, onInstallChange, promptInstall } from '../lib/push';
 
 interface NotificationGateProps {
   token: string;
@@ -16,6 +16,14 @@ interface NotificationGateProps {
 export const NotificationGate: React.FC<NotificationGateProps> = ({ token, state, onStateChange, onLogout }) => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [canInstall, setCanInstall] = useState(canPromptInstall());
+  const [installed, setInstalled] = useState(false);
+  useEffect(() => onInstallChange(() => setCanInstall(canPromptInstall())), []);
+
+  const install = async () => {
+    if (await promptInstall()) setInstalled(true);
+    setCanInstall(canPromptInstall());
+  };
 
   const activate = async () => {
     setBusy(true);
@@ -72,7 +80,7 @@ export const NotificationGate: React.FC<NotificationGateProps> = ({ token, state
           </button>
         )}
 
-        {state === 'needs-install' && (
+        {state === 'needs-install' && isIOS() && (
           <div className="space-y-3">
             <p className="text-sm font-semibold text-white flex items-center gap-2">
               <Smartphone className="w-4 h-4 text-sky-300" /> No iPhone, instale o app primeiro:
@@ -83,6 +91,34 @@ export const NotificationGate: React.FC<NotificationGateProps> = ({ token, state
               {step(3, <>Abra o app pelo <strong>ícone novo</strong> na tela de início e entre de novo</>)}
               {step(4, <>Toque em <strong>Permitir notificações</strong></>)}
             </ol>
+          </div>
+        )}
+
+        {state === 'needs-install' && !isIOS() && (
+          <div className="space-y-3">
+            <p className="text-sm font-semibold text-white flex items-center gap-2">
+              <Smartphone className="w-4 h-4 text-sky-300" /> Instale o app no celular primeiro
+            </p>
+            {installed ? (
+              <p className="text-sm text-emerald-300">
+                App instalado! Feche esta página e abra o app <strong>Carga</strong> pelo ícone na tela inicial.
+              </p>
+            ) : canInstall ? (
+              <button
+                type="button"
+                onClick={install}
+                className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold"
+              >
+                <Download className="w-5 h-5" /> Instalar app
+              </button>
+            ) : (
+              <ol className="space-y-2.5">
+                {step(1, <>No Chrome, toque em <MoreVertical className="inline w-4 h-4 text-sky-300 -mt-0.5" /> (canto superior direito)</>)}
+                {step(2, <>Escolha <strong>Instalar app</strong> (ou <strong>Adicionar à tela inicial</strong>)</>)}
+                {step(3, <>Abra o app pelo <strong>ícone novo</strong> e entre de novo</>)}
+              </ol>
+            )}
+            <p className="text-xs text-slate-500">Já instalou? Abra pelo ícone do app, não pelo navegador.</p>
           </div>
         )}
 
@@ -100,8 +136,8 @@ export const NotificationGate: React.FC<NotificationGateProps> = ({ token, state
                 </>
               ) : (
                 <>
-                  {step(1, <>Toque no <strong>cadeado</strong> (ou ⋮ → <strong>Informações do site</strong>) ao lado do endereço</>)}
-                  {step(2, <>Em <strong>Notificações</strong>, escolha <strong>Permitir</strong></>)}
+                  {step(1, <>Segure o ícone do app <strong>Carga</strong> → <strong>Informações do app</strong></>)}
+                  {step(2, <>Em <strong>Notificações</strong>, ative <strong>Permitir</strong> (e desmarque "possível spam", se aparecer)</>)}
                 </>
               )}
             </ol>

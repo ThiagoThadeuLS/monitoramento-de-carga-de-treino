@@ -6,8 +6,9 @@
 --
 -- Regras (horário de Brasília, dentro da janela definida pelo clube; padrão 06h às 22h):
 --  * PSE: 20 min após o fim de cada treino (sem fim: início + 1h30), para quem
---    é público do treino e ainda não respondeu; repete a cada 30 min.
---  * PSR: 20 min antes do primeiro treino do dia do atleta; repete a cada 30 min.
+--    é público do treino e ainda não respondeu; repete a cada 20 min.
+--  * PSR: a partir do início da janela de notificações, nos dias em que o atleta
+--    tem treino; repete a cada 20 min.
 --  * Peso: nos dias/horário definidos pelo clube; repete a cada 30 min.
 --  * Só recebe quem ativou os lembretes no aparelho e já criou a própria senha.
 --  * O aparelho fica ligado ao atleta mesmo depois de sair do app (permanente).
@@ -152,7 +153,6 @@ declare
   v_local timestamp := p_now at time zone 'America/Sao_Paulo';
   v_today date := v_local::date;
   v_time time := v_local::time;
-  v_repeat interval := interval '29 minutes';  -- 30 min com folga para o agendamento de 5 em 5
 begin
   return query
   with elegiveis as (
@@ -194,9 +194,9 @@ begin
            'Como você está hoje?'::text,
            'Responda o bem-estar (PSR) antes do treino.'::text,
            '/?aba=psr'::text
-    from (select t.athlete_id, min(t.start_time) as first_start from treinos t group by t.athlete_id) f
-    where v_time >= f.first_start - interval '20 minutes'
-      and not exists (select 1 from public.psr_records r where r.athlete_id = f.athlete_id and r.date = v_today)
+    -- começa no início da janela de notificações do clube, se o atleta tem treino hoje
+    from (select distinct t.athlete_id from treinos t) f
+    where not exists (select 1 from public.psr_records r where r.athlete_id = f.athlete_id and r.date = v_today)
   ),
   peso as (
     select e.id, 'peso'::text, v_today::text,
@@ -217,12 +217,13 @@ begin
   where not exists (
     select 1 from public.reminder_log l
     where l.athlete_id = x.athlete_id and l.kind = x.kind and l.ref = x.ref
-      and l.last_sent_at > p_now - v_repeat
+      -- PSE/PSR: a cada 20 min; peso: a cada 30 min (1 min de folga para o agendamento de 5 em 5)
+      and l.last_sent_at > p_now - case when x.kind = 'peso' then interval '29 minutes' else interval '19 minutes' end
   );
 end;
 $$;
 
--- Registra que o lembrete foi enviado (controla a repetição de 30 em 30 min)
+-- Registra que o lembrete foi enviado (controla a repetição)
 create or replace function public.push_mark_sent(p_athlete uuid, p_kind text, p_ref text, p_now timestamp with time zone default now())
 returns void
 language sql
