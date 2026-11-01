@@ -168,7 +168,7 @@ export const PlatformPanel: React.FC<PlatformPanelProps> = ({ onSupportChanged }
         {link && (
           <div className="p-4 rounded-xl bg-slate-950 border border-sky-700/50 space-y-3">
             <div className="flex items-start justify-between gap-2">
-              <p className="text-xs text-slate-300">Convite para <span className="font-bold text-white">{link.email}</span></p>
+              <p className="text-xs text-slate-300">Convite para <span className="font-bold text-white break-all">{link.email}</span></p>
               <button type="button" onClick={() => setLink(null)} className="text-slate-500 hover:text-white" title="Fechar"><X className="w-4 h-4" /></button>
             </div>
             <p className="font-mono text-[11px] text-sky-300 break-all select-all">{link.url}</p>

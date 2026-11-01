@@ -17,7 +17,7 @@ export const Header: React.FC<HeaderProps> = ({ currentView, onViewChange }) => 
 
   return (
     <header className="border-b border-slate-800 bg-slate-950/80 backdrop-blur sticky top-0 z-30">
-      <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
+      <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between gap-3">
         {/* Clube de quem está logado (ou a plataforma, antes do login) */}
         <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
           <ClubCrest club={club} className="w-8 h-9 sm:w-9 sm:h-10 flex-shrink-0" />
@@ -39,7 +39,7 @@ export const Header: React.FC<HeaderProps> = ({ currentView, onViewChange }) => 
         </div>
 
         {/* View Switcher (Atleta vs Treinador) */}
-        <div className="flex items-center bg-slate-900 border border-slate-800 p-1 rounded-xl">
+        <div className="flex items-center bg-slate-900 border border-slate-800 p-1 rounded-xl flex-shrink-0">
           <button
             type="button"
             onClick={() => onViewChange('athlete')}

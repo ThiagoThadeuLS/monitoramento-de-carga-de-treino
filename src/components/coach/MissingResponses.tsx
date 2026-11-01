@@ -113,7 +113,7 @@ export const MissingResponses: React.FC<Props> = ({ days, athletes, selected, gr
     );
 
   return (
-    <section className="bg-slate-900/90 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+    <section data-tour="period-missing" className="bg-slate-900/90 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
       <header className="p-4 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h3 className="font-bold text-white text-sm sm:text-base flex items-center gap-2">

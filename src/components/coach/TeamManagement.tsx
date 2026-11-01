@@ -260,7 +260,7 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({ currentUserId, c
                     <p className="font-bold text-white truncate">
                       {m.nome} {m.user_id === currentUserId && <span className="text-xs font-normal text-slate-500">(você)</span>}
                     </p>
-                    <p className="text-xs text-slate-400 truncate flex items-center gap-1"><Mail className="w-3 h-3" />{m.email}</p>
+                    <p className="text-xs text-slate-400 flex items-center gap-1 min-w-0"><Mail className="w-3 h-3 flex-shrink-0" /><span className="truncate">{m.email}</span></p>
                   </div>
                   <RoleBadge m={m} />
                 </div>
@@ -288,7 +288,7 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({ currentUserId, c
                       <p className="font-bold text-white">
                         {m.nome} {m.user_id === currentUserId && <span className="text-xs font-normal text-slate-500">(você)</span>}
                       </p>
-                      <p className="text-xs text-slate-400">{m.email}</p>
+                      <p className="text-xs text-slate-400 break-all">{m.email}</p>
                     </td>
                     <td className="py-3.5 px-3"><RoleBadge m={m} /></td>
                     <td className="py-3.5 px-3"><StatusBadge m={m} /></td>
@@ -318,7 +318,7 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({ currentUserId, c
                   <CheckCircle2 className="w-4 h-4" /> {created.nome} foi cadastrado no {clubName}.
                 </div>
                 <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-2 text-sm">
-                  <p className="text-slate-400">E-mail: <span className="text-white font-semibold">{created.email}</span></p>
+                  <p className="text-slate-400">E-mail: <span className="text-white font-semibold break-all">{created.email}</span></p>
                   <p className="text-slate-400 flex items-center gap-2">
                     <KeyRound className="w-4 h-4 text-amber-300" /> Senha temporária:
                     <span className="font-mono text-lg text-amber-200 tracking-wider select-all">{created.password}</span>

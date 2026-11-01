@@ -106,7 +106,7 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({ onEditAthlete }) =
   return (
     <div className="space-y-6">
       {/* Top Bar: Seletor de Data + Botão Atualizar */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-slate-900/80 border border-slate-800 p-4 rounded-2xl">
+      <div data-tour="daily-filters" className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-slate-900/80 border border-slate-800 p-4 rounded-2xl">
         <div className="flex flex-wrap items-end gap-3">
           <Calendar className="w-5 h-5 text-sky-400 mb-1.5" />
           <div>
@@ -141,7 +141,7 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({ onEditAthlete }) =
       </div>
 
       {/* Cards de Resumo Rápido */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+      <div data-tour="daily-cards" className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
         <div className="bg-slate-900/90 border border-slate-800 p-4 rounded-2xl space-y-1">
           <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
             Questionários PSE
@@ -197,10 +197,10 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({ onEditAthlete }) =
       </div>
 
       {/* Tabela Detalhada com Alertas */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-        <div className="p-4 border-b border-slate-800 flex items-center justify-between">
-          <h3 className="font-bold text-white text-base">Acompanhamento Individual por Atleta</h3>
-          <span className="text-xs text-slate-400">{shown.length} atletas listados</span>
+      <div data-tour="daily-table" className="bg-slate-900/90 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+        <div className="p-4 border-b border-slate-800 flex items-center justify-between gap-3">
+          <h3 className="font-bold text-white text-sm sm:text-base">Acompanhamento individual</h3>
+          <span className="text-xs text-slate-400 flex-shrink-0">{shown.length} atletas listados</span>
         </div>
 
         {loading ? (
@@ -209,7 +209,91 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({ onEditAthlete }) =
             <p className="text-sm">Carregando dados do dia...</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          {/* Celular: um card por atleta */}
+          <ul className="md:hidden divide-y divide-slate-800/60">
+            {shown.map(({ athlete, pses, psr, weight }) => {
+              const alerts = [
+                psr && psr.muscle_soreness_score <= 3 && { t: 'Dor muscular', c: 'bg-red-950/80 text-red-300 border-red-800' },
+                psr && psr.fatigue_score <= 3 && { t: 'Fadiga alta', c: 'bg-amber-950/80 text-amber-300 border-amber-800' },
+                pses.some((p) => (p.rpe_score ?? 0) >= 9) && { t: 'Esforço máximo', c: 'bg-orange-950/80 text-orange-300 border-orange-800' },
+              ].filter(Boolean) as { t: string; c: string }[];
+              const tone = (v: number, hi: number, mid: number) =>
+                v >= hi ? 'bg-red-500/20 text-red-300 border-red-500/40' : v >= mid ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40';
+              return (
+                <li key={athlete.id} className="p-4 space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-bold text-white leading-tight break-words">{athlete.nome}</p>
+                      <p className="text-xs text-slate-400 mt-0.5 break-words">
+                        Classe {athlete.classe || 'A'} • {athlete.categoria}
+                      </p>
+                    </div>
+                    {onEditAthlete && (
+                      <button
+                        type="button"
+                        onClick={() => onEditAthlete(athlete)}
+                        className="p-2 rounded-lg bg-sky-500/10 text-sky-400 border border-sky-500/20 flex-shrink-0"
+                        title="Editar este atleta"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    <div className="min-w-0 bg-slate-950/60 border border-slate-800 rounded-xl p-2">
+                      <p className="text-[10px] uppercase font-bold text-slate-500 mb-1">PSE</p>
+                      {pses.length === 0 ? (
+                        <span className="text-slate-500 italic">Pendente</span>
+                      ) : (
+                        <div className="flex flex-wrap gap-1">
+                          {pses.map((p) =>
+                            p.did_not_train ? (
+                              <span key={p.id} className="px-1.5 py-0.5 rounded bg-amber-950/50 text-amber-300 border border-amber-800 font-semibold">Não treinou</span>
+                            ) : (
+                              <span key={p.id} title={p.training_type} className={`px-1.5 py-0.5 rounded border font-bold ${tone(p.rpe_score || 0, 8, 5)}`}>{p.rpe_score}</span>
+                            )
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <div className="min-w-0 bg-slate-950/60 border border-slate-800 rounded-xl p-2">
+                      <p className="text-[10px] uppercase font-bold text-slate-500 mb-1">PSR</p>
+                      {psr ? (
+                        <span className={`px-1.5 py-0.5 rounded border font-bold ${tone(11 - psr.psr_score, 8, 5)}`}>{psr.psr_score}</span>
+                      ) : (
+                        <span className="text-slate-500 italic">Pendente</span>
+                      )}
+                    </div>
+                    <div className="min-w-0 bg-slate-950/60 border border-slate-800 rounded-xl p-2">
+                      <p className="text-[10px] uppercase font-bold text-slate-500 mb-1">Peso</p>
+                      {weight ? <span className="text-sky-400 font-bold">{weight.weight} kg</span> : <span className="text-slate-500 italic">Pendente</span>}
+                    </div>
+                  </div>
+                  {psr && (
+                    <p className="text-[11px] text-slate-400">
+                      Dor {psr.muscle_soreness_score} • Sono {psr.sleep_score} • Fadiga {psr.fatigue_score} • Estresse {psr.stress_score} • Humor {psr.mood_score}
+                    </p>
+                  )}
+                  {pses.some((p) => p.training_type) && (
+                    <p className="text-[11px] text-slate-400 break-words">
+                      {pses.map((p) => `${p.training_type || 'Treino'}${p.did_not_train ? ' (não treinou)' : `: ${p.rpe_score}`}`).join(' • ')}
+                    </p>
+                  )}
+                  {alerts.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {alerts.map((al) => (
+                        <span key={al.t} className={`text-[10px] font-bold px-2 py-0.5 rounded-md border flex items-center gap-1 ${al.c}`}>
+                          <AlertTriangle className="w-3 h-3" /> {al.t}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left text-sm text-slate-300">
               <thead className="bg-slate-950/80 border-b border-slate-800 text-xs font-semibold uppercase text-slate-400 tracking-wider">
                 <tr>
@@ -357,6 +441,7 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({ onEditAthlete }) =
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
     </div>

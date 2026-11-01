@@ -281,7 +281,7 @@ export const TrainingSchedule: React.FC<TrainingScheduleProps> = ({ readOnly = f
       {!readOnly && !fetchSessions && <WeightReminderSettings />}
 
       {/* Navegação da semana */}
-      <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl flex flex-col md:flex-row md:items-center gap-3">
+      <div data-tour="schedule-week" className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl flex flex-col md:flex-row md:items-center gap-3">
         <div className="flex items-center gap-2">
           <button
             type="button"

@@ -68,7 +68,7 @@ export const WeightReminderSettings: React.FC = () => {
   if (loading) return null;
 
   return (
-    <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl space-y-4">
+    <div data-tour="schedule-reminders" className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl space-y-4">
       {/* Janela de horário das notificações */}
       <div className="space-y-2 pb-4 border-b border-slate-800">
         <div className="flex items-start gap-2">
@@ -123,7 +123,7 @@ export const WeightReminderSettings: React.FC = () => {
                 type="button"
                 aria-pressed={on}
                 onClick={() => setDays(on ? days.filter((x) => x !== d.n) : [...days, d.n])}
-                className={`px-2 py-2 rounded-lg text-xs font-bold border ${
+                className={`px-0 py-2 rounded-lg text-[11px] sm:text-xs font-bold border min-w-0 ${
                   on ? 'bg-sky-500 text-slate-950 border-sky-500' : 'bg-slate-950 text-slate-400 border-slate-700 hover:text-white'
                 }`}
               >

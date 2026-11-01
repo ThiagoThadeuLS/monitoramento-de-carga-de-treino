@@ -125,7 +125,7 @@ export const ThemeSettings: React.FC = () => {
           <p className="text-[10px] uppercase font-bold text-slate-400">
             Personalizada {!presetActive && <span className="text-sky-300 normal-case">• em uso</span>}
           </p>
-          <div className="grid sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {([
               ['accent', 'Cor principal', 'Botões, abas e destaques', accentText, accentBad],
               ['base', 'Cor de fundo', 'Use um tom bem escuro', baseText, baseBad],

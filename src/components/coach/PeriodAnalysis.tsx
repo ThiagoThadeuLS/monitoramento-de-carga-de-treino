@@ -323,7 +323,7 @@ export const PeriodAnalysis: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Filtro de período */}
-      <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl space-y-3">
+      <div data-tour="period-filters" className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl space-y-3">
         <div className="flex flex-col lg:flex-row lg:items-end gap-3">
           <div className="flex items-center gap-2 text-sky-400 lg:pb-2.5">
             <CalendarRange className="w-5 h-5" />
@@ -485,7 +485,7 @@ export const PeriodAnalysis: React.FC = () => {
           <p className="text-sm">Carregando dados do período...</p>
         </div>
       ) : !rangeError && (
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <div data-tour="period-charts" className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           <DailyStatsChart
             title={pseView === 'grouped' ? `${pseStatInfo.title} do grupo por dia` : `${pseStatInfo.title} por tipo de treino`}
             subtitle={`Esforço (1–10) • ${from === to ? brDate(from) : `${brDate(from)} a ${brDate(to)}`} • ${typesLabel}${groupLabel} • sem contar quem não treinou`}
@@ -551,12 +551,12 @@ export const PeriodAnalysis: React.FC = () => {
       )}
 
       {/* Alertas de um único dia */}
-      <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center gap-3">
+      <div data-tour="period-day" className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center gap-3">
         <div className="flex items-center gap-2 flex-1">
           <AlertCircle className="w-5 h-5 text-amber-400" />
           <div>
             <p className="text-sm font-bold text-white">Alertas do dia</p>
-            <p className="text-xs text-slate-400">As duas tabelas abaixo mostram apenas o dia escolhido.</p>
+            <p className="text-xs text-slate-400">As tabelas abaixo mostram apenas o dia escolhido.</p>
           </div>
         </div>
         <div className="flex items-end gap-2">

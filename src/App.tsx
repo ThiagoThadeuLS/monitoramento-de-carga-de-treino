@@ -51,7 +51,7 @@ export function App() {
         )}
       </main>
 
-      <footer className="border-t border-slate-900 py-6 text-center text-xs text-slate-600">
+      <footer className="border-t border-slate-900 py-6 px-4 text-center text-xs text-slate-600">
         Monitoramento de Carga de Treino • Fisiologia & Preparação Física
       </footer>
     </div>

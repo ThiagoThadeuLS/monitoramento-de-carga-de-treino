@@ -4,7 +4,8 @@ import { TrainingSchedule } from './coach/TrainingSchedule';
 import { RemindersCard } from './RemindersCard';
 import { PushState, getPushState, isMobileDevice, relinkPush } from '../lib/push';
 import { NotificationGate } from './NotificationGate';
-import { HelpButton, Tutorial } from './tour/Tutorial';
+import { HelpButton, Tour } from './tour/Tour';
+import { athleteTourSteps } from './tour/steps';
 import { athleteTutorialPending, markAthleteTutorialDone } from '../lib/tutorial';
 import { useClub } from '../lib/club';
 import { PseForm } from './PseForm';
@@ -49,7 +50,7 @@ export const AthleteArea: React.FC = () => {
   const [pushState, setPushState] = useState<PushState | null>(null);
   const readyToken = session && !session.mustChangePassword ? session.token : null;
 
-  // Tutorial: aparece sozinho no primeiro acesso; depois, pelo botão "?"
+  // Tour: aparece sozinho no primeiro acesso; depois, pelo botão "?"
   const [tutorial, setTutorial] = useState(false);
   const readyAthleteId = readyToken ? session!.athlete.id : null;
   useEffect(() => {
@@ -199,13 +200,13 @@ export const AthleteArea: React.FC = () => {
 
   const { athlete } = session;
 
-  if (tutorial) return <Tutorial role="athlete" nome={athlete.nome} onFinish={finishTutorial} />;
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
       <HelpButton onClick={() => setTutorial(true)} />
+      {tutorial && <Tour steps={athleteTourSteps(athlete.nome, setActiveTab)} onClose={finishTutorial} />}
       {/* 1. Atleta logado */}
-      <div className="w-full bg-slate-800/80 border border-slate-700/80 rounded-2xl p-4 shadow-xl backdrop-blur flex items-center justify-between gap-3">
+      <div data-tour="athlete-card" className="w-full bg-slate-800/80 border border-slate-700/80 rounded-2xl p-4 shadow-xl backdrop-blur flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center flex-shrink-0">
             <User className="w-5 h-5 text-emerald-400" />
@@ -232,7 +233,7 @@ export const AthleteArea: React.FC = () => {
       {!MOBILE && <RemindersCard token={session.token} />}
 
       {/* 2. Abas */}
-      <div className="grid grid-cols-4 gap-1.5 sm:gap-2 p-1.5 bg-slate-900/90 border border-slate-800 rounded-2xl">
+      <div data-tour="athlete-tabs" className="grid grid-cols-4 gap-1.5 sm:gap-2 p-1.5 bg-slate-900/90 border border-slate-800 rounded-2xl">
         {ATHLETE_TABS.map(({ id, label, short, icon: Icon, active }) => (
           <button
             key={id}
@@ -251,13 +252,15 @@ export const AthleteArea: React.FC = () => {
 
       {/* 3. Cronograma (somente leitura) ou formulário ativo */}
       {activeTab === 'schedule' ? (
-        <TrainingSchedule
-          readOnly
-          listOnly
-          fetchSessions={(from, to) => getAthleteSchedule(session.token, from, to)}
-        />
+        <div data-tour="athlete-schedule">
+          <TrainingSchedule
+            readOnly
+            listOnly
+            fetchSessions={(from, to) => getAthleteSchedule(session.token, from, to)}
+          />
+        </div>
       ) : (
-      <div className="bg-slate-900/50 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-2xl backdrop-blur">
+      <div data-tour="athlete-form" className="bg-slate-900/50 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-2xl backdrop-blur">
         {activeTab === 'pse' && (
           <PseForm athleteId={athlete.id} athleteName={athlete.nome} onSubmit={handlePseSubmit} />
         )}

@@ -4,7 +4,8 @@ import { exitSupport } from '../lib/platform';
 import { TeamManagement } from './coach/TeamManagement';
 import { GroupManagement } from './coach/GroupManagement';
 import { ThemeSettings } from './coach/ThemeSettings';
-import { HelpButton, Tutorial } from './tour/Tutorial';
+import { HelpButton, Tour } from './tour/Tour';
+import { coachTourSteps } from './tour/steps';
 import { coachTutorialPending, markCoachTutorialDone } from '../lib/tutorial';
 import { CoachChangePassword } from './CoachChangePassword';
 import { ClubCrest, ClubInfo, useClub } from '../lib/club';
@@ -128,7 +129,7 @@ export const CoachArea: React.FC = () => {
 
   const reloadProfile = () => setProfileVersion((v) => v + 1);
 
-  // Tutorial: primeiro acesso de cada treinador (depois, pelo botão "?")
+  // Tour: primeiro acesso de cada treinador (depois, pelo botão "?")
   const [tutorial, setTutorial] = useState(false);
   const tutorialReady =
     !!userId && !!profile?.coach && !profile.support && profile.coach.active && profile.coach.club.status === 'ativo' && !profile.coach.must_change_password;
@@ -249,19 +250,20 @@ export const CoachArea: React.FC = () => {
   const tabs = COACH_TABS;
   const currentTab: CoachTab = tabs.some((t) => t.id === activeTab) ? activeTab : tabs[0].id;
 
-  if (tutorial) return <Tutorial role="coach" nome={coach!.nome} onFinish={finishTutorial} />;
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
       <HelpButton onClick={() => setTutorial(true)} />
+      {tutorial && <Tour steps={coachTourSteps(coach!.nome, isAdmin, setActiveTab, setManagementSection)} onClose={finishTutorial} />}
       {/* Top Banner da Comissão Técnica */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3 min-w-0">
+      <div data-tour="coach-banner" className="bg-slate-900/90 border border-slate-800 rounded-3xl p-4 sm:p-6 shadow-xl flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0 flex-1">
           <ClubCrest club={viewClub} className="w-10 h-12 flex-shrink-0" />
-          <div className="min-w-0">
-            <h2 className="text-lg font-black text-white tracking-tight">Painel da Comissão Técnica</h2>
-            <p className="text-xs text-slate-400 truncate">
-              {viewClub.nome} • <span className="text-sky-400 font-medium">{coach!.nome}</span>{' '}
+          <div className="min-w-0 flex-1">
+            <h2 className="text-base sm:text-lg font-black text-white tracking-tight truncate">Painel da Comissão Técnica</h2>
+            <p className="text-xs text-slate-400 truncate">{viewClub.nome}</p>
+            <p className="text-xs truncate">
+              <span className="text-sky-400 font-medium">{coach!.nome}</span>{' '}
               <span className="text-slate-500">({isAdmin ? 'admin do clube' : 'treinador'})</span>
             </p>
           </div>
@@ -271,16 +273,17 @@ export const CoachArea: React.FC = () => {
         <button
           type="button"
           onClick={handleLogout}
-          className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-red-500/20 text-slate-300 hover:text-red-300 border border-slate-700/60 text-xs font-bold transition-all ml-auto sm:ml-0"
+          className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-red-500/20 text-slate-300 hover:text-red-300 border border-slate-700/60 text-xs font-bold transition-all flex-shrink-0"
+          title="Sair"
         >
           <LogOut className="w-4 h-4" />
-          <span>Sair</span>
+          <span className="hidden sm:inline">Sair</span>
         </button>
       </div>
 
       {/* Navegação entre Módulos do Treinador */}
       {(
-        <div className="grid grid-cols-3 sm:flex sm:flex-wrap sm:items-center gap-1.5 sm:gap-2 border-b border-slate-800 pb-2">
+        <div data-tour="coach-tabs" className="grid grid-cols-3 sm:flex sm:flex-wrap sm:items-center gap-1.5 sm:gap-2 border-b border-slate-800 pb-2">
           {tabs.map(({ id, label, short, icon: Icon }) => (
             <button
               key={id}
@@ -301,7 +304,7 @@ export const CoachArea: React.FC = () => {
       )}
 
       {/* Conteúdo da Aba Ativa (key: recarrega tudo ao trocar de clube/modo suporte) */}
-      <div key={viewClub.id} className="space-y-6">
+      <div key={viewClub.id} data-tour="coach-content" className="space-y-6">
       {currentTab === 'overview' && (
         <DailyOverview onEditAthlete={handleEditAthleteFromOverview} />
       )}
@@ -311,7 +314,7 @@ export const CoachArea: React.FC = () => {
         <div className="space-y-4">
           {/* Seções da Gestão: atletas e grupos para todos; treinadores só para admin */}
           {(
-            <div className={`grid ${isAdmin ? 'grid-cols-4' : 'grid-cols-2'} sm:inline-flex sm:w-auto p-1 bg-slate-900/90 border border-slate-800 rounded-xl`} role="tablist" aria-label="Seções da gestão">
+            <div data-tour="management-tabs" className={`grid ${isAdmin ? 'grid-cols-4' : 'grid-cols-2'} sm:inline-flex sm:w-auto p-1 bg-slate-900/90 border border-slate-800 rounded-xl`} role="tablist" aria-label="Seções da gestão">
               {([['athletes', 'Atletas', Users], ['groups', 'Grupos', UsersRound], ['team', 'Treinadores', UserCog], ['colors', 'Cores', Palette]] as const)
                 .filter(([id]) => (id !== 'team' && id !== 'colors') || isAdmin)
                 .map(([id, label, Icon]) => (
