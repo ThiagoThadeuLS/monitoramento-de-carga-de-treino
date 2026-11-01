@@ -12,11 +12,23 @@ const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPAB
   auth: { persistSession: false },
 });
 
-webpush.setVapidDetails(
-  Deno.env.get('VAPID_SUBJECT') ?? 'mailto:suporte@monitoramento.app',
-  Deno.env.get('VAPID_PUBLIC_KEY')!,
-  Deno.env.get('VAPID_PRIVATE_KEY')!,
-);
+// Confere os segredos e explica o problema em vez de derrubar a função
+function configureVapid(): string | null {
+  const clean = (v: string | undefined) => (v ?? '').trim().replace(/^["']|["']$/g, '');
+  const pub = clean(Deno.env.get('VAPID_PUBLIC_KEY'));
+  const priv = clean(Deno.env.get('VAPID_PRIVATE_KEY'));
+  let subject = clean(Deno.env.get('VAPID_SUBJECT')) || 'mailto:suporte@monitoramento.app';
+  if (!pub) return 'Segredo VAPID_PUBLIC_KEY não encontrado (Edge Functions -> Secrets).';
+  if (!priv) return 'Segredo VAPID_PRIVATE_KEY não encontrado (Edge Functions -> Secrets).';
+  if (!/^(mailto:|https:\/\/)/.test(subject)) subject = subject.includes('@') ? `mailto:${subject}` : subject;
+  try {
+    webpush.setVapidDetails(subject, pub, priv);
+    return null;
+  } catch (err) {
+    return `Segredos VAPID inválidos: ${(err as Error).message}`;
+  }
+}
+const vapidError = configureVapid();
 
 interface Due {
   athlete_id: string;
@@ -36,6 +48,7 @@ interface Subscription {
 }
 
 Deno.serve(async () => {
+  if (vapidError) return Response.json({ ok: false, step: 'segredos', error: vapidError }, { status: 500 });
   const { data: due, error } = await supabase.rpc('push_due_reminders');
   if (error) return Response.json({ ok: false, step: 'push_due_reminders', error: error.message }, { status: 500 });
   const items = (due ?? []) as Due[];

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Bell, BellOff, BellRing, Loader2, Share, PlusSquare, X } from 'lucide-react';
-import { PushState, disablePush, enablePush, getPushState } from '../lib/push';
+import { PushState, enablePush, getPushState } from '../lib/push';
 
 interface RemindersCardProps {
   token: string;
@@ -37,16 +37,6 @@ export const RemindersCard: React.FC<RemindersCardProps> = ({ token }) => {
     }
   };
 
-  const deactivate = async () => {
-    setBusy(true);
-    try {
-      await disablePush(token);
-      setState('off');
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const dismiss = () => {
     setDismissed(true);
     try {
@@ -58,16 +48,11 @@ export const RemindersCard: React.FC<RemindersCardProps> = ({ token }) => {
 
   if (!state || state === 'unsupported') return null;
 
-  // Ativo: linha discreta com opção de desativar
+  // Ativo: fica permanente neste aparelho
   if (state === 'on') {
     return (
-      <div className="flex items-center justify-between gap-3 px-4 py-2.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-xs">
-        <span className="flex items-center gap-2 text-emerald-300 font-semibold">
-          <BellRing className="w-4 h-4" /> Lembretes ativados neste aparelho
-        </span>
-        <button type="button" onClick={deactivate} disabled={busy} className="text-slate-400 hover:text-white disabled:opacity-50">
-          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Desativar'}
-        </button>
+      <div className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-300 font-semibold">
+        <BellRing className="w-4 h-4" /> Lembretes ativados neste aparelho
       </div>
     );
   }

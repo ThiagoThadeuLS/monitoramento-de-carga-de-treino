@@ -4,12 +4,14 @@
 -- Rode depois de supabase_grupos.sql (é o último da lista).
 -- Pode ser executado mais de uma vez e NÃO apaga dados.
 --
--- Regras (horário de Brasília, só entre 06h e 22h):
+-- Regras (horário de Brasília, dentro da janela definida pelo clube; padrão 06h às 22h):
 --  * PSE: 20 min após o fim de cada treino (sem fim: início + 1h30), para quem
 --    é público do treino e ainda não respondeu; repete a cada 30 min.
 --  * PSR: 20 min antes do primeiro treino do dia do atleta; repete a cada 30 min.
 --  * Peso: nos dias/horário definidos pelo clube; repete a cada 30 min.
 --  * Só recebe quem ativou os lembretes no aparelho e já criou a própria senha.
+--  * O aparelho fica ligado ao atleta mesmo depois de sair do app (permanente).
+--  * Pode ser executado de novo para atualizar (ex.: janela de horário por clube).
 --
 -- Depois deste arquivo: publicar a função "enviar-lembretes" e criar o
 -- agendamento (passo a passo no fim do arquivo).
@@ -47,9 +49,22 @@ create table if not exists public.club_reminder_settings (
   club_id uuid primary key default public.current_club_id() references public.clubs(id) on delete cascade,
   weight_days integer[] not null default '{}',   -- 1 = segunda ... 7 = domingo
   weight_time time not null default '07:00',
+  notify_from time not null default '06:00',     -- janela em que as notificações podem sair
+  notify_until time not null default '22:00',
   updated_at timestamp with time zone default now() not null,
   constraint club_reminder_settings_days check (weight_days <@ array[1, 2, 3, 4, 5, 6, 7])
 );
+
+-- Para quem já tinha rodado a versão anterior deste arquivo
+alter table public.club_reminder_settings add column if not exists notify_from time not null default '06:00';
+alter table public.club_reminder_settings add column if not exists notify_until time not null default '22:00';
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'club_reminder_settings_janela') then
+    alter table public.club_reminder_settings
+      add constraint club_reminder_settings_janela check (notify_from < notify_until);
+  end if;
+end $$;
 
 alter table public.push_subscriptions enable row level security;
 alter table public.reminder_log enable row level security;
@@ -111,23 +126,15 @@ begin
 end;
 $$;
 
--- Ao sair do app, o aparelho para de receber lembretes daquele atleta
+-- Sair do app só encerra a sessão: o aparelho continua recebendo os lembretes (permanente)
 create or replace function public.athlete_logout(p_token uuid)
 returns void
-language plpgsql
+language sql
 volatile
 security definer
 set search_path = ''
 as $$
-declare
-  v_athlete uuid;
-begin
-  select s.athlete_id into v_athlete from public.athlete_sessions s where s.token = p_token;
   delete from public.athlete_sessions where token = p_token;
-  if v_athlete is not null and not exists (select 1 from public.athlete_sessions where athlete_id = v_athlete) then
-    delete from public.push_subscriptions where athlete_id = v_athlete;
-  end if;
-end;
 $$;
 
 -- ------------------------------------------------------------
@@ -147,17 +154,17 @@ declare
   v_time time := v_local::time;
   v_repeat interval := interval '29 minutes';  -- 30 min com folga para o agendamento de 5 em 5
 begin
-  if v_time < time '06:00' or v_time >= time '22:00' then
-    return;
-  end if;
-
   return query
   with elegiveis as (
-    -- atleta ativo, de clube ativo, com senha própria e com aparelho cadastrado
+    -- atleta ativo, de clube ativo, com senha própria, com aparelho cadastrado
+    -- e dentro da janela de horário do clube (padrão 06h às 22h)
     select a.id, a.club_id
     from public.athletes a
     join public.clubs k on k.id = a.club_id and k.status = 'ativo'
+    left join public.club_reminder_settings w on w.club_id = a.club_id
     where a.active
+      and v_time >= coalesce(w.notify_from, time '06:00')
+      and v_time < coalesce(w.notify_until, time '22:00')
       and exists (select 1 from public.athlete_credentials c where c.athlete_id = a.id)
       and exists (select 1 from public.push_subscriptions ps where ps.athlete_id = a.id)
   ),

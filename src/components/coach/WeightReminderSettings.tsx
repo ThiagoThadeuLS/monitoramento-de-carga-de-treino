@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Scale, Loader2, Check, BellRing } from 'lucide-react';
+import { Scale, Loader2, Check, BellRing, Clock } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 const DAYS = [
@@ -7,11 +7,13 @@ const DAYS = [
   { n: 5, label: 'Sex' }, { n: 6, label: 'Sáb' }, { n: 7, label: 'Dom' },
 ];
 
-/** Agenda (treinador): dias e horário do lembrete de pesagem enviado aos atletas. */
+/** Agenda (treinador): janela de horário das notificações e lembrete de pesagem do clube. */
 export const WeightReminderSettings: React.FC = () => {
   const [days, setDays] = useState<number[]>([]);
   const [time, setTime] = useState('07:00');
-  const [saved, setSaved] = useState<{ days: number[]; time: string } | null>(null);
+  const [from, setFrom] = useState('06:00');
+  const [until, setUntil] = useState('22:00');
+  const [saved, setSaved] = useState<{ days: number[]; time: string; from: string; until: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -21,34 +23,44 @@ export const WeightReminderSettings: React.FC = () => {
     if (!supabase) return;
     supabase
       .from('club_reminder_settings')
-      .select('weight_days, weight_time')
+      .select('weight_days, weight_time, notify_from, notify_until')
       .maybeSingle()
       .then(({ data, error }) => {
         if (error) {
           if (/club_reminder_settings/.test(error.message)) setError('Lembretes ainda não ativados no banco (supabase_lembretes.sql).');
         } else if (data) {
           const t = String(data.weight_time).slice(0, 5);
+          const f = String(data.notify_from ?? '06:00').slice(0, 5);
+          const u = String(data.notify_until ?? '22:00').slice(0, 5);
           setDays(data.weight_days ?? []);
           setTime(t);
-          setSaved({ days: data.weight_days ?? [], time: t });
+          setFrom(f);
+          setUntil(u);
+          setSaved({ days: data.weight_days ?? [], time: t, from: f, until: u });
         }
         setLoading(false);
       });
   }, []);
 
-  const dirty = !saved || saved.time !== time || saved.days.slice().sort().join() !== days.slice().sort().join();
+  const dirty =
+    !saved || saved.time !== time || saved.from !== from || saved.until !== until ||
+    saved.days.slice().sort().join() !== days.slice().sort().join();
+  const windowError = from >= until ? 'O início precisa ser antes do fim.' : '';
 
   const save = async () => {
-    if (!supabase) return;
+    if (!supabase || windowError) return;
     setSaving(true);
     setError('');
     const sorted = [...days].sort();
     const { error } = await supabase
       .from('club_reminder_settings')
-      .upsert({ weight_days: sorted, weight_time: time, updated_at: new Date().toISOString() }, { onConflict: 'club_id' });
+      .upsert(
+        { weight_days: sorted, weight_time: time, notify_from: from, notify_until: until, updated_at: new Date().toISOString() },
+        { onConflict: 'club_id' }
+      );
     setSaving(false);
     if (error) return setError(/row-level security/.test(error.message) ? 'Sem permissão para alterar (modo somente leitura?).' : `Erro: ${error.message}`);
-    setSaved({ days: sorted, time });
+    setSaved({ days: sorted, time, from, until });
     setOk(true);
     setTimeout(() => setOk(false), 2500);
   };
@@ -56,7 +68,39 @@ export const WeightReminderSettings: React.FC = () => {
   if (loading) return null;
 
   return (
-    <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl space-y-3">
+    <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl space-y-4">
+      {/* Janela de horário das notificações */}
+      <div className="space-y-2 pb-4 border-b border-slate-800">
+        <div className="flex items-start gap-2">
+          <Clock className="w-5 h-5 text-sky-400 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-bold text-white">Horário das notificações</p>
+            <p className="text-xs text-slate-400">
+              Os atletas só recebem lembretes (PSE, bem-estar e pesagem) dentro deste horário. Fora dele, nenhum aviso é enviado.
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+          <label htmlFor="notif-de">das</label>
+          <input
+            id="notif-de"
+            type="time"
+            value={from}
+            onChange={(e) => setFrom(e.target.value)}
+            className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+          />
+          <label htmlFor="notif-ate">às</label>
+          <input
+            id="notif-ate"
+            type="time"
+            value={until}
+            onChange={(e) => setUntil(e.target.value)}
+            className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+          />
+        </div>
+        {windowError && <p className="text-xs text-red-300">{windowError}</p>}
+      </div>
+
       <div className="flex items-start gap-2">
         <Scale className="w-5 h-5 text-sky-400 flex-shrink-0 mt-0.5" />
         <div>
@@ -100,7 +144,7 @@ export const WeightReminderSettings: React.FC = () => {
           <button
             type="button"
             onClick={save}
-            disabled={saving || !dirty}
+            disabled={saving || !dirty || !!windowError}
             className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 text-xs font-bold disabled:opacity-40"
           >
             {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : ok ? <Check className="w-3.5 h-3.5" /> : null}

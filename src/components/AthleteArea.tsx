@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Flame, HeartPulse, Scale, ShieldAlert, LogOut, Loader2, User, CalendarDays } from 'lucide-react';
 import { TrainingSchedule } from './coach/TrainingSchedule';
 import { RemindersCard } from './RemindersCard';
-import { disablePush } from '../lib/push';
+import { PushState, getPushState, isMobileDevice, relinkPush } from '../lib/push';
+import { NotificationGate } from './NotificationGate';
 import { useClub } from '../lib/club';
 import { PseForm } from './PseForm';
 import { PsrForm } from './PsrForm';
@@ -36,9 +37,29 @@ const INITIAL_TAB: AthleteTab | null = (() => {
   return map[new URLSearchParams(window.location.search).get('aba') ?? ''] ?? null;
 })();
 
+const MOBILE = isMobileDevice();
+
 export const AthleteArea: React.FC = () => {
   const [session, setSession] = useState<AthleteSession | null>(null);
   const { setClub } = useClub();
+
+  // Notificações neste aparelho: confere o estado e religa ao atleta que entrou (sem perguntar de novo)
+  const [pushState, setPushState] = useState<PushState | null>(null);
+  const readyToken = session && !session.mustChangePassword ? session.token : null;
+  useEffect(() => {
+    if (!readyToken) return;
+    let cancelled = false;
+    getPushState()
+      .then((st) => {
+        if (cancelled) return;
+        setPushState(st);
+        if (st === 'on') relinkPush(readyToken);
+      })
+      .catch(() => !cancelled && setPushState('unsupported'));
+    return () => {
+      cancelled = true;
+    };
+  }, [readyToken]);
 
   // Cabeçalho mostra o clube do atleta logado
   useEffect(() => {
@@ -62,10 +83,8 @@ export const AthleteArea: React.FC = () => {
   }, []);
 
   const handleLogout = async () => {
-    if (session) {
-      await disablePush(session.token).catch(() => undefined); // este aparelho para de receber lembretes
-      await logoutAthlete(session.token).catch(() => undefined);
-    }
+    // As notificações continuam ativas no aparelho (permanente); só a sessão é encerrada
+    if (session) await logoutAthlete(session.token).catch(() => undefined);
     setSession(null);
     setActiveTab('pse');
   };
@@ -148,6 +167,18 @@ export const AthleteArea: React.FC = () => {
     );
   }
 
+  // Celular: só usa o app depois de aceitar as notificações
+  if (MOBILE && pushState !== 'on') {
+    if (pushState === null) {
+      return (
+        <div className="py-24 flex flex-col items-center justify-center gap-3 text-slate-400">
+          <Loader2 className="w-8 h-8 animate-spin text-emerald-400" />
+        </div>
+      );
+    }
+    return <NotificationGate token={session.token} state={pushState} onStateChange={setPushState} onLogout={handleLogout} />;
+  }
+
   const { athlete } = session;
 
   return (
@@ -176,7 +207,8 @@ export const AthleteArea: React.FC = () => {
       </div>
 
       {/* Lembretes no celular */}
-      <RemindersCard token={session.token} />
+      {/* Computador: lembretes opcionais (no celular já são obrigatórios) */}
+      {!MOBILE && <RemindersCard token={session.token} />}
 
       {/* 2. Abas */}
       <div className="grid grid-cols-4 gap-1.5 sm:gap-2 p-1.5 bg-slate-900/90 border border-slate-800 rounded-2xl">

@@ -13,6 +13,10 @@ export type PushState =
 export const isIOS = () =>
   /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
+/** Celular ou tablet (no computador as notificações são opcionais). */
+export const isMobileDevice = () =>
+  isIOS() || /Android|Mobi|iPhone|iPod/i.test(navigator.userAgent);
+
 export const isStandalone = () =>
   window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone === true;
 
@@ -49,17 +53,7 @@ export async function getPushState(): Promise<PushState> {
   return (await currentSubscription()) ? 'on' : 'off';
 }
 
-/** Pede permissão, cria a assinatura neste aparelho e salva para o atleta logado. */
-export async function enablePush(token: string): Promise<PushState> {
-  const permission = await Notification.requestPermission();
-  if (permission !== 'granted') return permission === 'denied' ? 'denied' : 'off';
-
-  const reg = (await navigator.serviceWorker.getRegistration('/')) ?? (await navigator.serviceWorker.register('/sw.js'));
-  await navigator.serviceWorker.ready;
-  const sub =
-    (await reg.pushManager.getSubscription()) ??
-    (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: base64UrlToUint8Array(VAPID_PUBLIC_KEY) }));
-
+async function saveSubscription(token: string, sub: PushSubscription) {
   const { error } = await supabase!.rpc('athlete_save_push', {
     p_token: token,
     p_endpoint: sub.endpoint,
@@ -67,6 +61,39 @@ export async function enablePush(token: string): Promise<PushState> {
     p_auth: toBase64Url(sub.getKey('auth')),
     p_user_agent: navigator.userAgent,
   });
+  return error;
+}
+
+/**
+ * Aparelho que já aceitou as notificações: liga de novo ao atleta que entrou,
+ * sem perguntar outra vez (a permissão fica permanente no aparelho).
+ */
+export async function relinkPush(token: string): Promise<void> {
+  if (!('serviceWorker' in navigator) || !supabase) return;
+  const sub = await currentSubscription().catch(() => null);
+  if (sub) await saveSubscription(token, sub).catch(() => undefined);
+}
+
+/** Pede permissão, cria a assinatura neste aparelho e salva para o atleta logado. */
+export async function enablePush(token: string): Promise<PushState> {
+  const permission = await Notification.requestPermission();
+  if (permission !== 'granted') return permission === 'denied' ? 'denied' : 'off';
+
+  // Sem resposta do serviço de notificações em 20 s (rede ruim, economia de bateria...): avisa em vez de travar
+  const withTimeout = <T,>(p: Promise<T>) =>
+    Promise.race([
+      p,
+      new Promise<T>((_, reject) =>
+        setTimeout(() => reject(new Error('O celular demorou para responder. Confira a internet e toque em "Permitir notificações" de novo.')), 20000)
+      ),
+    ]);
+  const reg = (await navigator.serviceWorker.getRegistration('/')) ?? (await navigator.serviceWorker.register('/sw.js'));
+  await withTimeout(navigator.serviceWorker.ready);
+  const sub =
+    (await reg.pushManager.getSubscription()) ??
+    (await withTimeout(reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: base64UrlToUint8Array(VAPID_PUBLIC_KEY) })));
+
+  const error = await saveSubscription(token, sub);
   if (error) {
     await sub.unsubscribe().catch(() => undefined);
     if (/Could not find the function/.test(error.message)) {
