@@ -127,7 +127,7 @@ export async function enablePush(token: string): Promise<PushState> {
   if (error) {
     await sub.unsubscribe().catch(() => undefined);
     if (/Could not find the function/.test(error.message)) {
-      throw new Error('Os lembretes ainda não foram ativados no banco (supabase_lembretes.sql).');
+      throw new Error('Os lembretes ainda não foram ativados no banco (supabase_completo.sql).');
     }
     throw new Error('Não foi possível ativar os lembretes. Tente novamente.');
   }

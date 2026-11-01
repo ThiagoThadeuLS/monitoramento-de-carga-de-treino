@@ -19,7 +19,7 @@ export function groupError(err: any): string {
   if (/publico_vazio/.test(msg)) return 'Escolha pelo menos um grupo ou atleta para o treino.';
   if (/de_outro_clube/.test(msg)) return 'Grupo ou atleta inválido para este clube.';
   if (/athlete_groups|athlete_group_members|audience/.test(msg) && /(does not exist|Could not find|schema cache)/.test(msg))
-    return 'Os grupos ainda não foram ativados no banco. Rode o arquivo supabase_grupos.sql no Supabase.';
+    return 'Os grupos ainda não foram ativados no banco. Rode o arquivo supabase_completo.sql no Supabase.';
   if (/row-level security/.test(msg)) return 'Sem permissão para alterar (modo somente leitura?).';
   return `Erro: ${msg}`;
 }

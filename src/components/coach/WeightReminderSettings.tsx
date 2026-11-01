@@ -27,7 +27,7 @@ export const WeightReminderSettings: React.FC = () => {
       .maybeSingle()
       .then(({ data, error }) => {
         if (error) {
-          if (/club_reminder_settings/.test(error.message)) setError('Lembretes ainda não ativados no banco (supabase_lembretes.sql).');
+          if (/club_reminder_settings/.test(error.message)) setError('Lembretes ainda não ativados no banco (supabase_completo.sql).');
         } else if (data) {
           const t = String(data.weight_time).slice(0, 5);
           const f = String(data.notify_from ?? '06:00').slice(0, 5);

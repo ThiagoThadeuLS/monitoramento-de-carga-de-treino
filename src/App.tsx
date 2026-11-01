@@ -5,6 +5,11 @@ import { CoachArea } from './components/CoachArea';
 import { ClubProvider } from './lib/club';
 import { ClubSignup } from './components/ClubSignup';
 import { RESTRICTED_PATH, RestrictedArea } from './components/RestrictedArea';
+import { InstallGate } from './components/InstallGate';
+import { isMobileDevice, isStandalone } from './lib/push';
+
+// Celular: só o app instalado (no computador, navegador normal)
+const MOBILE_BROWSER = isMobileDevice() && !isStandalone();
 
 export function App() {
   const [currentView, setCurrentView] = useState<'athlete' | 'coach'>('athlete');
@@ -27,6 +32,9 @@ export function App() {
       </ClubProvider>
     );
   }
+
+  // Exceção: o link de convite de clube abre no navegador para criar a conta
+  if (MOBILE_BROWSER && !clubInviteToken) return <InstallGate />;
 
   return (
     <ClubProvider>

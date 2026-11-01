@@ -1,7 +1,7 @@
 -- ============================================================
 -- DADOS FICTÍCIOS PARA TESTE: 50 ATLETAS + PSE + PSR (BEM-ESTAR)
 -- Como aplicar: Supabase -> SQL Editor -> New query -> cole este arquivo -> Run.
--- Rode depois de supabase_login_atleta.sql, supabase_cronograma.sql e supabase_multiclube.sql.
+-- Rode depois de supabase_completo.sql.
 --
 -- Baseado na programação real de 19/10 a 31/10/2026 (20 treinos, exportada
 -- do cronograma). Os treinos estão escritos aqui dentro, então o resultado é o
@@ -47,7 +47,7 @@ begin
 end;
 $$;
 
--- Atletas do Minas Tênis Clube (clube criado em supabase_multiclube.sql)
+-- Atletas do Minas Tênis Clube (clube criado em supabase_completo.sql)
 insert into public.athletes (nome, cpf, classe, categoria, celular, sexo, active, club_id)
 select
   nomes.primeiro || ' ' || sobrenomes.ultimo || ' ' || sobrenomes2.ultimo,

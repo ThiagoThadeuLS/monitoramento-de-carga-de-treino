@@ -97,7 +97,7 @@ export const TrainingSchedule: React.FC<TrainingScheduleProps> = ({ readOnly = f
     if (/publico_vazio|de_outro_clube/.test(msg)) return groupError(err);
     if (msg.includes('fora_da_janela')) return 'Só é possível programar a semana atual e a próxima (a semana passada fica só para consulta).';
     if (err?.code === 'PGRST205' || msg.includes('training_sessions') || msg.includes('athlete_get_schedule') || err?.code === 'migracao_pendente')
-      return 'O cronograma ainda não foi ativado no banco. Rode o arquivo supabase_cronograma.sql no Supabase.';
+      return 'O cronograma ainda não foi ativado no banco. Rode o arquivo supabase_completo.sql no Supabase.';
     return err?.code === 'sessao_invalida' ? msg : `Erro: ${msg}`;
   };
 

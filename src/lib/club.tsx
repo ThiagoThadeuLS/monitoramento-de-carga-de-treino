@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import { applyTheme, fetchClubTheme } from './theme';
 import { Activity } from 'lucide-react';
 
 // Nome da plataforma (aparece antes do login e para quem não tem clube)
@@ -13,14 +14,26 @@ export interface ClubInfo {
 interface ClubContextValue {
   club: ClubInfo | null;
   setClub: (club: ClubInfo | null) => void;
+  reloadTheme: () => void;
 }
 
-const ClubContext = createContext<ClubContextValue>({ club: null, setClub: () => undefined });
+const ClubContext = createContext<ClubContextValue>({ club: null, setClub: () => undefined, reloadTheme: () => undefined });
 
 /** Guarda o clube de quem está logado (treinador ou atleta) para o cabeçalho e as telas. */
 export const ClubProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [club, setClub] = useState<ClubInfo | null>(null);
-  return <ClubContext.Provider value={{ club, setClub }}>{children}</ClubContext.Provider>;
+  const [themeVersion, setThemeVersion] = useState(0);
+  // Aplica a paleta do clube de quem entrou (sem clube: mantém a última deste aparelho)
+  useEffect(() => {
+    if (!club?.id) return;
+    let cancelled = false;
+    fetchClubTheme(club.id).then((t) => !cancelled && applyTheme(t));
+    return () => {
+      cancelled = true;
+    };
+  }, [club?.id, themeVersion]);
+  const reloadTheme = () => setThemeVersion((v) => v + 1);
+  return <ClubContext.Provider value={{ club, setClub, reloadTheme }}>{children}</ClubContext.Provider>;
 };
 
 export const useClub = () => useContext(ClubContext);

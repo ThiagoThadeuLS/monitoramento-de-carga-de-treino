@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { LogOut, BarChart3, Users, Loader2, LineChart, CalendarDays, Shield, AlertTriangle, UserCog, Settings2, UsersRound } from 'lucide-react';
+import { LogOut, BarChart3, Users, Loader2, LineChart, CalendarDays, Shield, AlertTriangle, UserCog, Settings2, UsersRound, Palette } from 'lucide-react';
 import { exitSupport } from '../lib/platform';
 import { TeamManagement } from './coach/TeamManagement';
 import { GroupManagement } from './coach/GroupManagement';
+import { ThemeSettings } from './coach/ThemeSettings';
+import { HelpButton, Tutorial } from './tour/Tutorial';
+import { coachTutorialPending, markCoachTutorialDone } from '../lib/tutorial';
 import { CoachChangePassword } from './CoachChangePassword';
 import { ClubCrest, ClubInfo, useClub } from '../lib/club';
 import { supabase } from '../lib/supabase';
@@ -15,7 +18,7 @@ import { AdversaryManagement } from './coach/AdversaryManagement';
 import { Athlete } from '../types';
 
 type CoachTab = 'overview' | 'period' | 'schedule' | 'management' | 'adversaries';
-type ManagementSection = 'athletes' | 'groups' | 'team';
+type ManagementSection = 'athletes' | 'groups' | 'team' | 'colors';
 
 const COACH_TABS: { id: CoachTab; label: string; short: string; icon: typeof BarChart3 }[] = [
   { id: 'overview', label: 'Visão Geral do Dia', short: 'Dia', icon: BarChart3 },
@@ -98,7 +101,7 @@ export const CoachArea: React.FC = () => {
         console.error('Erro ao carregar perfil:', error);
         setProfileError(
           error.message?.includes('my_profile')
-            ? 'A estrutura de clubes ainda não foi ativada no banco. Rode o arquivo supabase_multiclube.sql no Supabase.'
+            ? 'A estrutura de clubes ainda não foi ativada no banco. Rode o arquivo supabase_completo.sql no Supabase.'
             : 'Não foi possível carregar seu perfil. Tente novamente.'
         );
         setProfile({ is_owner: false, coach: null });
@@ -124,6 +127,23 @@ export const CoachArea: React.FC = () => {
   };
 
   const reloadProfile = () => setProfileVersion((v) => v + 1);
+
+  // Tutorial: primeiro acesso de cada treinador (depois, pelo botão "?")
+  const [tutorial, setTutorial] = useState(false);
+  const tutorialReady =
+    !!userId && !!profile?.coach && !profile.support && profile.coach.active && profile.coach.club.status === 'ativo' && !profile.coach.must_change_password;
+  useEffect(() => {
+    if (!tutorialReady || !userId) return;
+    let cancelled = false;
+    coachTutorialPending(userId).then((p) => !cancelled && p && setTutorial(true));
+    return () => {
+      cancelled = true;
+    };
+  }, [tutorialReady, userId]);
+  const finishTutorial = () => {
+    setTutorial(false);
+    if (userId) markCoachTutorialDone(userId).catch(() => undefined);
+  };
 
   const handleExitSupport = async () => {
     try {
@@ -229,8 +249,11 @@ export const CoachArea: React.FC = () => {
   const tabs = COACH_TABS;
   const currentTab: CoachTab = tabs.some((t) => t.id === activeTab) ? activeTab : tabs[0].id;
 
+  if (tutorial) return <Tutorial role="coach" nome={coach!.nome} onFinish={finishTutorial} />;
+
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
+      <HelpButton onClick={() => setTutorial(true)} />
       {/* Top Banner da Comissão Técnica */}
       <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3 min-w-0">
@@ -288,9 +311,9 @@ export const CoachArea: React.FC = () => {
         <div className="space-y-4">
           {/* Seções da Gestão: atletas e grupos para todos; treinadores só para admin */}
           {(
-            <div className={`grid ${isAdmin ? 'grid-cols-3' : 'grid-cols-2'} sm:inline-flex sm:w-auto p-1 bg-slate-900/90 border border-slate-800 rounded-xl`} role="tablist" aria-label="Seções da gestão">
-              {([['athletes', 'Atletas', Users], ['groups', 'Grupos', UsersRound], ['team', 'Treinadores', UserCog]] as const)
-                .filter(([id]) => id !== 'team' || isAdmin)
+            <div className={`grid ${isAdmin ? 'grid-cols-4' : 'grid-cols-2'} sm:inline-flex sm:w-auto p-1 bg-slate-900/90 border border-slate-800 rounded-xl`} role="tablist" aria-label="Seções da gestão">
+              {([['athletes', 'Atletas', Users], ['groups', 'Grupos', UsersRound], ['team', 'Treinadores', UserCog], ['colors', 'Cores', Palette]] as const)
+                .filter(([id]) => (id !== 'team' && id !== 'colors') || isAdmin)
                 .map(([id, label, Icon]) => (
                 <button
                   key={id}
@@ -298,7 +321,7 @@ export const CoachArea: React.FC = () => {
                   role="tab"
                   aria-selected={managementSection === id}
                   onClick={() => setManagementSection(id)}
-                  className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-colors ${
+                  className={`flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 rounded-lg text-[11px] sm:text-sm font-bold transition-colors ${
                     managementSection === id ? 'bg-sky-500 text-slate-950' : 'text-slate-400 hover:text-white'
                   }`}
                 >
@@ -309,12 +332,13 @@ export const CoachArea: React.FC = () => {
             </div>
           )}
           {managementSection === 'groups' && <GroupManagement />}
-          {(managementSection === 'athletes' || (managementSection === 'team' && !isAdmin)) && (
+          {(managementSection === 'athletes' || ((managementSection === 'team' || managementSection === 'colors') && !isAdmin)) && (
             <AthleteManagement
               athleteToEdit={athleteToEdit}
               onClearAthleteToEdit={() => setAthleteToEdit(null)}
             />
           )}
+          {isAdmin && managementSection === 'colors' && <ThemeSettings />}
           {isAdmin && managementSection === 'team' && (
             <TeamManagement currentUserId={session.user.id} club={coach!.club} onClubChanged={reloadProfile} />
           )}

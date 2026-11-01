@@ -7,6 +7,9 @@ export default {
   theme: {
     extend: {
       colors: {
+        // Cores do clube (paleta escolhida na Gestão): variáveis definidas em src/lib/theme.ts
+        sky: Object.fromEntries([50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950].map((s) => [s, `rgb(var(--sky-${s}) / <alpha-value>)`])),
+        slate: Object.fromEntries([50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950].map((s) => [s, `rgb(var(--slate-${s}) / <alpha-value>)`])),
         brand: {
           50: '#f0fdf4',
           100: '#dcfce7',

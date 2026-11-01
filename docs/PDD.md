@@ -102,7 +102,7 @@ Substituir o registro manual em planilha pelo autorregistro digital do atleta, c
 - **4.1 Tipo:** Aplicação web CRUD (sem componente de IA/LLM nesta versão)
 - **4.2 Orquestrador:** N/A — frontend React + Vite consumindo Supabase diretamente via SDK
 - **4.3 Modelos de IA:** Não aplicável nesta versão
-- **4.4 Base de dados:** Postgres (Supabase), schema em `supabase_schema.sql`, RLS habilitado em todas as tabelas
+- **4.4 Base de dados:** Postgres (Supabase), schema em `supabase_completo.sql`, RLS habilitado em todas as tabelas
 - **4.5 Execução de código:** Validações client-side (React) + constraints de banco (ex: `weight between 30 and 250`, `rpe_score between 1 and 10`)
 - **4.6 Memória:** `localStorage` usado apenas para persistir a seleção do atleta entre sessões (sem dado sensível)
 - **4.7 Canal de entrega:** Web app responsivo (Vite build), hospedado na Vercel
@@ -177,7 +177,7 @@ Substituir o registro manual em planilha pelo autorregistro digital do atleta, c
 ## 8. Checklist de Deploy
 
 - [ ] Ambiente de teste (Supabase project separado ou branch) configurado
-- [ ] `supabase_schema.sql` aplicado e RLS validado em produção
+- [ ] `supabase_completo.sql` aplicado e RLS validado em produção
 - [ ] Variáveis de ambiente (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`) configuradas na Vercel
 - [ ] Alteração pendente em `src/components/AthleteArea.tsx` revisada, testada e commitada
 - [ ] Casos UAT (seção 7) executados manualmente e aprovados

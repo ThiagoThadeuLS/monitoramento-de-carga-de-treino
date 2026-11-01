@@ -7,6 +7,7 @@ import { ChartLine, DailyStatsChart, DailyPoint, ExpectedPoint, ExpectedSwatch, 
 import { TRAINING_TYPES } from '../../data/constants';
 import { STATS, formatNumber, mean, median, modes } from '../../lib/stats';
 import { sessionAppliesTo, useClubGroups } from '../../lib/groups';
+import { MissingResponses } from './MissingResponses';
 import { AthleteSelection, EMPTY_SELECTION, GroupFilter, resolveSelection, selectionLabel } from './GroupFilter';
 
 const PSE_LIMIT = 6; // tabela: PSE acima de 6
@@ -160,7 +161,7 @@ export const PeriodAnalysis: React.FC = () => {
     setError('');
     try {
       const [athleteRes, pseRows, psrRows] = await Promise.all([
-        supabase.from('athletes').select('id, nome, classe, categoria'),
+        supabase.from('athletes').select('id, nome, classe, categoria, active'),
         fetchRange<PseRecord>('pse_records', from, to),
         fetchRange<PsrRecord>('psr_records', from, to),
       ]);
@@ -534,6 +535,19 @@ export const PeriodAnalysis: React.FC = () => {
             lines={psrLines}
           />
         </div>
+      )}
+
+      {/* Quem não respondeu dentro do prazo (período + seleção) */}
+      {!loading && !error && !rangeError && (
+        <MissingResponses
+          days={days}
+          athletes={Array.from(athletes.values())}
+          selected={selected}
+          groups={groups}
+          sessions={sessions}
+          pse={pse}
+          psr={psr}
+        />
       )}
 
       {/* Alertas de um único dia */}

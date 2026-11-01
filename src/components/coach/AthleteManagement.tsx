@@ -154,7 +154,7 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
       if (err.code === '23505' && String(err.message).includes('cpf')) {
         setModalError('Já existe um atleta cadastrado com este CPF.');
       } else if (err.code === 'PGRST204' || String(err.message).includes("'cpf' column")) {
-        setModalError('O banco ainda não tem o campo CPF. Rode o arquivo supabase_login_atleta.sql no Supabase.');
+        setModalError('O banco ainda não tem o campo CPF. Rode o arquivo supabase_completo.sql no Supabase.');
       } else {
         setModalError(`Erro ao salvar atleta: ${err.message}`);
       }

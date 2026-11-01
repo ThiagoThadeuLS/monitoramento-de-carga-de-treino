@@ -193,19 +193,9 @@ Legenda: ✅ implementado e testado localmente (banco em Postgres local simuland
 
 ## 9. Implantação (referência técnica)
 
-**Arquivos SQL** — rodar no SQL Editor do Supabase, nesta ordem:
-
-| # | Arquivo | Conteúdo |
-|---|---|---|
-| 1 | `supabase_schema.sql` | Tabelas base. ⚠️ **Apaga e recria** as tabelas — só na criação inicial |
-| 2 | `supabase_login_atleta.sql` | CPF, login do atleta, envio de respostas por token |
-| 3 | `supabase_cronograma.sql` | Cronograma, janela de semanas, limpeza, leitura pelo atleta |
-| 4 | `supabase_multiclube.sql` | Clubes, donos, treinadores, separação por clube; dados atuais → Minas |
-| 5 | `supabase_equipe.sql` | Convites internos, bloqueio de cadastro sem convite, gestão da equipe |
-| 6 | `supabase_plataforma.sql` | Convite de clube, modo suporte, registro de ações, escudos |
-| — | `supabase_dados_ficticios.sql` | Opcional: 50 atletas fictícios com PSE/PSR (removíveis) |
-
-Os arquivos 2 a 6 podem ser executados mais de uma vez sem apagar dados. Se algum deles for executado de novo, executar em seguida os arquivos posteriores da lista.
+**Banco de dados:** um único arquivo, `supabase_completo.sql`. Colar inteiro no SQL Editor do Supabase e rodar.
+Serve para banco novo e para atualizar o atual, pode ser executado várias vezes e não apaga dados. Sempre que o arquivo mudar, rodar de novo inteiro.
+Opcional: `supabase_dados_ficticios.sql` (50 atletas fictícios com PSE/PSR, removíveis).
 
 **Configuração do Supabase (Authentication → Sign In / Providers):**
 - "Allow new users to sign up": **ligado** (o banco barra cadastros sem convite).

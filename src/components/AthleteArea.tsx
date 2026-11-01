@@ -4,6 +4,8 @@ import { TrainingSchedule } from './coach/TrainingSchedule';
 import { RemindersCard } from './RemindersCard';
 import { PushState, getPushState, isMobileDevice, relinkPush } from '../lib/push';
 import { NotificationGate } from './NotificationGate';
+import { HelpButton, Tutorial } from './tour/Tutorial';
+import { athleteTutorialPending, markAthleteTutorialDone } from '../lib/tutorial';
 import { useClub } from '../lib/club';
 import { PseForm } from './PseForm';
 import { PsrForm } from './PsrForm';
@@ -46,6 +48,22 @@ export const AthleteArea: React.FC = () => {
   // Notificações neste aparelho: confere o estado e religa ao atleta que entrou (sem perguntar de novo)
   const [pushState, setPushState] = useState<PushState | null>(null);
   const readyToken = session && !session.mustChangePassword ? session.token : null;
+
+  // Tutorial: aparece sozinho no primeiro acesso; depois, pelo botão "?"
+  const [tutorial, setTutorial] = useState(false);
+  const readyAthleteId = readyToken ? session!.athlete.id : null;
+  useEffect(() => {
+    if (!readyToken || !readyAthleteId) return;
+    let cancelled = false;
+    athleteTutorialPending(readyToken, readyAthleteId).then((p) => !cancelled && p && setTutorial(true));
+    return () => {
+      cancelled = true;
+    };
+  }, [readyToken, readyAthleteId]);
+  const finishTutorial = () => {
+    setTutorial(false);
+    if (readyToken && readyAthleteId) markAthleteTutorialDone(readyToken, readyAthleteId).catch(() => undefined);
+  };
   useEffect(() => {
     if (!readyToken) return;
     let cancelled = false;
@@ -181,8 +199,11 @@ export const AthleteArea: React.FC = () => {
 
   const { athlete } = session;
 
+  if (tutorial) return <Tutorial role="athlete" nome={athlete.nome} onFinish={finishTutorial} />;
+
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
+      <HelpButton onClick={() => setTutorial(true)} />
       {/* 1. Atleta logado */}
       <div className="w-full bg-slate-800/80 border border-slate-700/80 rounded-2xl p-4 shadow-xl backdrop-blur flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">

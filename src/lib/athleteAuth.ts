@@ -4,7 +4,7 @@ import type { ClubInfo } from './club';
 import { PseRecord, PsrRecord, TrainingSession, WeightRecord } from '../types';
 
 // Login do atleta: CPF + senha, validados por funções no banco
-// (ver supabase_login_atleta.sql). Atletas não usam o Supabase Auth,
+// (ver supabase_completo.sql). Atletas não usam o Supabase Auth,
 // que fica reservado à comissão técnica.
 
 export interface AthleteSession {
