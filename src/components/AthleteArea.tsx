@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Flame, HeartPulse, Scale, ShieldAlert, LogOut, Loader2, User, CalendarDays } from 'lucide-react';
 import { TrainingSchedule } from './coach/TrainingSchedule';
+import { RemindersCard } from './RemindersCard';
+import { disablePush } from '../lib/push';
 import { useClub } from '../lib/club';
 import { PseForm } from './PseForm';
 import { PsrForm } from './PsrForm';
@@ -28,6 +30,12 @@ const ATHLETE_TABS: { id: AthleteTab; label: string; short: string; icon: typeof
   { id: 'schedule', label: 'Cronograma', short: 'Agenda', icon: CalendarDays, active: 'bg-violet-500 text-slate-950 shadow-md shadow-violet-500/20' },
 ];
 
+// Aba pedida pelo link da notificação (?aba=...), lida uma única vez quando o app abre
+const INITIAL_TAB: AthleteTab | null = (() => {
+  const map: Record<string, AthleteTab> = { pse: 'pse', psr: 'psr', peso: 'weight', agenda: 'schedule' };
+  return map[new URLSearchParams(window.location.search).get('aba') ?? ''] ?? null;
+})();
+
 export const AthleteArea: React.FC = () => {
   const [session, setSession] = useState<AthleteSession | null>(null);
   const { setClub } = useClub();
@@ -38,7 +46,11 @@ export const AthleteArea: React.FC = () => {
   }, [session?.club?.id]);
   const [checkingSession, setCheckingSession] = useState(isSupabaseConfigured);
   const [notice, setNotice] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<AthleteTab>('pse');
+  // Ao tocar numa notificação o app abre com ?aba=pse|psr|peso (lido uma vez ao carregar)
+  const [activeTab, setActiveTab] = useState<AthleteTab>(INITIAL_TAB ?? 'pse');
+  useEffect(() => {
+    if (INITIAL_TAB) window.history.replaceState(null, '', window.location.pathname);
+  }, []);
 
   // Retoma a sessão salva neste aparelho (atleta não precisa logar todo dia)
   useEffect(() => {
@@ -50,7 +62,10 @@ export const AthleteArea: React.FC = () => {
   }, []);
 
   const handleLogout = async () => {
-    if (session) await logoutAthlete(session.token).catch(() => undefined);
+    if (session) {
+      await disablePush(session.token).catch(() => undefined); // este aparelho para de receber lembretes
+      await logoutAthlete(session.token).catch(() => undefined);
+    }
     setSession(null);
     setActiveTab('pse');
   };
@@ -159,6 +174,9 @@ export const AthleteArea: React.FC = () => {
           <span>Sair</span>
         </button>
       </div>
+
+      {/* Lembretes no celular */}
+      <RemindersCard token={session.token} />
 
       {/* 2. Abas */}
       <div className="grid grid-cols-4 gap-1.5 sm:gap-2 p-1.5 bg-slate-900/90 border border-slate-800 rounded-2xl">

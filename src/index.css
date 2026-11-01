@@ -23,3 +23,11 @@ input[type="range"]::-moz-range-thumb {
   @apply w-6 h-6 rounded-full border-2 border-white shadow-lg cursor-pointer transition-all active:scale-125;
   background-color: var(--thumb-color, #10b981);
 }
+
+/* App instalado no iPhone (tela cheia): afasta o cabeçalho do relógio/entalhe */
+header {
+  padding-top: env(safe-area-inset-top);
+}
+main {
+  padding-bottom: env(safe-area-inset-bottom);
+}

@@ -1,0 +1,6 @@
+# Configuração usada pelo Supabase CLI ao publicar as funções.
+# A função de lembretes é chamada pelo agendamento do próprio banco (pg_cron),
+# sem usuário logado; ela não recebe dados de quem chama e não envia nada fora
+# das regras do banco (push_due_reminders), então não exige token.
+[functions.enviar-lembretes]
+verify_jwt = false

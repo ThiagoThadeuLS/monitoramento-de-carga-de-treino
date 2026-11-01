@@ -5,6 +5,7 @@ import {
 import { supabase } from '../../lib/supabase';
 import { addDaysISO, scheduleWeekBounds, startOfWeekISO, todayLocalISO } from '../../lib/date';
 import { TRAINING_TYPES } from '../../data/constants';
+import { WeightReminderSettings } from './WeightReminderSettings';
 import { TrainingSession } from '../../types';
 import { AthleteGroup, AthleteRef, audienceLabel, groupError, listActiveAthletes, listGroups } from '../../lib/groups';
 import { Users as UsersIcon, Search } from 'lucide-react';
@@ -276,6 +277,9 @@ export const TrainingSchedule: React.FC<TrainingScheduleProps> = ({ readOnly = f
 
   return (
     <div className="space-y-4">
+      {/* Lembrete de pesagem (só o treinador do clube) */}
+      {!readOnly && !fetchSessions && <WeightReminderSettings />}
+
       {/* Navegação da semana */}
       <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl flex flex-col md:flex-row md:items-center gap-3">
         <div className="flex items-center gap-2">
