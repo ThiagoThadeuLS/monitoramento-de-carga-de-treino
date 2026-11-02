@@ -18,6 +18,8 @@ export interface PseRecord {
   rpe_score: number | null; // 1-10 (null if did_not_train)
   did_not_train: boolean;
   observations?: string;
+  /** Duração do treino em minutos (carga = PSE x minutos) */
+  duration_minutes?: number | null;
   created_at?: string;
 }
 

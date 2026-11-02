@@ -13,7 +13,7 @@ const List: React.FC<{ items: React.ReactNode[] }> = ({ items }) => (
   </ul>
 );
 
-type AthleteTab = 'pse' | 'psr' | 'weight' | 'schedule';
+type AthleteTab = 'pse' | 'psr' | 'weight' | 'schedule' | 'history';
 
 /** Tour do atleta: passa por todas as abas e explica cada uma. */
 export function athleteTourSteps(nome: string, setTab: (t: AthleteTab) => void): TourStep[] {
@@ -36,7 +36,7 @@ export function athleteTourSteps(nome: string, setTab: (t: AthleteTab) => void):
     },
     {
       target: 'athlete-tabs',
-      title: 'As quatro abas',
+      title: 'As abas',
       body: (
         <List
           items={[
@@ -44,6 +44,7 @@ export function athleteTourSteps(nome: string, setTab: (t: AthleteTab) => void):
             <><B>PSR</B>: como você está antes de treinar</>,
             <><B>Peso</B>: registro de pesagem</>,
             <><B>Agenda</B>: treinos programados para você</>,
+            <><B>Histórico</B>: suas respostas e sua evolução</>,
           ]}
         />
       ),
@@ -69,9 +70,10 @@ export function athleteTourSteps(nome: string, setTab: (t: AthleteTab) => void):
       body: (
         <>
           <p>
-            Responda <B>depois de cada treino</B>: escolha o tipo (técnico, randori ou físico) e dê uma nota de 1 a 10 para o quanto foi pesado. Se teve dois
-            treinos, envie duas respostas.
+            Responda <B>depois de cada treino</B>: escolha o tipo (técnico, randori ou físico), confira a <B>duração</B> em minutos (já vem do cronograma) e
+            dê uma nota de 1 a 10 para o quanto foi pesado. Se teve dois treinos, envie duas respostas.
           </p>
+          <p>A nota × a duração é a sua <B>carga de treino</B>, que a comissão técnica acompanha.</p>
           <p>
             Se não treinou, marque <B>Não treinei</B> e escreva o motivo — ele é obrigatório.
           </p>
@@ -98,6 +100,20 @@ export function athleteTourSteps(nome: string, setTab: (t: AthleteTab) => void):
       ),
     },
     {
+      target: 'athlete-history',
+      before: () => setTab('history'),
+      title: 'Histórico',
+      body: (
+        <>
+          <p>Veja suas respostas e a evolução da PSE, PSR, carga e peso nos últimos 7, 30 ou 90 dias.</p>
+          <p>
+            Enviou algo errado hoje? Toque em <B>Corrigir</B>: a resposta é apagada e o formulário abre para enviar de novo. Lá embaixo fica o{' '}
+            <B>termo de uso dos dados</B> que você aceitou.
+          </p>
+        </>
+      ),
+    },
+    {
       before: () => setTab('pse'),
       title: 'Lembretes no celular',
       body: (
@@ -119,7 +135,7 @@ export function athleteTourSteps(nome: string, setTab: (t: AthleteTab) => void):
   ];
 }
 
-type CoachTab = 'overview' | 'period' | 'schedule' | 'management' | 'adversaries';
+type CoachTab = 'overview' | 'period' | 'load' | 'schedule' | 'management' | 'adversaries';
 type Section = 'athletes' | 'groups' | 'team' | 'colors';
 
 /** Tour do treinador: passa por todas as abas e seções da gestão. */
@@ -158,6 +174,7 @@ export function coachTourSteps(
           items={[
             <><B>Dia</B>: respostas de hoje</>,
             <><B>Período</B>: gráficos, alertas e quem não respondeu</>,
+            <><B>Carga</B>: carga interna, ACWR, monotonia e strain</>,
             <><B>Agenda</B>: cronograma e horário dos avisos</>,
             <><B>Adversários</B>: fichas de atletas de outros clubes</>,
             <><B>Gestão</B>: atletas, grupos, treinadores e cores</>,
@@ -183,7 +200,8 @@ export function coachTourSteps(
         <>
           <p>Todas as respostas de cada atleta no dia: cada PSE com o tipo de treino, a PSR e o peso.</p>
           <p>
-            Alertas automáticos: <B>dor muscular</B>, <B>fadiga alta</B> e <B>esforço máximo</B>. O botão de editar leva ao cadastro do atleta.
+            Alertas automáticos: <B>dor muscular</B>, <B>fadiga alta</B> e <B>esforço máximo</B>. Toque no <B>nome</B> para abrir a ficha completa do
+            atleta.
           </p>
         </>
       ),
@@ -198,6 +216,7 @@ export function coachTourSteps(
             <>Datas <B>De / Até</B> ou atalhos (Hoje, 7, 15, 30 dias)</>,
             <>Filtro por <B>grupos ou pessoas</B> — vale para toda a tela</>,
             <>Tipos de treino e modo <B>condensado</B> ou <B>por tipo</B> nos gráficos de PSE</>,
+            <><B>Exportar</B>: baixa PSE (com carga), PSR ou peso em planilha para o Excel</>,
           ]}
         />
       ),
@@ -232,6 +251,43 @@ export function coachTourSteps(
             <><B>PSR abaixo de 5</B> em qualquer variável</>,
           ]}
         />
+      ),
+    },
+    {
+      target: 'load-filters',
+      before: go('load'),
+      title: 'Carga interna',
+      body: (
+        <>
+          <p>
+            A carga de cada treino é <B>PSE × duração em minutos</B> (método de Foster), em UA. Escolha até que dia calcular e quais atletas; o botão{' '}
+            <B>Exportar</B> baixa a tabela.
+          </p>
+          <p>“Como ler os indicadores” explica cada número.</p>
+        </>
+      ),
+    },
+    {
+      target: 'load-cards',
+      title: 'Resumo da carga',
+      body: (
+        <List
+          items={[
+            <>Carga média dos últimos 7 dias por atleta</>,
+            <><B>ACWR</B> do grupo: carga dos 7 dias ÷ média semanal dos 28 dias. Zona ideal: 0,8 a 1,3</>,
+            <>Quantos estão <B>em risco</B> (ACWR acima de 1,5) e com <B>monotonia alta</B> (acima de 2)</>,
+          ]}
+        />
+      ),
+    },
+    {
+      target: 'load-table',
+      title: 'Carga por atleta',
+      body: (
+        <p>
+          Carga aguda, crônica, ACWR, monotonia e strain de cada atleta. Toque no atleta para abrir a <B>ficha</B>: gráficos de carga, ACWR, PSE, PSR e
+          peso, com exportação.
+        </p>
       ),
     },
     {
@@ -273,7 +329,8 @@ export function coachTourSteps(
       body: (
         <p>
           Cadastre atletas com <B>CPF</B>. Eles entram com o CPF e a senha inicial é o <B>nome completo junto, em minúsculas</B>; no primeiro acesso criam a
-          própria senha. Você também pode editar, desativar ou voltar a senha para a inicial.
+          própria senha e aceitam o termo de uso dos dados. Você também pode abrir a <B>ficha</B>, editar, voltar a senha para a inicial e{' '}
+          <B>inativar</B> (bloqueia o acesso e mantém o histórico — excluir apaga tudo).
         </p>
       ),
     },

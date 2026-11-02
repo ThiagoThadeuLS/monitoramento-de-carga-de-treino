@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { UserPlus, Search, Edit3, Trash2, CheckCircle2, AlertCircle, X, Loader2, Phone, IdCard, KeyRound } from 'lucide-react';
+import { UserPlus, Search, Edit3, Trash2, CheckCircle2, AlertCircle, X, Loader2, Phone, IdCard, KeyRound, LineChart, UserX, UserCheck, ShieldAlert } from 'lucide-react';
 import { Athlete } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { CLASSES, CATEGORIAS } from '../../data/constants';
@@ -11,14 +11,20 @@ interface AthleteManagementProps {
   onClearAthleteToEdit?: () => void;
   /** Modo suporte (Área Restrita): só visualiza, sem cadastrar/editar/excluir */
   readOnly?: boolean;
+  /** Abre a ficha individual do atleta */
+  onOpenProfile?: (athleteId: string) => void;
 }
+
+type AthleteRow = Athlete & { terms_accepted_at?: string | null };
 
 export const AthleteManagement: React.FC<AthleteManagementProps> = ({
   athleteToEdit,
   onClearAthleteToEdit,
   readOnly = false,
+  onOpenProfile,
 }) => {
-  const [athletes, setAthletes] = useState<Athlete[]>([]);
+  const [athletes, setAthletes] = useState<AthleteRow[]>([]);
+  const [showInactive, setShowInactive] = useState(false);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -186,8 +192,31 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
     }
   };
 
+  // Inativar: bloqueia o acesso e os lembretes, mas mantém todo o histórico
+  const handleToggleActive = async (athlete: AthleteRow) => {
+    if (!supabase) return;
+    const next = athlete.active === false;
+    const { error } = await supabase.from('athletes').update({ active: next }).eq('id', athlete.id);
+    if (error) {
+      setFeedbackMsg({ type: 'error', text: /row-level security/.test(error.message) ? 'Sem permissão para alterar (modo somente leitura?).' : `Erro: ${error.message}` });
+      return;
+    }
+    setFeedbackMsg({
+      type: 'success',
+      text: next
+        ? `"${athlete.nome}" reativado: volta a entrar no app e a receber lembretes.`
+        : `"${athlete.nome}" inativado: não entra mais no app nem recebe lembretes. O histórico foi mantido.`,
+    });
+    await loadAthletes();
+    setTimeout(() => setFeedbackMsg(null), 5000);
+  };
+
   const handleDeleteAthlete = async (id: string, athleteName: string) => {
-    if (!window.confirm(`Tem certeza que deseja excluir o atleta "${athleteName}"?`)) {
+    if (
+      !window.confirm(
+        `Excluir "${athleteName}" apaga TODO o histórico dele (PSE, PSR e peso) e não pode ser desfeito.\n\nPara só bloquear o acesso e manter o histórico, use "Inativar".\n\nExcluir mesmo assim?`
+      )
+    ) {
       return;
     }
 
@@ -204,12 +233,13 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
   };
 
   const searchDigits = onlyCpfDigits(search);
-  const filteredAthletes = athletes.filter((a) =>
+  const inactiveCount = athletes.filter((a) => a.active === false).length;
+  const filteredAthletes = athletes.filter((a) => (showInactive || a.active !== false) && (
     a.nome.toLowerCase().includes(search.toLowerCase()) ||
     (searchDigits.length >= 3 && a.cpf?.includes(searchDigits)) ||
     (a.categoria && a.categoria.toLowerCase().includes(search.toLowerCase())) ||
     (a.classe && a.classe.toLowerCase().includes(search.toLowerCase()))
-  );
+  ));
 
   return (
     <div className="space-y-6">
@@ -225,6 +255,13 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
             className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500"
           />
         </div>
+
+        {inactiveCount > 0 && (
+          <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer whitespace-nowrap">
+            <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} className="accent-sky-500" />
+            Mostrar inativos ({inactiveCount})
+          </label>
+        )}
 
         {!readOnly && <button
           type="button"
@@ -275,10 +312,11 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
                 className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-md"
               >
                 <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <h4 className="text-base font-bold text-white leading-tight">
+                  <div className="min-w-0">
+                    <h4 className="text-base font-bold text-white leading-tight break-words">
                       {athlete.nome}
                     </h4>
+                    <Badges athlete={athlete} />
                     <p className="text-xs text-slate-400 mt-0.5">
                       {athlete.categoria || 'Geral'} • {athlete.sexo || 'Não informado'}
                     </p>
@@ -301,7 +339,29 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
                 )}
 
                 {/* BOTÕES DE AÇÃO DESTACADOS NO MOBILE */}
-                {!readOnly && <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800/80">
+                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800/80">
+                  {onOpenProfile && (
+                    <button
+                      type="button"
+                      onClick={() => onOpenProfile(athlete.id)}
+                      className="flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs"
+                    >
+                      <LineChart className="w-3.5 h-3.5" />
+                      <span>Ficha</span>
+                    </button>
+                  )}
+                  {!readOnly && (
+                    <button
+                      type="button"
+                      onClick={() => handleToggleActive(athlete)}
+                      className="flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs"
+                    >
+                      {athlete.active === false ? <UserCheck className="w-3.5 h-3.5" /> : <UserX className="w-3.5 h-3.5" />}
+                      <span>{athlete.active === false ? 'Reativar' : 'Inativar'}</span>
+                    </button>
+                  )}
+                </div>
+                {!readOnly && <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
                     onClick={() => handleOpenEditModal(athlete)}
@@ -343,7 +403,14 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
                   {filteredAthletes.map((athlete) => (
                     <tr key={athlete.id} className="hover:bg-slate-800/40 transition-colors">
                       <td className="py-3.5 px-4 font-bold text-white">
-                        {athlete.nome}
+                        {onOpenProfile ? (
+                          <button type="button" onClick={() => onOpenProfile(athlete.id)} className="text-left hover:text-sky-300 hover:underline">
+                            {athlete.nome}
+                          </button>
+                        ) : (
+                          athlete.nome
+                        )}
+                        <Badges athlete={athlete} />
                       </td>
                       <td className={`py-3.5 px-3 text-xs whitespace-nowrap ${athlete.cpf ? 'text-slate-400' : 'text-amber-400'}`}>
                         {athlete.cpf ? formatCpf(athlete.cpf) : 'Sem CPF'}
@@ -363,7 +430,30 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
                         {athlete.sexo || '—'}
                       </td>
                       <td className="py-3.5 px-4 text-right">
-                        {!readOnly && <div className="inline-flex items-center gap-2">
+                        <div className="inline-flex items-center gap-2">
+                          {onOpenProfile && (
+                            <button
+                              type="button"
+                              onClick={() => onOpenProfile(athlete.id)}
+                              className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold flex items-center gap-1.5"
+                              title="Ficha do atleta"
+                            >
+                              <LineChart className="w-3.5 h-3.5" />
+                              <span>Ficha</span>
+                            </button>
+                          )}
+                          {!readOnly && (
+                            <button
+                              type="button"
+                              onClick={() => handleToggleActive(athlete)}
+                              className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold"
+                              title={athlete.active === false ? 'Reativar (volta a entrar no app)' : 'Inativar (bloqueia o acesso, mantém o histórico)'}
+                            >
+                              {athlete.active === false ? <UserCheck className="w-3.5 h-3.5" /> : <UserX className="w-3.5 h-3.5" />}
+                            </button>
+                          )}
+                        </div>
+                        {!readOnly && <div className="inline-flex items-center gap-2 ml-2">
                           <button
                             type="button"
                             onClick={() => handleOpenEditModal(athlete)}
@@ -559,3 +649,18 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
     </div>
   );
 };
+
+/** Selos do atleta: inativo e termo de dados pendente. */
+const Badges: React.FC<{ athlete: AthleteRow }> = ({ athlete }) =>
+  athlete.active === false || !athlete.terms_accepted_at ? (
+    <span className="flex flex-wrap gap-1 mt-1">
+      {athlete.active === false && (
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-bold">Inativo</span>
+      )}
+      {!athlete.terms_accepted_at && (
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/30 font-semibold inline-flex items-center gap-1" title="O atleta ainda não aceitou o termo de uso dos dados (aceita no próximo acesso)">
+          <ShieldAlert className="w-3 h-3" /> Termo pendente
+        </span>
+      )}
+    </span>
+  ) : null;

@@ -16,9 +16,14 @@ interface AthleteDailyStatus {
 
 interface DailyOverviewProps {
   onEditAthlete?: (athlete: Athlete) => void;
+  /** Abre a ficha individual do atleta */
+  onOpenProfile?: (athleteId: string) => void;
 }
 
-export const DailyOverview: React.FC<DailyOverviewProps> = ({ onEditAthlete }) => {
+const loadText = (p: PseRecord) =>
+  p.duration_minutes && p.rpe_score ? `${p.duration_minutes} min • ${Math.round(p.rpe_score * p.duration_minutes)} UA` : '';
+
+export const DailyOverview: React.FC<DailyOverviewProps> = ({ onEditAthlete, onOpenProfile }) => {
   const { club } = useClub();
   const [selectedDate, setSelectedDate] = useState(todayLocalISO);
   const { groups } = useClubGroups();
@@ -224,7 +229,13 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({ onEditAthlete }) =
                 <li key={athlete.id} className="p-4 space-y-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="font-bold text-white leading-tight break-words">{athlete.nome}</p>
+                      {onOpenProfile ? (
+                        <button type="button" onClick={() => onOpenProfile(athlete.id)} className="font-bold text-white leading-tight break-words text-left underline decoration-slate-600 underline-offset-2">
+                          {athlete.nome}
+                        </button>
+                      ) : (
+                        <p className="font-bold text-white leading-tight break-words">{athlete.nome}</p>
+                      )}
                       <p className="text-xs text-slate-400 mt-0.5 break-words">
                         Classe {athlete.classe || 'A'} • {athlete.categoria}
                       </p>
@@ -277,7 +288,7 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({ onEditAthlete }) =
                   )}
                   {pses.some((p) => p.training_type) && (
                     <p className="text-[11px] text-slate-400 break-words">
-                      {pses.map((p) => `${p.training_type || 'Treino'}${p.did_not_train ? ' (não treinou)' : `: ${p.rpe_score}`}`).join(' • ')}
+                      {pses.map((p) => `${p.training_type || 'Treino'}${p.did_not_train ? ' (não treinou)' : `: ${p.rpe_score}${loadText(p) ? ` (${loadText(p)})` : ''}`}`).join(' • ')}
                     </p>
                   )}
                   {alerts.length > 0 && (
@@ -316,7 +327,13 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({ onEditAthlete }) =
                       <td className="py-3 px-4">
                         <div className="flex items-center justify-between gap-3">
                           <div>
-                            <p className="font-bold text-white leading-tight">{athlete.nome}</p>
+                            {onOpenProfile ? (
+                              <button type="button" onClick={() => onOpenProfile(athlete.id)} className="font-bold text-white leading-tight text-left hover:text-sky-300 hover:underline" title="Abrir a ficha do atleta">
+                                {athlete.nome}
+                              </button>
+                            ) : (
+                              <p className="font-bold text-white leading-tight">{athlete.nome}</p>
+                            )}
                             <p className="text-xs text-slate-400 mt-0.5">
                               Classe {athlete.classe || 'A'} • {athlete.categoria}
                             </p>
@@ -363,6 +380,7 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({ onEditAthlete }) =
                                 <span className="text-xs font-medium text-slate-200">
                                   {p.training_type || (p.did_not_train ? '' : '—')}
                                 </span>
+                                {loadText(p) && <span className="text-[10px] text-sky-300/80">{loadText(p)}</span>}
                                 {p.created_at && (
                                   <span className="text-[10px] text-slate-500">
                                     {new Date(p.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}

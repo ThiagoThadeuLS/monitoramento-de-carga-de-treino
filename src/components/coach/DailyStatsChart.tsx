@@ -41,6 +41,29 @@ interface DailyStatsChartProps {
   lines: ChartLine[];
   /** Controles no cabeçalho (ex.: setas Média/Moda). */
   actions?: React.ReactNode;
+  /** Escala do eixo vertical. Padrão: 0 a 10 (PSE/PSR). 'auto' ajusta aos dados (carga, peso). */
+  scale?: 'pse' | 'auto';
+  /** Unidade mostrada no detalhe (ex.: "UA", "kg"). */
+  unit?: string;
+  /** Linhas de referência horizontais (ex.: zona ideal do ACWR). */
+  references?: { value: number; label: string; color: string }[];
+}
+
+/** Valores "redondos" para o eixo (ex.: 0, 200, 400...). */
+function niceTicks(min: number, max: number, count = 5): number[] {
+  if (!(max > min)) {
+    const v = Number.isFinite(max) ? max : 0;
+    min = v - 1;
+    max = v + 1;
+  }
+  const raw = (max - min) / count;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((st) => st >= raw) ?? 10 * mag;
+  const lo = Math.floor(min / step) * step;
+  const hi = Math.ceil(max / step) * step;
+  const ticks: number[] = [];
+  for (let t = lo; t <= hi + step / 2; t += step) ticks.push(Math.round(t * 1000) / 1000);
+  return ticks;
 }
 
 // Referência neutra quando há uma só linha: traço claro, diferente pelo formato e não pela cor
@@ -54,7 +77,7 @@ export const ExpectedSwatch: React.FC<{ color?: string }> = ({ color = EXPECTED_
 );
 
 const Y_TICKS = [0, 2, 4, 6, 8, 10];
-const MARGIN = { top: 12, right: 12, bottom: 28, left: 30 };
+const BASE_MARGIN = { top: 12, right: 12, bottom: 28, left: 30 };
 
 const shortDate = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 const longDate = (iso: string) =>
@@ -85,7 +108,7 @@ export const LineSwatch: React.FC<{ color: string; shape: MarkerShape }> = ({ co
 );
 
 /** Linhas diárias (escala 0–10) com crosshair + tooltip. SVG puro, responsivo. */
-export const DailyStatsChart: React.FC<DailyStatsChartProps> = ({ title, subtitle, dates, lines, actions }) => {
+export const DailyStatsChart: React.FC<DailyStatsChartProps> = ({ title, subtitle, dates, lines, actions, scale = 'pse', unit, references = [] }) => {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(600);
   const [hoverRaw, setHover] = useState<number | null>(null);
@@ -102,11 +125,28 @@ export const DailyStatsChart: React.FC<DailyStatsChartProps> = ({ title, subtitl
   }, []);
 
   const height = width < 500 ? 210 : 260;
+  // Eixo vertical: 0–10 para PSE/PSR; automático para carga e peso
+  const yTicks = (() => {
+    if (scale === 'pse') return Y_TICKS;
+    const all = [
+      ...lines.flatMap((l) => l.values.filter((v): v is number => v !== null)),
+      ...references.map((r) => r.value),
+    ];
+    if (!all.length) return niceTicks(0, 10);
+    const lo = Math.min(...all);
+    const hi = Math.max(...all);
+    // carga começa no zero; peso usa uma faixa em volta dos valores
+    return lo >= 0 && lo < hi * 0.5 ? niceTicks(0, hi) : niceTicks(lo - (hi - lo) * 0.15, hi + (hi - lo) * 0.15);
+  })();
+  const yMin = yTicks[0];
+  const yMax = yTicks[yTicks.length - 1];
+  const tickLabel = (t: number) => (Math.abs(t) >= 1000 ? `${formatNumber(Math.round(t / 100) / 10)}k` : formatNumber(t));
+  const MARGIN = { ...BASE_MARGIN, left: Math.max(BASE_MARGIN.left, 12 + Math.max(...yTicks.map((t) => tickLabel(t).length)) * 7) };
   const innerW = width - MARGIN.left - MARGIN.right;
   const innerH = height - MARGIN.top - MARGIN.bottom;
   const n = dates.length;
   const x = (i: number) => MARGIN.left + (n <= 1 ? innerW / 2 : (i / (n - 1)) * innerW);
-  const y = (v: number) => MARGIN.top + innerH - (v / 10) * innerH;
+  const y = (v: number) => MARGIN.top + innerH - ((v - yMin) / (yMax - yMin || 1)) * innerH;
 
   // Linha quebra nos dias sem dado (não inventa valor)
   const pathsFor = (values: (number | null)[]) => {
@@ -142,7 +182,7 @@ export const DailyStatsChart: React.FC<DailyStatsChartProps> = ({ title, subtitl
 
   const hoverHasData = hover !== null && lines.some((l) => l.values[hover] !== null || l.expected?.[hover]);
   const tooltipLeft = hover !== null ? Math.min(Math.max(x(hover), 110), width - 110) : 0;
-  const text = (l: ChartLine, i: number) => l.describe?.(i) ?? formatNumber(l.values[i]!);
+  const text = (l: ChartLine, i: number) => l.describe?.(i) ?? `${formatNumber(Math.round(l.values[i]! * 10) / 10)}${unit ? ' ' + unit : ''}`;
   const rowsWithData = dates.map((_, i) => i).filter((i) => lines.some((l) => l.values[i] !== null || l.expected?.[i]));
 
   return (
@@ -183,11 +223,19 @@ export const DailyStatsChart: React.FC<DailyStatsChartProps> = ({ title, subtitl
 
       <div ref={wrapRef} className="relative w-full">
         <svg width={width} height={height} className="block select-none" role="img" aria-label={title}>
-          {Y_TICKS.map((t) => (
+          {yTicks.map((t) => (
             <g key={t}>
               <line x1={MARGIN.left} x2={width - MARGIN.right} y1={y(t)} y2={y(t)} stroke="#1e293b" strokeWidth={1} />
               <text x={MARGIN.left - 8} y={y(t)} dy="0.32em" textAnchor="end" className="fill-slate-500" fontSize={11}>
-                {t}
+                {tickLabel(t)}
+              </text>
+            </g>
+          ))}
+          {references.map((r) => (
+            <g key={r.label}>
+              <line x1={MARGIN.left} x2={width - MARGIN.right} y1={y(r.value)} y2={y(r.value)} stroke={r.color} strokeWidth={1.5} strokeDasharray="5 4" />
+              <text x={width - MARGIN.right - 4} y={y(r.value) - 4} textAnchor="end" fontSize={10} fill={r.color}>
+                {r.label}
               </text>
             </g>
           ))}

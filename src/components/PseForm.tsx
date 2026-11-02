@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Flame, CheckCircle2, AlertCircle, Send, Target, Swords, Dumbbell } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Flame, CheckCircle2, AlertCircle, Send, Target, Swords, Dumbbell, Timer } from 'lucide-react';
 import { PseRecord } from '../types';
 import { todayLocalISO } from '../lib/date';
 
@@ -7,6 +7,10 @@ interface PseFormProps {
   athleteId: string;
   athleteName?: string;
   onSubmit: (record: Omit<PseRecord, 'id' | 'created_at'>) => Promise<boolean>;
+  /** Duração (min) de cada tipo de treino programado para hoje, para sugerir no campo */
+  scheduledDurations?: Record<string, number>;
+  /** Tipo do treino de hoje (o último que já começou), pré-selecionado */
+  suggestedType?: string;
 }
 
 const TRAINING_TYPES = [
@@ -28,8 +32,22 @@ const FOSTER_SCALE_LABELS: Record<number, { text: string; color: string; desc: s
   10: { text: 'Máximo Absoluto', color: 'text-red-400 bg-red-600/20 border-red-500/50', desc: 'O maior esforço físico possível', thumbColor: '#dc2626', cardClass: 'bg-red-950/45 border-red-600/70 shadow-red-950/50' },
 };
 
-export const PseForm: React.FC<PseFormProps> = ({ athleteId, athleteName, onSubmit }) => {
-  const [trainingType, setTrainingType] = useState<string>('Treino Técnico');
+export const PseForm: React.FC<PseFormProps> = ({ athleteId, athleteName, onSubmit, scheduledDurations, suggestedType }) => {
+  const [trainingType, setTrainingType] = useState<string>(suggestedType ?? 'Treino Técnico');
+  const [typeTouched, setTypeTouched] = useState(false);
+  useEffect(() => {
+    if (suggestedType && !typeTouched) setTrainingType(suggestedType);
+  }, [suggestedType, typeTouched]);
+  const [duration, setDuration] = useState('');
+  const [durationTouched, setDurationTouched] = useState(false);
+  const scheduled = scheduledDurations?.[trainingType];
+  // Sugere a duração do treino programado (até o atleta mexer no campo)
+  useEffect(() => {
+    if (!durationTouched) setDuration(scheduled ? String(scheduled) : '');
+  }, [scheduled, durationTouched]);
+  const durationNum = duration.trim() ? Number(duration) : null;
+  const durationError =
+    durationNum !== null && (!Number.isInteger(durationNum) || durationNum < 1 || durationNum > 600) ? 'Informe de 1 a 600 minutos.' : '';
   const [rpeScore, setRpeScore] = useState<number>(5);
   const [didNotTrain, setDidNotTrain] = useState<boolean>(false);
   const [observations, setObservations] = useState<string>('');
@@ -49,6 +67,10 @@ export const PseForm: React.FC<PseFormProps> = ({ athleteId, athleteName, onSubm
       setErrorMsg('Informe o motivo de não ter treinado.');
       return;
     }
+    if (!didNotTrain && durationError) {
+      setErrorMsg(durationError);
+      return;
+    }
 
     setSubmitting(true);
     setErrorMsg('');
@@ -62,6 +84,7 @@ export const PseForm: React.FC<PseFormProps> = ({ athleteId, athleteName, onSubm
       did_not_train: didNotTrain,
       rpe_score: didNotTrain ? null : rpeScore,
       observations: observations.trim() || undefined,
+      duration_minutes: didNotTrain ? null : durationNum,
     });
 
     setSubmitting(false);
@@ -70,6 +93,7 @@ export const PseForm: React.FC<PseFormProps> = ({ athleteId, athleteName, onSubm
       setSuccess(true);
       setTimeout(() => setSuccess(false), 4000);
       setObservations('');
+      setDurationTouched(false);
     } else {
       setErrorMsg('Erro ao registrar resposta. Tente novamente.');
     }
@@ -124,7 +148,10 @@ export const PseForm: React.FC<PseFormProps> = ({ athleteId, athleteName, onSubm
                   <button
                     key={t.id}
                     type="button"
-                    onClick={() => setTrainingType(t.id)}
+                    onClick={() => {
+                      setTypeTouched(true);
+                      setTrainingType(t.id);
+                    }}
                     className={`p-3.5 rounded-2xl border text-left transition-all flex sm:flex-col items-center sm:items-start gap-3 sm:gap-2 ${
                       isSelected
                         ? 'bg-orange-500/10 border-orange-500 text-white shadow-lg shadow-orange-500/10 ring-1 ring-orange-500'
@@ -150,6 +177,52 @@ export const PseForm: React.FC<PseFormProps> = ({ athleteId, athleteName, onSubm
                 );
               })}
             </div>
+          </div>
+
+          {/* Duração do treino (carga = PSE x minutos) */}
+          <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-2.5">
+            <label htmlFor="pse-duracao" className="flex items-center gap-2 text-xs font-semibold text-slate-300 uppercase tracking-wider">
+              <Timer className="w-4 h-4 text-orange-400" /> Duração do treino (minutos)
+            </label>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                id="pse-duracao"
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={600}
+                value={duration}
+                onChange={(e) => {
+                  setDurationTouched(true);
+                  setDuration(e.target.value);
+                }}
+                placeholder={scheduled ? String(scheduled) : 'Ex.: 90'}
+                className={`w-28 bg-slate-950 border rounded-xl px-3 py-2.5 text-white font-bold focus:outline-none focus:ring-2 focus:ring-sky-500 ${
+                  durationError ? 'border-red-500' : 'border-slate-700'
+                }`}
+              />
+              {[60, 90, 120].map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => {
+                    setDurationTouched(true);
+                    setDuration(String(m));
+                  }}
+                  className={`px-3 py-2 rounded-lg text-xs font-bold border ${
+                    durationNum === m ? 'bg-orange-500 text-slate-950 border-orange-500' : 'bg-slate-950 text-slate-300 border-slate-700 hover:bg-slate-800'
+                  }`}
+                >
+                  {m} min
+                </button>
+              ))}
+            </div>
+            <p className={`text-[11px] ${durationError ? 'text-red-300' : 'text-slate-500'}`}>
+              {durationError ||
+                (scheduled
+                  ? `Sugerido pelo cronograma: ${scheduled} min. Ajuste se o treino durou mais ou menos.`
+                  : 'Se deixar em branco, usamos o horário do treino no cronograma.')}
+            </p>
           </div>
 
           {/* Slider Area com caixa com altura estável */}
@@ -272,7 +345,7 @@ export const PseForm: React.FC<PseFormProps> = ({ athleteId, athleteName, onSubm
       {/* Submit Button */}
       <button
         type="submit"
-        disabled={submitting || !athleteId || (didNotTrain && !observations.trim())}
+        disabled={submitting || !athleteId || (didNotTrain && !observations.trim()) || (!didNotTrain && !!durationError)}
         className="w-full py-4 px-6 rounded-xl font-bold text-base bg-sky-500 hover:bg-sky-400 active:scale-[0.99] text-slate-950 shadow-lg shadow-sky-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
       >
         <Send className="w-5 h-5" />

@@ -6,10 +6,12 @@ interface CoachChangePasswordProps {
   nome: string;
   onChanged: () => void;
   onLogout: () => void;
+  title?: string;
+  subtitle?: string;
 }
 
 /** Primeiro acesso do treinador: troca obrigatória da senha temporária. */
-export const CoachChangePassword: React.FC<CoachChangePasswordProps> = ({ nome, onChanged, onLogout }) => {
+export const CoachChangePassword: React.FC<CoachChangePasswordProps> = ({ nome, onChanged, onLogout, title, subtitle }) => {
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [show, setShow] = useState(false);
@@ -42,8 +44,8 @@ export const CoachChangePassword: React.FC<CoachChangePasswordProps> = ({ nome, 
           <div className="w-14 h-14 mx-auto rounded-2xl bg-sky-500/10 border border-sky-500/30 flex items-center justify-center">
             <KeyRound className="w-7 h-7 text-sky-400" />
           </div>
-          <h2 className="text-xl font-black tracking-tight text-white">Olá, {nome.split(' ')[0]}! Crie sua senha</h2>
-          <p className="text-xs text-slate-400">Você entrou com uma senha temporária. Para continuar, crie uma senha só sua.</p>
+          <h2 className="text-xl font-black tracking-tight text-white">{title ?? `Olá, ${nome.split(' ')[0]}! Crie sua senha`}</h2>
+          <p className="text-xs text-slate-400">{subtitle ?? 'Você entrou com uma senha temporária. Para continuar, crie uma senha só sua.'}</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">

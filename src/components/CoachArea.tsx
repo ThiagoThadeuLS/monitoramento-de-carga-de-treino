@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LogOut, BarChart3, Users, Loader2, LineChart, CalendarDays, Shield, AlertTriangle, UserCog, Settings2, UsersRound, Palette } from 'lucide-react';
+import { LogOut, BarChart3, Users, Loader2, LineChart, CalendarDays, Shield, AlertTriangle, UserCog, Settings2, UsersRound, Palette, Gauge } from 'lucide-react';
 import { exitSupport } from '../lib/platform';
 import { TeamManagement } from './coach/TeamManagement';
 import { GroupManagement } from './coach/GroupManagement';
@@ -16,14 +16,17 @@ import { PeriodAnalysis } from './coach/PeriodAnalysis';
 import { TrainingSchedule } from './coach/TrainingSchedule';
 import { AthleteManagement } from './coach/AthleteManagement';
 import { AdversaryManagement } from './coach/AdversaryManagement';
+import { LoadAnalysis } from './coach/LoadAnalysis';
+import { AthleteProfile } from './coach/AthleteProfile';
 import { Athlete } from '../types';
 
-type CoachTab = 'overview' | 'period' | 'schedule' | 'management' | 'adversaries';
+type CoachTab = 'overview' | 'period' | 'load' | 'schedule' | 'management' | 'adversaries';
 type ManagementSection = 'athletes' | 'groups' | 'team' | 'colors';
 
 const COACH_TABS: { id: CoachTab; label: string; short: string; icon: typeof BarChart3 }[] = [
   { id: 'overview', label: 'Visão Geral do Dia', short: 'Dia', icon: BarChart3 },
   { id: 'period', label: 'Análise do Período', short: 'Período', icon: LineChart },
+  { id: 'load', label: 'Carga Interna', short: 'Carga', icon: Gauge },
   { id: 'schedule', label: 'Cronograma', short: 'Agenda', icon: CalendarDays },
   { id: 'adversaries', label: 'Atletas Adversários', short: 'Adversários', icon: Shield },
   { id: 'management', label: 'Gestão', short: 'Gestão', icon: Settings2 },
@@ -45,7 +48,8 @@ export interface CoachProfile {
   } | null;
 }
 
-export const CoachArea: React.FC = () => {
+export const CoachArea: React.FC<{ recovery?: boolean }> = ({ recovery = false }) => {
+  const [recoveryMode, setRecoveryMode] = useState(recovery);
   const { setClub } = useClub();
   const [session, setSession] = useState<any>(null);
   const [profile, setProfile] = useState<CoachProfile | null>(null);
@@ -55,6 +59,7 @@ export const CoachArea: React.FC = () => {
   const [activeTab, setActiveTab] = useState<CoachTab>('overview');
   const [athleteToEdit, setAthleteToEdit] = useState<Athlete | null>(null);
   const [managementSection, setManagementSection] = useState<ManagementSection>('athletes');
+  const [profileId, setProfileId] = useState<string | null>(null);
 
   const checkSession = async () => {
     if (!supabase) {
@@ -76,7 +81,8 @@ export const CoachArea: React.FC = () => {
     checkSession();
 
     if (supabase) {
-      const { data: authListener } = supabase.auth.onAuthStateChange((_event, currentSession) => {
+      const { data: authListener } = supabase.auth.onAuthStateChange((event, currentSession) => {
+        if (event === 'PASSWORD_RECOVERY') setRecoveryMode(true);
         setSession(currentSession);
       });
 
@@ -171,7 +177,29 @@ export const CoachArea: React.FC = () => {
 
   // Se não estiver logado, exibe a tela de login
   if (!session) {
-    return <CoachLogin onLoginSuccess={checkSession} />;
+    return (
+      <CoachLogin
+        onLoginSuccess={checkSession}
+        notice={recoveryMode ? 'O link para criar uma senha nova expirou ou já foi usado. Peça outro em "Esqueci minha senha".' : undefined}
+      />
+    );
+  }
+
+  // Veio do e-mail "esqueci minha senha": cria a senha nova antes de entrar
+  if (recoveryMode) {
+    return (
+      <CoachChangePassword
+        nome={session.user?.email ?? ''}
+        title="Crie sua senha nova"
+        subtitle={`Conta ${session.user?.email ?? ''}. Depois de salvar, você entra direto no painel.`}
+        onChanged={() => {
+          setRecoveryMode(false);
+          window.history.replaceState(null, '', window.location.pathname);
+          reloadProfile();
+        }}
+        onLogout={handleLogout}
+      />
+    );
   }
 
   if (!profile) {
@@ -306,9 +334,10 @@ export const CoachArea: React.FC = () => {
       {/* Conteúdo da Aba Ativa (key: recarrega tudo ao trocar de clube/modo suporte) */}
       <div key={viewClub.id} data-tour="coach-content" className="space-y-6">
       {currentTab === 'overview' && (
-        <DailyOverview onEditAthlete={handleEditAthleteFromOverview} />
+        <DailyOverview onEditAthlete={handleEditAthleteFromOverview} onOpenProfile={setProfileId} />
       )}
       {currentTab === 'period' && <PeriodAnalysis />}
+      {currentTab === 'load' && <LoadAnalysis onOpenProfile={setProfileId} />}
       {currentTab === 'schedule' && <TrainingSchedule />}
       {currentTab === 'management' && (
         <div className="space-y-4">
@@ -339,6 +368,7 @@ export const CoachArea: React.FC = () => {
             <AthleteManagement
               athleteToEdit={athleteToEdit}
               onClearAthleteToEdit={() => setAthleteToEdit(null)}
+              onOpenProfile={setProfileId}
             />
           )}
           {isAdmin && managementSection === 'colors' && <ThemeSettings />}
@@ -349,6 +379,7 @@ export const CoachArea: React.FC = () => {
       )}
       {currentTab === 'adversaries' && <AdversaryManagement />}
       </div>
+      {profileId && <AthleteProfile athleteId={profileId} onClose={() => setProfileId(null)} />}
     </div>
   );
 };

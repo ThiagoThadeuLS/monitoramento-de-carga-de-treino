@@ -29,6 +29,10 @@ const ERROR_MESSAGES: Record<string, string> = {
   senha_igual_inicial: 'A nova senha não pode ser igual à senha inicial (seu nome completo).',
   senha_ja_definida: 'Sua senha já foi definida. Entre novamente com ela.',
   pse_motivo_nao_treinou: 'Informe o motivo de não ter treinado.',
+  pse_duracao_valida: 'A duração precisa ficar entre 1 e 600 minutos.',
+  termo_pendente: 'Você precisa aceitar o termo de uso dos dados antes de continuar.',
+  fora_do_prazo: 'Só dá para corrigir respostas enviadas hoje.',
+  registro_nao_encontrado: 'Resposta não encontrada.',
 };
 
 export class AthleteAuthError extends Error {
@@ -134,6 +138,7 @@ export async function submitPse(token: string, r: NewRecord<PseRecord>): Promise
     p_rpe_score: r.rpe_score,
     p_did_not_train: r.did_not_train,
     p_observations: r.observations ?? null,
+    p_duration_minutes: r.did_not_train ? null : r.duration_minutes ?? null,
   });
   if (error) throw toAuthError(error);
 }
@@ -175,4 +180,36 @@ export async function resetAthletePassword(athleteId: string): Promise<void> {
     if (error.message?.includes('Could not find the function')) throw toAuthError(error);
     throw new AthleteAuthError('erro', `Erro ao redefinir senha: ${error.message}`);
   }
+}
+
+/** Termo de uso dos dados (LGPD): versão aceita pelo atleta (null = pendente). */
+export async function getTermsStatus(token: string): Promise<{ accepted_at: string | null; version: string | null }> {
+  const { data, error } = await client().rpc('athlete_terms_status', { p_token: token });
+  if (error) throw toAuthError(error);
+  return data as { accepted_at: string | null; version: string | null };
+}
+
+export async function acceptTerms(token: string, version: string): Promise<void> {
+  const { error } = await client().rpc('athlete_accept_terms', { p_token: token, p_version: version });
+  if (error) throw toAuthError(error);
+}
+
+export interface AthleteHistory {
+  pse: PseRecord[];
+  psr: PsrRecord[];
+  weight: WeightRecord[];
+}
+
+/** Respostas do próprio atleta no período (máximo 180 dias). */
+export async function getAthleteHistory(token: string, from: string, to: string): Promise<AthleteHistory> {
+  const { data, error } = await client().rpc('athlete_get_history', { p_token: token, p_from: from, p_to: to });
+  if (error) throw toAuthError(error);
+  const h = (data ?? {}) as Partial<AthleteHistory>;
+  return { pse: h.pse ?? [], psr: h.psr ?? [], weight: (h.weight ?? []).map((w) => ({ ...w, weight: Number(w.weight) })) };
+}
+
+/** Apaga uma resposta enviada hoje (para corrigir e enviar de novo). */
+export async function deleteAthleteRecord(token: string, kind: 'pse' | 'psr' | 'peso', id: string): Promise<void> {
+  const { error } = await client().rpc('athlete_delete_record', { p_token: token, p_kind: kind, p_id: id });
+  if (error) throw toAuthError(error);
 }

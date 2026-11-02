@@ -10,9 +10,11 @@ import { isMobileDevice, isStandalone } from './lib/push';
 
 // Celular: só o app instalado (no computador, navegador normal)
 const MOBILE_BROWSER = isMobileDevice() && !isStandalone();
+// Link do e-mail "esqueci minha senha": abre a tela de nova senha do treinador
+const PASSWORD_RECOVERY = new URLSearchParams(window.location.search).has('redefinir-senha') || /type=recovery/.test(window.location.hash);
 
 export function App() {
-  const [currentView, setCurrentView] = useState<'athlete' | 'coach'>('athlete');
+  const [currentView, setCurrentView] = useState<'athlete' | 'coach'>(PASSWORD_RECOVERY ? 'coach' : 'athlete');
   // Link de convite de clube: /?convite-clube=<código>
   const [clubInviteToken, setClubInviteToken] = useState<string | null>(() =>
     new URLSearchParams(window.location.search).get('convite-clube')
@@ -34,7 +36,7 @@ export function App() {
   }
 
   // Exceção: o link de convite de clube abre no navegador para criar a conta
-  if (MOBILE_BROWSER && !clubInviteToken) return <InstallGate />;
+  if (MOBILE_BROWSER && !clubInviteToken && !PASSWORD_RECOVERY) return <InstallGate />;
 
   return (
     <ClubProvider>
@@ -47,7 +49,7 @@ export function App() {
         ) : currentView === 'athlete' ? (
           <AthleteArea />
         ) : (
-          <CoachArea />
+          <CoachArea recovery={PASSWORD_RECOVERY} />
         )}
       </main>
 

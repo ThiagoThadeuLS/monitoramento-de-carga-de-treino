@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Flame, HeartPulse, Scale, ShieldAlert, LogOut, Loader2, User, CalendarDays } from 'lucide-react';
+import { Flame, HeartPulse, Scale, ShieldAlert, LogOut, Loader2, User, CalendarDays, History } from 'lucide-react';
+import { TERMS_VERSION, TermsGate } from './TermsGate';
+import { AthleteHistory } from './AthleteHistory';
+import { todayLocalISO } from '../lib/date';
 import { TrainingSchedule } from './coach/TrainingSchedule';
 import { RemindersCard } from './RemindersCard';
 import { PushState, getPushState, isMobileDevice, relinkPush } from '../lib/push';
@@ -18,6 +21,7 @@ import { isSupabaseConfigured } from '../lib/supabase';
 import {
   AthleteSession,
   getAthleteSchedule,
+  getTermsStatus,
   logoutAthlete,
   restoreAthleteSession,
   submitPse,
@@ -25,13 +29,14 @@ import {
   submitWeight,
 } from '../lib/athleteAuth';
 
-type AthleteTab = 'pse' | 'psr' | 'weight' | 'schedule';
+type AthleteTab = 'pse' | 'psr' | 'weight' | 'schedule' | 'history';
 
 const ATHLETE_TABS: { id: AthleteTab; label: string; short: string; icon: typeof Flame; active: string }[] = [
   { id: 'pse', label: 'PSE (Esforço)', short: 'PSE', icon: Flame, active: 'bg-orange-500 text-slate-950 shadow-md shadow-orange-500/20' },
   { id: 'psr', label: 'PSR (Bem-Estar)', short: 'PSR', icon: HeartPulse, active: 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20' },
   { id: 'weight', label: 'Peso', short: 'Peso', icon: Scale, active: 'bg-sky-500 text-slate-950 shadow-md shadow-sky-500/20' },
   { id: 'schedule', label: 'Cronograma', short: 'Agenda', icon: CalendarDays, active: 'bg-violet-500 text-slate-950 shadow-md shadow-violet-500/20' },
+  { id: 'history', label: 'Histórico', short: 'Histórico', icon: History, active: 'bg-slate-200 text-slate-950 shadow-md shadow-slate-200/20' },
 ];
 
 // Aba pedida pelo link da notificação (?aba=...), lida uma única vez quando o app abre
@@ -48,7 +53,48 @@ export const AthleteArea: React.FC = () => {
 
   // Notificações neste aparelho: confere o estado e religa ao atleta que entrou (sem perguntar de novo)
   const [pushState, setPushState] = useState<PushState | null>(null);
-  const readyToken = session && !session.mustChangePassword ? session.token : null;
+  const passwordToken = session && !session.mustChangePassword ? session.token : null;
+
+  // Termo de uso dos dados (LGPD): aceito uma vez, antes de usar o app
+  const [terms, setTerms] = useState<{ accepted_at: string | null; version: string | null } | null>(null);
+  useEffect(() => {
+    setTerms(null);
+    if (!passwordToken) return;
+    let cancelled = false;
+    getTermsStatus(passwordToken)
+      .then((t) => !cancelled && setTerms(t))
+      .catch(() => !cancelled && setTerms({ accepted_at: null, version: null }));
+    return () => {
+      cancelled = true;
+    };
+  }, [passwordToken]);
+  const termsOk = !!terms?.accepted_at && terms.version === TERMS_VERSION;
+  const readyToken = passwordToken && termsOk ? passwordToken : null;
+
+  // Duração dos treinos de hoje (sugestão no campo de duração da PSE)
+  const [scheduledDurations, setScheduledDurations] = useState<Record<string, number>>({});
+  const [suggestedType, setSuggestedType] = useState<string | undefined>();
+  useEffect(() => {
+    if (!readyToken) return;
+    const today = todayLocalISO();
+    getAthleteSchedule(readyToken, today, today)
+      .then((list) => {
+        const now = new Date().toTimeString().slice(0, 5);
+        const map: Record<string, number> = {};
+        // o treino daquele tipo que já começou mais recentemente (senão, o primeiro do dia)
+        const sorted = [...list].sort((a, b) => a.start_time.localeCompare(b.start_time));
+        for (const t of sorted) {
+          const [h1, m1] = t.start_time.split(':').map(Number);
+          const [h2, m2] = (t.end_time ?? '').split(':').map(Number);
+          const min = t.end_time ? h2 * 60 + m2 - (h1 * 60 + m1) : 90;
+          if (min > 0 && (map[t.training_type] === undefined || t.start_time.slice(0, 5) <= now)) map[t.training_type] = min;
+        }
+        setScheduledDurations(map);
+        const started = sorted.filter((t) => t.start_time.slice(0, 5) <= now);
+        setSuggestedType((started[started.length - 1] ?? sorted[0])?.training_type);
+      })
+      .catch(() => undefined);
+  }, [readyToken]);
 
   // Tour: aparece sozinho no primeiro acesso; depois, pelo botão "?"
   const [tutorial, setTutorial] = useState(false);
@@ -122,6 +168,8 @@ export const AthleteArea: React.FC = () => {
       if (err.code === 'sessao_invalida' || err.code === 'troca_de_senha_pendente') {
         setNotice(err.message);
         setSession(null);
+      } else if (err.code === 'termo_pendente') {
+        setTerms({ accepted_at: null, version: null });
       }
       return false;
     }
@@ -186,6 +234,25 @@ export const AthleteArea: React.FC = () => {
     );
   }
 
+  // Termo de uso dos dados (LGPD)
+  if (!terms) {
+    return (
+      <div className="py-24 flex flex-col items-center justify-center gap-3 text-slate-400">
+        <Loader2 className="w-8 h-8 animate-spin text-emerald-400" />
+      </div>
+    );
+  }
+  if (!termsOk) {
+    return (
+      <TermsGate
+        token={session.token}
+        clubName={session.club?.nome ?? 'seu clube'}
+        onAccepted={() => setTerms({ accepted_at: new Date().toISOString(), version: TERMS_VERSION })}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
   // Celular: só usa o app depois de aceitar as notificações
   if (MOBILE && pushState !== 'on') {
     if (pushState === null) {
@@ -233,25 +300,35 @@ export const AthleteArea: React.FC = () => {
       {!MOBILE && <RemindersCard token={session.token} />}
 
       {/* 2. Abas */}
-      <div data-tour="athlete-tabs" className="grid grid-cols-4 gap-1.5 sm:gap-2 p-1.5 bg-slate-900/90 border border-slate-800 rounded-2xl">
+      <div data-tour="athlete-tabs" className="grid grid-cols-5 gap-1 sm:gap-2 p-1.5 bg-slate-900/90 border border-slate-800 rounded-2xl">
         {ATHLETE_TABS.map(({ id, label, short, icon: Icon, active }) => (
           <button
             key={id}
             type="button"
             onClick={() => setActiveTab(id)}
-            className={`py-3 px-1 sm:px-2 rounded-xl text-xs sm:text-sm font-bold flex flex-col sm:flex-row items-center justify-center gap-1.5 transition-all ${
+            className={`py-3 px-0.5 sm:px-2 rounded-xl text-[11px] sm:text-sm font-bold flex flex-col sm:flex-row items-center justify-center gap-1.5 transition-all min-w-0 ${
               activeTab === id ? active : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
             }`}
           >
             <Icon className="w-4 h-4" />
-            <span className="sm:hidden">{short}</span>
+            <span className="sm:hidden truncate max-w-full">{short}</span>
             <span className="hidden sm:inline">{label}</span>
           </button>
         ))}
       </div>
 
       {/* 3. Cronograma (somente leitura) ou formulário ativo */}
-      {activeTab === 'schedule' ? (
+      {activeTab === 'history' ? (
+        <div data-tour="athlete-history">
+          <AthleteHistory
+            token={session.token}
+            athleteId={athlete.id}
+            clubName={session.club?.nome ?? 'seu clube'}
+            termsAcceptedAt={terms.accepted_at}
+            onCorrect={(k) => setActiveTab(k === 'pse' ? 'pse' : k === 'psr' ? 'psr' : 'weight')}
+          />
+        </div>
+      ) : activeTab === 'schedule' ? (
         <div data-tour="athlete-schedule">
           <TrainingSchedule
             readOnly
@@ -262,7 +339,7 @@ export const AthleteArea: React.FC = () => {
       ) : (
       <div data-tour="athlete-form" className="bg-slate-900/50 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-2xl backdrop-blur">
         {activeTab === 'pse' && (
-          <PseForm athleteId={athlete.id} athleteName={athlete.nome} onSubmit={handlePseSubmit} />
+          <PseForm athleteId={athlete.id} athleteName={athlete.nome} onSubmit={handlePseSubmit} scheduledDurations={scheduledDurations} suggestedType={suggestedType} />
         )}
         {activeTab === 'psr' && (
           <PsrForm athleteId={athlete.id} athleteName={athlete.nome} onSubmit={handlePsrSubmit} />

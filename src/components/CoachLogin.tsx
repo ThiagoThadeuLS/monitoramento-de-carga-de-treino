@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Lock, Mail, Eye, EyeOff, ShieldCheck, AlertCircle, Loader2 } from 'lucide-react';
+import { Lock, Mail, Eye, EyeOff, ShieldCheck, AlertCircle, Loader2, KeyRound, ArrowLeft, CheckCircle2 } from 'lucide-react';
 import { ClubCrest } from '../lib/club';
 import { supabase } from '../lib/supabase';
 
@@ -11,7 +11,12 @@ interface CoachLoginProps {
   emailLabel?: string;
   submitLabel?: string;
   note?: string;
+  /** Aviso no topo (ex.: link de redefinição expirado) */
+  notice?: string;
 }
+
+/** Endereço que o e-mail de redefinição abre (o app mostra a tela de nova senha). */
+export const RESET_PARAM = 'redefinir-senha';
 
 export const CoachLogin: React.FC<CoachLoginProps> = ({
   onLoginSuccess,
@@ -20,7 +25,9 @@ export const CoachLogin: React.FC<CoachLoginProps> = ({
   emailLabel = 'E-mail do Treinador',
   submitLabel = 'Entrar no Painel',
   note = '🔒 Área restrita. Os acessos são cadastrados internamente pela coordenação esportiva do clube.',
+  notice,
 }) => {
+  const [mode, setMode] = useState<'login' | 'forgot' | 'sent'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -69,9 +76,93 @@ export const CoachLogin: React.FC<CoachLoginProps> = ({
     }
   };
 
+  const sendReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!supabase) return;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      setErrorMsg('Informe o e-mail da sua conta.');
+      return;
+    }
+    setLoading(true);
+    setErrorMsg('');
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+      redirectTo: `${window.location.origin}/?${RESET_PARAM}=1`,
+    });
+    setLoading(false);
+    if (error) {
+      setErrorMsg(
+        /rate limit|security purposes|seconds/i.test(error.message)
+          ? 'Muitos pedidos seguidos. Aguarde alguns minutos e tente de novo.'
+          : `Não foi possível enviar: ${error.message}`
+      );
+      return;
+    }
+    // Mesma resposta para e-mail com ou sem conta (não revela quem está cadastrado)
+    setMode('sent');
+  };
+
+  if (mode !== 'login') {
+    return (
+      <div className="max-w-md mx-auto px-4 py-8">
+        <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-5">
+          <div className="text-center space-y-2">
+            <div className="w-14 h-14 mx-auto rounded-2xl bg-sky-500/10 border border-sky-500/30 flex items-center justify-center">
+              {mode === 'sent' ? <CheckCircle2 className="w-7 h-7 text-emerald-400" /> : <KeyRound className="w-7 h-7 text-sky-400" />}
+            </div>
+            <h2 className="text-xl font-black text-white">{mode === 'sent' ? 'Confira seu e-mail' : 'Esqueci minha senha'}</h2>
+            <p className="text-xs text-slate-400">
+              {mode === 'sent'
+                ? `Se ${email.trim()} tiver uma conta, enviamos um link para criar uma senha nova. Ele vale por 1 hora — olhe também a caixa de spam.`
+                : 'Informe o e-mail da sua conta. Enviaremos um link para você criar uma senha nova.'}
+            </p>
+          </div>
+          {mode === 'forgot' && (
+            <form onSubmit={sendReset} className="space-y-4">
+              <input
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="ex: treinador@seuclube.com.br"
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 text-sm"
+              />
+              {errorMsg && (
+                <div className="p-3 bg-red-950/60 border border-red-800 rounded-xl flex items-center gap-2.5 text-red-300 text-xs">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" /> <span>{errorMsg}</span>
+                </div>
+              )}
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-3.5 rounded-xl font-bold text-sm bg-sky-500 hover:bg-sky-400 text-slate-950 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {loading && <Loader2 className="w-4 h-4 animate-spin" />} Enviar link
+              </button>
+            </form>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              setMode('login');
+              setErrorMsg('');
+            }}
+            className="w-full flex items-center justify-center gap-1.5 text-xs text-slate-400 hover:text-white"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" /> Voltar para o login
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-md mx-auto px-4 py-8">
       <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl backdrop-blur space-y-6">
+        {notice && (
+          <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-center gap-2.5 text-amber-300 text-xs">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" /> <span>{notice}</span>
+          </div>
+        )}
         {/* Ícone da plataforma (o clube aparece depois do login) */}
         <div className="text-center space-y-3">
           <ClubCrest club={null} className="w-16 h-16 mx-auto" />
@@ -128,6 +219,16 @@ export const CoachLogin: React.FC<CoachLoginProps> = ({
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
+            <button
+              type="button"
+              onClick={() => {
+                setMode('forgot');
+                setErrorMsg('');
+              }}
+              className="mt-2 text-xs font-semibold text-sky-400 hover:text-sky-300"
+            >
+              Esqueci minha senha
+            </button>
           </div>
 
           {/* Mensagem de Erro */}
