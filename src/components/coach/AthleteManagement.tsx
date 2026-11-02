@@ -1,8 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { UserPlus, Search, Edit3, Trash2, CheckCircle2, AlertCircle, X, Loader2, Phone, IdCard, KeyRound, LineChart, UserX, UserCheck, ShieldAlert } from 'lucide-react';
 import { Athlete } from '../../types';
 import { supabase } from '../../lib/supabase';
-import { CLASSES, CATEGORIAS } from '../../data/constants';
 import { formatCpf, isValidCpf, onlyCpfDigits } from '../../lib/cpf';
 import { resetAthletePassword } from '../../lib/athleteAuth';
 
@@ -14,6 +13,36 @@ interface AthleteManagementProps {
   /** Abre a ficha individual do atleta */
   onOpenProfile?: (athleteId: string) => void;
 }
+
+type ClasseIdade = 'Juvenil' | 'Júnior' | 'Sênior';
+type Sexo = 'Masculino' | 'Feminino';
+
+const CLASSES: ClasseIdade[] = ['Juvenil', 'Júnior', 'Sênior'];
+
+// Mapeamento idêntico ao de adversários adaptado para o formato do componente
+const CATEGORIAS_PESO: Record<Sexo, Record<ClasseIdade, string[]>> = {
+  Feminino: {
+    Juvenil: ['-44Kg', '-48Kg', '-52Kg', '-57Kg', '-63Kg', '-70Kg', '+70Kg'],
+    Júnior: ['-48Kg', '-52Kg', '-57Kg', '-63Kg', '-70Kg', '-78Kg', '+78Kg'],
+    Sênior: ['-48Kg', '-52Kg', '-57Kg', '-63Kg', '-70Kg', '-78Kg', '+78Kg'],
+  },
+  Masculino: {
+    Juvenil: ['-55Kg', '-60Kg', '-66Kg', '-73Kg', '-81Kg', '-90Kg', '+90Kg'],
+    Júnior: ['-60Kg', '-66Kg', '-73Kg', '-81Kg', '-90Kg', '-100Kg', '+100Kg'],
+    Sênior: ['-60Kg', '-66Kg', '-73Kg', '-81Kg', '-90Kg', '-100Kg', '+100Kg'],
+  },
+};
+
+// Função de máscara para o celular/WhatsApp
+const formatPhone = (value: string) => {
+  const digits = value.replace(/\D/g, '').substring(0, 11);
+  if (digits.length <= 2) return digits.length ? `(${digits}` : '';
+  if (digits.length <= 7) return `(${digits.substring(0, 2)}) ${digits.substring(2)}`;
+  if (digits.length <= 11) {
+    return `(${digits.substring(0, 2)}) ${digits.substring(2, 7)}-${digits.substring(7)}`;
+  }
+  return value;
+};
 
 type AthleteRow = Athlete & { terms_accepted_at?: string | null };
 
@@ -33,14 +62,19 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
   // Form State
   const [nome, setNome] = useState('');
   const [cpf, setCpf] = useState('');
-  const [classe, setClasse] = useState(CLASSES[0]);
-  const [categoria, setCategoria] = useState(CATEGORIAS[0]);
+  const [classe, setClasse] = useState<ClasseIdade>('Sênior');
+  const [sexo, setSexo] = useState<Sexo>('Masculino');
+  const [categoria, setCategoria] = useState(CATEGORIAS_PESO['Masculino']['Sênior'][0]);
   const [celular, setCelular] = useState('');
-  const [sexo, setSexo] = useState('Masculino');
   const [submitting, setSubmitting] = useState(false);
   const [resettingPassword, setResettingPassword] = useState(false);
   const [modalError, setModalError] = useState('');
   const [feedbackMsg, setFeedbackMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Categorias disponíveis baseadas no Sexo e Classe atuais do modal
+  const availableWeights = useMemo(() => {
+    return CATEGORIAS_PESO[sexo]?.[classe] || [];
+  }, [sexo, classe]);
 
   const loadAthletes = async () => {
     if (!supabase) return;
@@ -79,10 +113,10 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
     setNome('');
     setCpf('');
     setModalError('');
-    setClasse(CLASSES[0]);
-    setCategoria(CATEGORIAS[0]);
-    setCelular('');
     setSexo('Masculino');
+    setClasse('Sênior');
+    setCategoria(CATEGORIAS_PESO['Masculino']['Sênior'][0]);
+    setCelular('');
     setIsModalOpen(true);
   };
 
@@ -91,16 +125,17 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
     setNome(athlete.nome);
     setCpf(formatCpf(athlete.cpf || ''));
     setModalError('');
-    setClasse(athlete.classe || CLASSES[0]);
-    setCategoria(athlete.categoria || CATEGORIAS[0]);
-    setCelular(athlete.celular || '');
-    setSexo(athlete.sexo || 'Masculino');
+    const athleteSexo: Sexo = (athlete.sexo === 'Feminino' ? 'Feminino' : 'Masculino');
+    const athleteClasse: ClasseIdade = (CLASSES.includes(athlete.classe as any) ? athlete.classe : 'Sênior') as ClasseIdade;
+    setSexo(athleteSexo);
+    setClasse(athleteClasse);
+    setCategoria(athlete.categoria || CATEGORIAS_PESO[athleteSexo][athleteClasse][0]);
+    setCelular(athlete.celular ? formatPhone(athlete.celular) : '');
     setIsModalOpen(true);
   };
 
   const handleSaveAthlete = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Erros de validação aparecem dentro do modal (o aviso geral fica escondido atrás dele)
     if (!nome.trim()) {
       setModalError('O nome do atleta é obrigatório.');
       return;
@@ -117,7 +152,6 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
 
     try {
       if (editingAthlete) {
-        // Atualizar atleta existente
         const { error } = await supabase
           .from('athletes')
           .update({
@@ -133,7 +167,6 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
         if (error) throw error;
         setFeedbackMsg({ type: 'success', text: `Dados de "${nome.trim()}" atualizados com sucesso!` });
       } else {
-        // Criar novo atleta
         const { error } = await supabase.from('athletes').insert([
           {
             nome: nome.trim(),
@@ -192,7 +225,6 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
     }
   };
 
-  // Inativar: bloqueia o acesso e os lembretes, mas mantém todo o histórico
   const handleToggleActive = async (athlete: AthleteRow) => {
     if (!supabase) return;
     const next = athlete.active === false;
@@ -304,7 +336,7 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
         </div>
       ) : (
         <>
-          {/* VISUALIZAÇÃO MOBILE (Cards com Botões Grandes de Editar e Excluir) */}
+          {/* VISUALIZAÇÃO MOBILE */}
           <div className="grid grid-cols-1 gap-3 sm:hidden">
             {filteredAthletes.map((athlete) => (
               <div
@@ -322,7 +354,7 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
                     </p>
                   </div>
                   <span className="px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold text-xs flex-shrink-0">
-                    Classe {athlete.classe || 'A'}
+                    {athlete.classe || 'Sênior'}
                   </span>
                 </div>
 
@@ -338,7 +370,6 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
                   </p>
                 )}
 
-                {/* BOTÕES DE AÇÃO DESTACADOS NO MOBILE */}
                 <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800/80">
                   {onOpenProfile && (
                     <button
@@ -384,7 +415,7 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
             ))}
           </div>
 
-          {/* VISUALIZAÇÃO DESKTOP (Tabela com Botões Explícitos) */}
+          {/* VISUALIZAÇÃO DESKTOP */}
           <div className="hidden sm:block bg-slate-900/90 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm text-slate-300">
@@ -417,7 +448,7 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
                       </td>
                       <td className="py-3.5 px-3">
                         <span className="px-2.5 py-1 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold text-xs">
-                          Classe {athlete.classe || 'A'}
+                          {athlete.classe || 'Sênior'}
                         </span>
                       </td>
                       <td className="py-3.5 px-3 text-slate-300 text-xs sm:text-sm">
@@ -447,7 +478,7 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
                               type="button"
                               onClick={() => handleToggleActive(athlete)}
                               className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold"
-                              title={athlete.active === false ? 'Reativar (volta a entrar no app)' : 'Inativar (bloqueia o acesso, mantém o histórico)'}
+                              title={athlete.active === false ? 'Reativar' : 'Inativar'}
                             >
                               {athlete.active === false ? <UserCheck className="w-3.5 h-3.5" /> : <UserX className="w-3.5 h-3.5" />}
                             </button>
@@ -537,15 +568,45 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
                 <p className="mt-1 text-[11px] text-slate-500">Usado pelo atleta para entrar no app.</p>
               </div>
 
+              {/* SELEÇÃO DE SEXO */}
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5">
+                  Sexo *
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {(['Masculino', 'Feminino'] as const).map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => {
+                        const newWeights = CATEGORIAS_PESO[s][classe];
+                        setSexo(s);
+                        setCategoria(newWeights[0]);
+                      }}
+                      className={`py-2 rounded-xl text-xs font-bold border transition-colors ${
+                        sexo === s ? 'bg-sky-500 text-slate-950 border-sky-500' : 'bg-slate-950 text-slate-300 border-slate-700 hover:bg-slate-800'
+                      }`}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5">
-                    Classe *
+                    Classe de Idade *
                   </label>
                   <select
                     required
                     value={classe}
-                    onChange={(e) => setClasse(e.target.value)}
+                    onChange={(e) => {
+                      const newClasse = e.target.value as ClasseIdade;
+                      const newWeights = CATEGORIAS_PESO[sexo][newClasse];
+                      setClasse(newClasse);
+                      setCategoria(newWeights[0]);
+                    }}
                     className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
                   >
                     {CLASSES.map((c) => (
@@ -556,7 +617,7 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
 
                 <div>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5">
-                    Categoria *
+                    Categoria de Peso *
                   </label>
                   <select
                     required
@@ -564,40 +625,24 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
                     onChange={(e) => setCategoria(e.target.value)}
                     className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
                   >
-                    {CATEGORIAS.map((cat) => (
-                      <option key={cat} value={cat}>{cat}</option>
+                    {availableWeights.map((peso) => (
+                      <option key={peso} value={peso}>{peso}</option>
                     ))}
                   </select>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5">
-                    Celular / WhatsApp
-                  </label>
-                  <input
-                    type="text"
-                    value={celular}
-                    onChange={(e) => setCelular(e.target.value)}
-                    placeholder="(31) 99999-9999"
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5">
-                    Sexo
-                  </label>
-                  <select
-                    value={sexo}
-                    onChange={(e) => setSexo(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
-                  >
-                    <option value="Masculino">Masculino</option>
-                    <option value="Feminino">Feminino</option>
-                  </select>
-                </div>
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5">
+                  Celular / WhatsApp
+                </label>
+                <input
+                  type="text"
+                  value={celular}
+                  onChange={(e) => setCelular(formatPhone(e.target.value))}
+                  placeholder="(31) 99999-9999"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+                />
               </div>
 
               {editingAthlete && (
@@ -650,7 +695,6 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
   );
 };
 
-/** Selos do atleta: inativo e termo de dados pendente. */
 const Badges: React.FC<{ athlete: AthleteRow }> = ({ athlete }) =>
   athlete.active === false || !athlete.terms_accepted_at ? (
     <span className="flex flex-wrap gap-1 mt-1">
@@ -658,7 +702,7 @@ const Badges: React.FC<{ athlete: AthleteRow }> = ({ athlete }) =>
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-bold">Inativo</span>
       )}
       {!athlete.terms_accepted_at && (
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/30 font-semibold inline-flex items-center gap-1" title="O atleta ainda não aceitou o termo de uso dos dados (aceita no próximo acesso)">
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/30 font-semibold inline-flex items-center gap-1" title="O atleta ainda não aceitou o termo de uso dos dados">
           <ShieldAlert className="w-3 h-3" /> Termo pendente
         </span>
       )}

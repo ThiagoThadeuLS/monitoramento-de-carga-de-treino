@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { LogOut, BarChart3, Users, Loader2, LineChart, CalendarDays, Shield, AlertTriangle, UserCog, Settings2, UsersRound, Palette, Gauge } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { LogOut, BarChart3, Users, Loader2, LineChart, CalendarDays, Shield, AlertTriangle, UserCog, Settings2, UsersRound, Palette, Gauge, ChevronLeft, ChevronRight } from 'lucide-react';
 import { exitSupport } from '../lib/platform';
 import { TeamManagement } from './coach/TeamManagement';
 import { GroupManagement } from './coach/GroupManagement';
@@ -60,6 +60,17 @@ export const CoachArea: React.FC<{ recovery?: boolean }> = ({ recovery = false }
   const [athleteToEdit, setAthleteToEdit] = useState<Athlete | null>(null);
   const [managementSection, setManagementSection] = useState<ManagementSection>('athletes');
   const [profileId, setProfileId] = useState<string | null>(null);
+
+  // Referência para o container de abas roláveis com setas
+  const tabsScrollRef = useRef<HTMLDivElement>(null);
+
+  const scrollTabs = (direction: 'left' | 'right') => {
+    if (tabsScrollRef.current) {
+      const { scrollLeft, clientWidth } = tabsScrollRef.current;
+      const offset = direction === 'left' ? -clientWidth / 2 : clientWidth / 2;
+      tabsScrollRef.current.scrollTo({ left: scrollLeft + offset, behavior: 'smooth' });
+    }
+  };
 
   const checkSession = async () => {
     if (!supabase) {
@@ -309,15 +320,31 @@ export const CoachArea: React.FC<{ recovery?: boolean }> = ({ recovery = false }
         </button>
       </div>
 
-      {/* Navegação entre Módulos do Treinador */}
-      {(
-        <div data-tour="coach-tabs" className="grid grid-cols-3 sm:flex sm:flex-wrap sm:items-center gap-1.5 sm:gap-2 border-b border-slate-800 pb-2">
+      {/* Navegação entre Módulos do Treinador com Setas de Rolagem */}
+      <div className="relative flex items-center border-b border-slate-800 pb-2">
+        {/* Seta Esquerda */}
+        <button
+          type="button"
+          onClick={() => scrollTabs('left')}
+          className="absolute left-0 z-10 p-1.5 bg-slate-900/90 hover:bg-slate-800 text-slate-300 rounded-full shadow-md border border-slate-700 backdrop-blur-sm -ml-2 sm:flex items-center justify-center transition-all hidden"
+          title="Rolar para esquerda"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+
+        {/* Container rolável das abas */}
+        <div
+          ref={tabsScrollRef}
+          data-tour="coach-tabs"
+          className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto scrollbar-none px-2 sm:px-6 w-full scroll-smooth"
+          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+        >
           {tabs.map(({ id, label, short, icon: Icon }) => (
             <button
               key={id}
               type="button"
               onClick={() => setActiveTab(id)}
-              className={`flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all ${
+              className={`flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-3 sm:px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex-shrink-0 ${
                 currentTab === id
                   ? 'bg-sky-500 text-slate-950 shadow-lg shadow-sky-500/20'
                   : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
@@ -329,7 +356,17 @@ export const CoachArea: React.FC<{ recovery?: boolean }> = ({ recovery = false }
             </button>
           ))}
         </div>
-      )}
+
+        {/* Seta Direita */}
+        <button
+          type="button"
+          onClick={() => scrollTabs('right')}
+          className="absolute right-0 z-10 p-1.5 bg-slate-900/90 hover:bg-slate-800 text-slate-300 rounded-full shadow-md border border-slate-700 backdrop-blur-sm -mr-2 sm:flex items-center justify-center transition-all hidden"
+          title="Rolar para direita"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
+      </div>
 
       {/* Conteúdo da Aba Ativa (key: recarrega tudo ao trocar de clube/modo suporte) */}
       <div key={viewClub.id} data-tour="coach-content" className="space-y-6">
