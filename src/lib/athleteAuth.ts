@@ -32,7 +32,13 @@ const ERROR_MESSAGES: Record<string, string> = {
   pse_duracao_valida: 'A duração precisa ficar entre 1 e 600 minutos.',
   termo_pendente: 'Você precisa aceitar o termo de uso dos dados antes de continuar.',
   fora_do_prazo: 'Só dá para corrigir respostas enviadas hoje.',
-  registro_nao_encontrado: 'Resposta não encontrada.',
+  registro_nao_encontrado: 'Registro não encontrado.',
+  nao_autorizado: 'Você só pode alterar o que você mesmo cadastrou.',
+  adversario_incompleto: 'Preencha nome, categoria de peso e origem.',
+  adversario_invalido: 'Confira os dados do adversário (nome e origem com até 120 caracteres).',
+  observacao_vazia: 'Escreva a observação antes de enviar.',
+  observacao_longa: 'A observação pode ter até 2000 caracteres.',
+  'duplicate key': 'Já existe um adversário cadastrado com este nome.',
 };
 
 export class AthleteAuthError extends Error {
@@ -211,5 +217,66 @@ export async function getAthleteHistory(token: string, from: string, to: string)
 /** Apaga uma resposta enviada hoje (para corrigir e enviar de novo). */
 export async function deleteAthleteRecord(token: string, kind: 'pse' | 'psr' | 'peso', id: string): Promise<void> {
   const { error } = await client().rpc('athlete_delete_record', { p_token: token, p_kind: kind, p_id: id });
+  if (error) throw toAuthError(error);
+}
+
+// ---------- Adversários (aba do atleta) ----------
+export interface AthleteAdversaries<A, O> {
+  me: string;
+  adversarios: A[];
+  observacoes: O[];
+}
+
+/** Fichas da comissão técnica e as do próprio atleta, com as observações que ele pode ver. */
+export async function listAthleteAdversaries<A, O>(token: string): Promise<AthleteAdversaries<A, O>> {
+  const { data, error } = await client().rpc('athlete_list_adversarios', { p_token: token });
+  if (error) throw toAuthError(error);
+  const d = (data ?? {}) as Partial<AthleteAdversaries<A, O>>;
+  return { me: d.me ?? '', adversarios: d.adversarios ?? [], observacoes: d.observacoes ?? [] };
+}
+
+export interface AdversaryInput {
+  id?: string;
+  nome: string;
+  sexo: string;
+  categoria_peso: string;
+  classe_idade: string;
+  tipo_origem: string;
+  origem_valor: string;
+}
+
+/** Cadastra (sem id) ou edita uma ficha do próprio atleta. */
+export async function saveAthleteAdversary(token: string, a: AdversaryInput): Promise<void> {
+  const { error } = await client().rpc('athlete_save_adversario', {
+    p_token: token,
+    p_id: a.id ?? null,
+    p_nome: a.nome,
+    p_sexo: a.sexo,
+    p_categoria_peso: a.categoria_peso,
+    p_classe_idade: a.classe_idade,
+    p_tipo_origem: a.tipo_origem,
+    p_origem_valor: a.origem_valor,
+  });
+  if (error) throw toAuthError(error);
+}
+
+export async function deleteAthleteAdversary(token: string, id: string): Promise<void> {
+  const { error } = await client().rpc('athlete_delete_adversario', { p_token: token, p_id: id });
+  if (error) throw toAuthError(error);
+}
+
+export async function addAthleteObservation(token: string, adversarioId: string, texto: string): Promise<void> {
+  const { error } = await client().rpc('athlete_add_observacao', { p_token: token, p_adversario: adversarioId, p_texto: texto });
+  if (error) throw toAuthError(error);
+}
+
+export async function deleteAthleteObservation(token: string, id: string): Promise<void> {
+  const { error } = await client().rpc('athlete_delete_observacao', { p_token: token, p_id: id });
+  if (error) throw toAuthError(error);
+}
+
+/** "Apagar para mim": tira a ficha só da lista deste atleta (oculto = false mostra de novo). */
+export async function setAthleteAdversaryHidden(token: string, id: string, oculto: boolean): Promise<void> {
+  const { error } = await client().rpc('athlete_set_adversario_oculto', { p_token: token, p_id: id, p_oculto: oculto });
   if (error) throw toAuthError(error);
 }

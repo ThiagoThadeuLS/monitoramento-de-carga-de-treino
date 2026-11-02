@@ -1,8 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { restoreAthleteSession } from '../../lib/athleteAuth'; // Importado para resgatar o ID real e fixo do atleta
+import {
+  addAthleteObservation, deleteAthleteAdversary, deleteAthleteObservation, listAthleteAdversaries, saveAthleteAdversary,
+  setAthleteAdversaryHidden,
+} from '../../lib/athleteAuth';
 import {
   Shield, Plus, Edit2, Trash2, Loader2, X, Search, Globe2, Building2, AlertCircle, Scale, ChevronRight, MessageSquare, Send,
+  Eye, EyeOff,
 } from 'lucide-react';
 
 type ClasseIdade = 'juvenil' | 'júnior' | 'sênior';
@@ -20,6 +24,8 @@ interface Adversario {
   origem_valor: string;
   criado_por_id?: string;
   criado_por_tipo?: 'atleta' | 'tecnico';
+  /** só na lista do atleta: ele apagou esta ficha para si */
+  oculto?: boolean;
 }
 
 interface Observacao {
@@ -68,7 +74,17 @@ const classeLabel = (c: ClasseIdade) => CLASSES.find((x) => x.id === c)?.label ?
 const inputCls =
   'w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500';
 
-export function AdversaryManagement({ readOnly = false }: { readOnly?: boolean } = {}) {
+const groupObservacoes = (list: Observacao[]) => {
+  const grouped: Record<string, Observacao[]> = {};
+  for (const obs of list) (grouped[obs.adversario_id] ??= []).push(obs);
+  return grouped;
+};
+
+/**
+ * Treinador: usa as tabelas direto (regras por clube no banco).
+ * Atleta (athleteToken): não tem login do Supabase; tudo passa pelas funções athlete_* do banco.
+ */
+export function AdversaryManagement({ readOnly = false, athleteToken }: { readOnly?: boolean; athleteToken?: string } = {}) {
   const [adversarios, setAdversarios] = useState<Adversario[]>([]);
   const [observacoes, setObservacoes] = useState<Record<string, Observacao[]>>({});
   const [loading, setLoading] = useState(true);
@@ -85,6 +101,9 @@ export function AdversaryManagement({ readOnly = false }: { readOnly?: boolean }
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [userClubId, setUserClubId] = useState<string | null>(null);
   const [isCoach, setIsCoach] = useState(false);
+  // "Apagar para mim": fichas que só este usuário escondeu da própria lista
+  const [ocultos, setOcultos] = useState<Set<string>>(new Set());
+  const [showHidden, setShowHidden] = useState(false);
 
   useEffect(() => {
     loadUserAndData();
@@ -95,11 +114,27 @@ export function AdversaryManagement({ readOnly = false }: { readOnly?: boolean }
     setLoading(true);
     setLoadError('');
 
+    // Atleta: o banco já devolve só o que ele pode ver
+    if (athleteToken) {
+      try {
+        const d = await listAthleteAdversaries<Adversario, Observacao>(athleteToken);
+        setIsCoach(false);
+        setCurrentUserId(d.me);
+        setAdversarios(d.adversarios);
+        setOcultos(new Set(d.adversarios.filter((a) => a.oculto).map((a) => a.id)));
+        setObservacoes(groupObservacoes(d.observacoes));
+      } catch (e) {
+        setLoadError(e instanceof Error ? e.message : 'Não foi possível carregar os adversários.');
+      }
+      setLoading(false);
+      return;
+    }
+
     let coachStatus = false;
     let clubIdVal = null;
     let userIdVal = null;
 
-    // 1. Verificar sessão ativa no Supabase Auth (Técnico / Admin)
+    // Treinador (Supabase Auth)
     const { data: { session } } = await supabase.auth.getSession();
     if (session) {
       userIdVal = session.user.id;
@@ -110,91 +145,62 @@ export function AdversaryManagement({ readOnly = false }: { readOnly?: boolean }
       }
     }
 
-    // 2. Se não encontrou no Supabase Auth, valida e recupera a sessão oficial do Atleta
-    if (!userIdVal) {
-      try {
-        const athleteSession = await restoreAthleteSession();
-        if (athleteSession && athleteSession.athlete) {
-          coachStatus = false;
-          userIdVal = athleteSession.athlete.id; // ID fixo e real da tabela de atletas!
-          clubIdVal = athleteSession.club?.id || null;
-        }
-      } catch (e) {
-        console.error('Erro ao restaurar sessão do atleta:', e);
-      }
-    }
-
     setIsCoach(coachStatus);
     setUserClubId(clubIdVal);
     setCurrentUserId(userIdVal);
 
-    // 3. Buscar adversários do clube
-    let query = supabase.from('adversarios').select('*').order('nome');
-    if (clubIdVal) {
-      query = query.eq('club_id', clubIdVal);
+    // Clube em uso: o do treinador ou, no modo suporte, o clube visitado.
+    // O banco já só devolve as fichas desse clube; o filtro aqui é uma segunda trava.
+    const { data: clubAtual } = await supabase.rpc('current_club_id');
+    if (!clubAtual) {
+      setAdversarios([]);
+      setObservacoes({});
+      setLoading(false);
+      return;
     }
 
-    const { data, error } = await query;
+    const { data, error } = await supabase.from('adversarios').select('*').eq('club_id', clubAtual as string).order('nome');
     if (error) {
       setLoadError('Não foi possível carregar os adversários.');
     } else {
-      let advs = (data ?? []) as Adversario[];
-
-      // Se for atleta, garante que ele vê os do técnico e os dele
-      if (!coachStatus && userIdVal) {
-        advs = advs.filter(a => 
-          a.criado_por_tipo === 'tecnico' || 
-          a.criado_por_id === userIdVal
-        );
-      }
-
+      const advs = (data ?? []) as Adversario[];
       setAdversarios(advs);
+      if (userIdVal) {
+        const { data: hid } = await supabase.from('adversario_ocultos').select('adversario_id').eq('coach_id', userIdVal);
+        setOcultos(new Set(((hid ?? []) as { adversario_id: string }[]).map((h) => h.adversario_id)));
+      }
       if (advs.length > 0) {
-        await fetchObservacoes(advs.map(a => a.id), userIdVal, coachStatus);
+        await fetchObservacoes(advs.map((a) => a.id));
+      } else {
+        setObservacoes({});
       }
     }
     setLoading(false);
   }
 
-  async function fetchObservacoes(adversarioIds: string[], currentUid: string | null, coach: boolean) {
+  // Treinador vê todas as observações das fichas do clube (inclusive as dos atletas)
+  async function fetchObservacoes(adversarioIds: string[]) {
     if (!supabase || adversarioIds.length === 0) return;
-    
-    let query = supabase
+    const { data, error } = await supabase
       .from('adversario_observacoes')
       .select('*')
       .in('adversario_id', adversarioIds)
       .order('created_at', { ascending: false });
-
-    const { data, error } = await query;
-
-    if (!error && data) {
-      const grouped: Record<string, Observacao[]> = {};
-      data.forEach((obs: Observacao) => {
-        // Se for atleta, oculta apenas notas de outros atletas
-        if (!coach && currentUid) {
-          if (obs.autor_tipo === 'atleta' && obs.autor_id !== currentUid) {
-            return;
-          }
-        }
-
-        if (!grouped[obs.adversario_id]) {
-          grouped[obs.adversario_id] = [];
-        }
-        grouped[obs.adversario_id].push(obs);
-      });
-      setObservacoes(grouped);
-    }
+    if (!error && data) setObservacoes(groupObservacoes(data as Observacao[]));
   }
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return adversarios.filter(
       (a) =>
+        ocultos.has(a.id) === showHidden &&
         (classe === 'todas' || a.classe_idade === classe) &&
         (origem === 'todas' || a.tipo_origem === origem) &&
-        (!q || [a.nome, a.categoria_peso, a.origem_valor].some((v) => v.toLowerCase().includes(q)))
+        (!q || [a.nome, a.categoria_peso, a.origem_valor].some((v) => (v ?? '').toLowerCase().includes(q)))
     );
-  }, [adversarios, search, classe, origem]);
+  }, [adversarios, search, classe, origem, ocultos, showHidden]);
+  const hiddenCount = adversarios.filter((a) => ocultos.has(a.id)).length;
+  const visibleCount = adversarios.length - hiddenCount;
 
   const startNew = () => {
     setFormError('');
@@ -204,14 +210,20 @@ export function AdversaryManagement({ readOnly = false }: { readOnly?: boolean }
     setEditing({ ...EMPTY, sexo: defaultSexo, classe_idade: defaultClasse, categoria_peso: defaultPeso, club_id: userClubId || undefined });
   };
   
+  // Quem pode alterar a ficha: quem cadastrou; fichas antigas (sem autor) ficam com a comissão técnica
+  const canEdit = (a: Adversario) =>
+    !!currentUserId && (a.criado_por_id === currentUserId || (isCoach && !a.criado_por_id));
+  const errMsg = (e: unknown, fallback: string) => (e instanceof Error && e.message ? e.message : fallback);
+
   const startEdit = (a: Adversario) => {
-    if (a.criado_por_id !== currentUserId) {
+    if (!canEdit(a)) {
       alert('Você só pode editar fichas que você mesmo cadastrou.');
       return;
     }
     setFormError('');
     setOpen(null);
-    setEditing({ ...a });
+    const sexo: Sexo = a.sexo === 'feminino' ? 'feminino' : 'masculino';
+    setEditing({ ...a, sexo });
   };
 
   async function save(e: React.FormEvent) {
@@ -222,15 +234,39 @@ export function AdversaryManagement({ readOnly = false }: { readOnly?: boolean }
       return;
     }
 
+    // Atleta: o banco grava no clube dele e em nome dele
+    if (athleteToken) {
+      setSaving(true);
+      setFormError('');
+      try {
+        await saveAthleteAdversary(athleteToken, {
+          id: editing.id,
+          nome: editing.nome.trim(),
+          sexo: editing.sexo,
+          categoria_peso: editing.categoria_peso.trim(),
+          classe_idade: editing.classe_idade,
+          tipo_origem: editing.tipo_origem,
+          origem_valor: editing.origem_valor.trim(),
+        });
+        setEditing(null);
+        loadUserAndData();
+      } catch (err) {
+        setFormError(errMsg(err, 'Não foi possível salvar.'));
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
     let targetClubId = userClubId;
-    let activeUserId = currentUserId;
+    const activeUserId = currentUserId;
 
     if (!targetClubId && adversarios.length > 0) {
       targetClubId = adversarios[0]?.club_id || null;
     }
 
     if (!targetClubId || !activeUserId) {
-      setFormError('Erro: Utilizador ou clube não identificado. Tente reentrar no sistema.');
+      setFormError('Erro: usuário ou clube não identificado. Tente entrar de novo.');
       return;
     }
 
@@ -244,7 +280,7 @@ export function AdversaryManagement({ readOnly = false }: { readOnly?: boolean }
       classe_idade: editing.classe_idade,
       tipo_origem: editing.tipo_origem,
       origem_valor: editing.origem_valor.trim(),
-      ...(editing.id ? {} : { criado_por_id: activeUserId, criado_por_tipo: isCoach ? 'tecnico' : 'atleta' })
+      ...(editing.id ? {} : { criado_por_id: activeUserId, criado_por_tipo: 'tecnico' }),
     };
 
     const { error } = editing.id
@@ -266,18 +302,28 @@ export function AdversaryManagement({ readOnly = false }: { readOnly?: boolean }
 
   async function remove(a: Adversario) {
     if (!supabase || !currentUserId) return;
-    
-    if (a.criado_por_id !== currentUserId) {
+
+    if (!canEdit(a)) {
       alert('Você só tem permissão para excluir fichas de adversários que você mesmo cadastrou.');
       setConfirmDelete(false);
       return;
     }
 
     setSaving(true);
-    const { error } = await supabase.from('adversarios').delete().eq('id', a.id);
+    let failed = '';
+    if (athleteToken) {
+      try {
+        await deleteAthleteAdversary(athleteToken, a.id);
+      } catch (err) {
+        failed = errMsg(err, 'Não foi possível excluir.');
+      }
+    } else {
+      const { error } = await supabase.from('adversarios').delete().eq('id', a.id);
+      if (error) failed = 'Não foi possível excluir.';
+    }
     setSaving(false);
     setConfirmDelete(false);
-    if (error) return setFormError('Não foi possível excluir.');
+    if (failed) return setFormError(failed);
     setOpen(null);
     loadUserAndData();
   }
@@ -287,35 +333,75 @@ export function AdversaryManagement({ readOnly = false }: { readOnly?: boolean }
     if (!supabase || !texto || !texto.trim()) return;
 
     if (!currentUserId) {
-      alert('Sessão expirada ou utilizador não identificado. Faça login novamente.');
+      alert('Sessão expirada. Entre novamente.');
       return;
     }
 
-    const payload = {
-      adversario_id: adversarioId,
-      autor_id: currentUserId,
-      autor_tipo: isCoach ? 'tecnico' : 'atleta',
-      texto: texto.trim(),
-    };
-
-    const { error } = await supabase.from('adversario_observacoes').insert([payload]);
-    if (error) {
-      alert(`Erro ao adicionar observação: ${error.message}`);
+    if (athleteToken) {
+      try {
+        await addAthleteObservation(athleteToken, adversarioId, texto.trim());
+      } catch (err) {
+        alert(errMsg(err, 'Não foi possível adicionar a observação.'));
+        return;
+      }
     } else {
-      setNovoTextoObs({ ...novoTextoObs, [adversarioId]: '' });
-      await loadUserAndData();
+      const { error } = await supabase
+        .from('adversario_observacoes')
+        .insert([{ adversario_id: adversarioId, autor_id: currentUserId, autor_tipo: 'tecnico', texto: texto.trim() }]);
+      if (error) {
+        alert(`Erro ao adicionar observação: ${error.message}`);
+        return;
+      }
     }
+    setNovoTextoObs({ ...novoTextoObs, [adversarioId]: '' });
+    await loadUserAndData();
   }
 
-  async function handleDeleteObservacao(obsId: string, adversarioId: string) {
+  async function handleDeleteObservacao(obsId: string) {
     if (!supabase) return;
     if (!confirm('Deseja excluir esta observação?')) return;
 
-    const { error } = await supabase.from('adversario_observacoes').delete().eq('id', obsId);
-    if (error) {
-      alert('Erro ao excluir observação (você só pode apagar as suas próprias anotações).');
+    if (athleteToken) {
+      try {
+        await deleteAthleteObservation(athleteToken, obsId);
+      } catch (err) {
+        alert(errMsg(err, 'Não foi possível excluir a observação.'));
+        return;
+      }
     } else {
-      await loadUserAndData();
+      const { error } = await supabase.from('adversario_observacoes').delete().eq('id', obsId);
+      if (error) {
+        alert('Erro ao excluir observação (você só pode apagar as suas próprias anotações).');
+        return;
+      }
+    }
+    await loadUserAndData();
+  }
+
+  // "Apagar para mim": some só da lista de quem apagou; os outros continuam vendo
+  async function toggleHidden(a: Adversario) {
+    if (!supabase) return;
+    const hide = !ocultos.has(a.id);
+    if (hide && !confirm('Apagar esta ficha só da sua lista?\n\nOs outros continuam vendo. Para trazer de volta, use "Apagados para mim".')) return;
+    setSaving(true);
+    setFormError('');
+    try {
+      if (athleteToken) {
+        await setAthleteAdversaryHidden(athleteToken, a.id, hide);
+      } else {
+        const { error } = await supabase.rpc('coach_set_adversario_oculto', { p_id: a.id, p_oculto: hide });
+        if (error) throw new Error(hide ? 'Não foi possível apagar para você.' : 'Não foi possível mostrar de novo.');
+      }
+      const next = new Set(ocultos);
+      if (hide) next.add(a.id);
+      else next.delete(a.id);
+      setOcultos(next);
+      if (![...next].some((id) => adversarios.some((x) => x.id === id))) setShowHidden(false);
+      setOpen(null);
+    } catch (err) {
+      setFormError(errMsg(err, 'Não foi possível concluir.'));
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -343,7 +429,8 @@ export function AdversaryManagement({ readOnly = false }: { readOnly?: boolean }
           <div>
             <h2 className="text-base sm:text-lg font-bold text-white">Atletas adversários</h2>
             <p className="text-xs text-slate-400">
-              {adversarios.length} cadastrado{adversarios.length === 1 ? '' : 's'}
+              {visibleCount} cadastrado{visibleCount === 1 ? '' : 's'}
+              {hiddenCount > 0 && <span className="text-slate-500"> • {hiddenCount} apagado{hiddenCount === 1 ? '' : 's'} para você</span>}
             </p>
           </div>
         </div>
@@ -383,6 +470,16 @@ export function AdversaryManagement({ readOnly = false }: { readOnly?: boolean }
             <button type="button" className={chip(origem === 'pais')} onClick={() => setOrigem('pais')}>Internacionais</button>
           </div>
         </div>
+        {(hiddenCount > 0 || showHidden) && (
+          <button
+            type="button"
+            onClick={() => setShowHidden((v) => !v)}
+            className={`${chip(showHidden)} inline-flex items-center gap-1.5`}
+            aria-pressed={showHidden}
+          >
+            <EyeOff className="w-3.5 h-3.5" /> {showHidden ? 'Voltar para a lista' : `Apagados para mim (${hiddenCount})`}
+          </button>
+        )}
       </div>
 
       {/* Lista */}
@@ -398,7 +495,13 @@ export function AdversaryManagement({ readOnly = false }: { readOnly?: boolean }
         <div className="py-14 text-center bg-slate-900/60 border border-dashed border-slate-800 rounded-2xl space-y-2">
           <Shield className="w-8 h-8 text-slate-600 mx-auto" />
           <p className="text-sm text-slate-400">
-            {adversarios.length === 0 ? 'Nenhum adversário cadastrado ainda.' : 'Nenhum adversário encontrado com esses filtros.'}
+            {showHidden
+              ? 'Nenhum adversário apagado para você com esses filtros.'
+              : visibleCount === 0
+              ? hiddenCount > 0
+                ? 'Você apagou todas as fichas da sua lista. Elas estão em "Apagados para mim".'
+                : 'Nenhum adversário cadastrado ainda.'
+              : 'Nenhum adversário encontrado com esses filtros.'}
           </p>
         </div>
       ) : (
@@ -469,7 +572,7 @@ export function AdversaryManagement({ readOnly = false }: { readOnly?: boolean }
           </div>
 
           <div className="p-5 space-y-4 overflow-y-auto max-h-[60vh]">
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-3 gap-2 sm:gap-3">
               <Info label="Sexo" value={open.sexo === 'masculino' ? 'Masculino' : 'Feminino'} />
               <Info label="Peso" value={open.categoria_peso} />
               <Info label="Classe" value={classeLabel(open.classe_idade)} />
@@ -500,7 +603,7 @@ export function AdversaryManagement({ readOnly = false }: { readOnly?: boolean }
                             {canDeleteObs && (
                               <button
                                 type="button"
-                                onClick={() => handleDeleteObservacao(obs.id, open.id)}
+                                onClick={() => handleDeleteObservacao(obs.id)}
                                 className="text-slate-500 hover:text-red-400 transition-colors"
                                 title="Apagar esta observação"
                               >
@@ -540,7 +643,7 @@ export function AdversaryManagement({ readOnly = false }: { readOnly?: boolean }
 
           {/* Rodapé: O botão de excluir e editar a ficha só aparece se o utilizador atual foi quem criou */}
           {!readOnly && (
-            <div className="px-5 py-4 border-t border-slate-800 flex gap-2">
+            <div className="px-5 py-4 border-t border-slate-800 flex flex-wrap gap-2">
               {confirmDelete ? (
                 <>
                   <button type="button" onClick={() => setConfirmDelete(false)} className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold">
@@ -552,33 +655,41 @@ export function AdversaryManagement({ readOnly = false }: { readOnly?: boolean }
                     disabled={saving}
                     className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-red-500 hover:bg-red-400 text-white text-xs font-bold disabled:opacity-50"
                   >
-                    {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />} Confirmar exclusão
+                    {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />} Excluir para todos
                   </button>
                 </>
               ) : (
                 <>
-                  {(() => {
-                    const isOwner = open.criado_por_id === currentUserId;
-                    if (!isOwner) return null;
-                    return (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => setConfirmDelete(true)}
-                          className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-red-500/20 text-slate-300 hover:text-red-300 text-xs font-bold"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" /> Excluir
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => startEdit(open)}
-                          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 text-xs font-bold"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" /> Editar Ficha
-                        </button>
-                      </>
-                    );
-                  })()}
+                  {/* Qualquer um: apaga só da própria lista (ou mostra de novo) */}
+                  <button
+                    type="button"
+                    onClick={() => toggleHidden(open)}
+                    disabled={saving}
+                    title={ocultos.has(open.id) ? 'Volta para a sua lista' : 'Some só da sua lista; os outros continuam vendo'}
+                    className="flex-1 min-w-[8.5rem] flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-bold disabled:opacity-50"
+                  >
+                    {ocultos.has(open.id) ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                    {ocultos.has(open.id) ? 'Mostrar de novo' : 'Apagar para mim'}
+                  </button>
+                  {/* Quem cadastrou: exclui para todos e edita */}
+                  {canEdit(open) && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDelete(true)}
+                        className="flex-1 min-w-[8.5rem] flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-red-500/20 text-slate-300 hover:text-red-300 text-xs font-bold"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" /> Excluir para todos
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => startEdit(open)}
+                        className="flex-1 min-w-[8.5rem] flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 text-xs font-bold"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" /> Editar Ficha
+                      </button>
+                    </>
+                  )}
                 </>
               )}
             </div>
@@ -716,8 +827,8 @@ const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, 
 );
 
 const Info: React.FC<{ label: string; value: string }> = ({ label, value }) => (
-  <div className="bg-slate-950 border border-slate-800 rounded-xl p-3">
+  <div className="bg-slate-950 border border-slate-800 rounded-xl p-2.5 sm:p-3 min-w-0">
     <p className="text-[10px] uppercase font-bold text-slate-500">{label}</p>
-    <p className="text-sm font-bold text-white mt-0.5">{value}</p>
+    <p className="text-[13px] sm:text-sm font-bold text-white mt-0.5 [overflow-wrap:anywhere]">{value}</p>
   </div>
 );

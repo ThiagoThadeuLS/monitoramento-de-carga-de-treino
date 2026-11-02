@@ -378,7 +378,7 @@ export const AthleteArea: React.FC = () => {
         </div>
       ) : activeTab === 'adversarios' ? (
         <div data-tour="athlete-adversaries">
-          <AdversaryManagement />
+          <AdversaryManagement athleteToken={session.token} />
         </div>
       ) : (
       <div data-tour="athlete-form" className="bg-slate-900/50 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-2xl backdrop-blur">
