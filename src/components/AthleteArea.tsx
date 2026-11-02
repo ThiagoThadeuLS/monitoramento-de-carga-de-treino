@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { Flame, HeartPulse, Scale, ShieldAlert, LogOut, Loader2, User, CalendarDays, History } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Flame, HeartPulse, Scale, ShieldAlert, LogOut, Loader2, User, CalendarDays, History, Shield, ChevronLeft, ChevronRight } from 'lucide-react';
 import { TERMS_VERSION, TermsGate } from './TermsGate';
 import { AthleteHistory } from './AthleteHistory';
 import { todayLocalISO } from '../lib/date';
 import { TrainingSchedule } from './coach/TrainingSchedule';
+import { AdversaryManagement } from './coach/AdversaryManagement';
 import { RemindersCard } from './RemindersCard';
 import { PushState, getPushState, isMobileDevice, relinkPush } from '../lib/push';
 import { NotificationGate } from './NotificationGate';
@@ -29,19 +30,20 @@ import {
   submitWeight,
 } from '../lib/athleteAuth';
 
-type AthleteTab = 'pse' | 'psr' | 'weight' | 'schedule' | 'history';
+type AthleteTab = 'pse' | 'psr' | 'weight' | 'schedule' | 'history' | 'adversarios';
 
 const ATHLETE_TABS: { id: AthleteTab; label: string; short: string; icon: typeof Flame; active: string }[] = [
   { id: 'pse', label: 'PSE (Esforço)', short: 'PSE', icon: Flame, active: 'bg-orange-500 text-slate-950 shadow-md shadow-orange-500/20' },
   { id: 'psr', label: 'PSR (Bem-Estar)', short: 'PSR', icon: HeartPulse, active: 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20' },
   { id: 'weight', label: 'Peso', short: 'Peso', icon: Scale, active: 'bg-sky-500 text-slate-950 shadow-md shadow-sky-500/20' },
   { id: 'schedule', label: 'Cronograma', short: 'Agenda', icon: CalendarDays, active: 'bg-violet-500 text-slate-950 shadow-md shadow-violet-500/20' },
-  { id: 'history', label: 'Histórico', short: 'Histórico', icon: History, active: 'bg-slate-200 text-slate-950 shadow-md shadow-slate-200/20' },
+  { id: 'adversarios', label: 'Adversários', short: 'Rivais', icon: Shield, active: 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20' },
+  { id: 'history', label: 'Histórico', short: 'Hist.', icon: History, active: 'bg-slate-200 text-slate-950 shadow-md shadow-slate-200/20' },
 ];
 
 // Aba pedida pelo link da notificação (?aba=...), lida uma única vez quando o app abre
 const INITIAL_TAB: AthleteTab | null = (() => {
-  const map: Record<string, AthleteTab> = { pse: 'pse', psr: 'psr', peso: 'weight', agenda: 'schedule' };
+  const map: Record<string, AthleteTab> = { pse: 'pse', psr: 'psr', peso: 'weight', agenda: 'schedule', adversarios: 'adversarios' };
   return map[new URLSearchParams(window.location.search).get('aba') ?? ''] ?? null;
 })();
 
@@ -50,6 +52,17 @@ const MOBILE = isMobileDevice();
 export const AthleteArea: React.FC = () => {
   const [session, setSession] = useState<AthleteSession | null>(null);
   const { setClub } = useClub();
+
+  // Referência para o container de abas roláveis com setas
+  const tabsScrollRef = useRef<HTMLDivElement>(null);
+
+  const scrollTabs = (direction: 'left' | 'right') => {
+    if (tabsScrollRef.current) {
+      const { scrollLeft, clientWidth } = tabsScrollRef.current;
+      const offset = direction === 'left' ? -clientWidth / 2 : clientWidth / 2;
+      tabsScrollRef.current.scrollTo({ left: scrollLeft + offset, behavior: 'smooth' });
+    }
+  };
 
   // Notificações neste aparelho: confere o estado e religa ao atleta que entrou (sem perguntar de novo)
   const [pushState, setPushState] = useState<PushState | null>(null);
@@ -267,7 +280,6 @@ export const AthleteArea: React.FC = () => {
 
   const { athlete } = session;
 
-
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
       <HelpButton onClick={() => setTutorial(true)} />
@@ -299,25 +311,53 @@ export const AthleteArea: React.FC = () => {
       {/* Computador: lembretes opcionais (no celular já são obrigatórios) */}
       {!MOBILE && <RemindersCard token={session.token} />}
 
-      {/* 2. Abas */}
-      <div data-tour="athlete-tabs" className="grid grid-cols-5 gap-1 sm:gap-2 p-1.5 bg-slate-900/90 border border-slate-800 rounded-2xl">
-        {ATHLETE_TABS.map(({ id, label, short, icon: Icon, active }) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => setActiveTab(id)}
-            className={`py-3 px-0.5 sm:px-2 rounded-xl text-[11px] sm:text-sm font-bold flex flex-col sm:flex-row items-center justify-center gap-1.5 transition-all min-w-0 ${
-              activeTab === id ? active : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-            }`}
-          >
-            <Icon className="w-4 h-4" />
-            <span className="sm:hidden truncate max-w-full">{short}</span>
-            <span className="hidden sm:inline">{label}</span>
-          </button>
-        ))}
+      {/* 2. Abas com setas de rolagem lateral */}
+      <div className="relative flex items-center p-1.5 bg-slate-900/90 border border-slate-800 rounded-2xl">
+        {/* Seta Esquerda */}
+        <button
+          type="button"
+          onClick={() => scrollTabs('left')}
+          className="absolute left-0 z-10 p-1.5 bg-slate-900/90 hover:bg-slate-800 text-slate-300 rounded-full shadow-md border border-slate-700 backdrop-blur-sm -ml-2 sm:flex items-center justify-center transition-all hidden"
+          title="Rolar para esquerda"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+
+        {/* Container rolável das abas */}
+        <div
+          ref={tabsScrollRef}
+          data-tour="athlete-tabs"
+          className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto scrollbar-none px-2 sm:px-6 w-full scroll-smooth"
+          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+        >
+          {ATHLETE_TABS.map(({ id, label, short, icon: Icon, active }) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setActiveTab(id)}
+              className={`py-3 px-3 sm:px-4 rounded-xl text-[11px] sm:text-sm font-bold flex flex-col sm:flex-row items-center justify-center gap-1.5 transition-all flex-shrink-0 ${
+                activeTab === id ? active : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+              }`}
+            >
+              <Icon className="w-4 h-4" />
+              <span className="sm:hidden truncate">{short}</span>
+              <span className="hidden sm:inline">{label}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Seta Direita */}
+        <button
+          type="button"
+          onClick={() => scrollTabs('right')}
+          className="absolute right-0 z-10 p-1.5 bg-slate-900/90 hover:bg-slate-800 text-slate-300 rounded-full shadow-md border border-slate-700 backdrop-blur-sm -mr-2 sm:flex items-center justify-center transition-all hidden"
+          title="Rolar para direita"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
       </div>
 
-      {/* 3. Cronograma (somente leitura) ou formulário ativo */}
+      {/* 3. Conteúdo das abas */}
       {activeTab === 'history' ? (
         <div data-tour="athlete-history">
           <AthleteHistory
@@ -335,6 +375,10 @@ export const AthleteArea: React.FC = () => {
             listOnly
             fetchSessions={(from, to) => getAthleteSchedule(session.token, from, to)}
           />
+        </div>
+      ) : activeTab === 'adversarios' ? (
+        <div data-tour="athlete-adversaries">
+          <AdversaryManagement />
         </div>
       ) : (
       <div data-tour="athlete-form" className="bg-slate-900/50 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-2xl backdrop-blur">
