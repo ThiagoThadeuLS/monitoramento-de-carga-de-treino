@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useDialogs } from '../ui/Dialogs';
 import {
-  UserPlus, Loader2, AlertCircle, CheckCircle2, X, Copy, MessageCircle, ShieldCheck, UserX, UserCheck, KeyRound, Mail,
+  UserPlus, Loader2, AlertCircle, CheckCircle2, X, Copy, MessageCircle, UserX, UserCheck, KeyRound, Mail,
 } from 'lucide-react';
-import { TeamMember, addCoach, listTeam, setCoachActive, setCoachRole } from '../../lib/team';
+import { TeamMember, TeamRole, addCoach, listTeam, setCoachActive, setCoachRole } from '../../lib/team';
 import { ClubCrest, ClubInfo } from '../../lib/club';
 import { uploadEscudo } from '../../lib/platform';
 import { ImagePlus } from 'lucide-react';
@@ -51,7 +51,7 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({ currentUserId, c
   const [modalOpen, setModalOpen] = useState(false);
   const [nome, setNome] = useState('');
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState<'admin' | 'treinador'>('treinador');
+  const [role, setRole] = useState<TeamRole>('treinador');
   const [saving, setSaving] = useState(false);
   const [modalError, setModalError] = useState('');
   const [created, setCreated] = useState<CreatedCoach | null>(null);
@@ -90,7 +90,7 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({ currentUserId, c
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!nome.trim()) return setModalError('Informe o nome do treinador.');
+    if (!nome.trim()) return setModalError('Informe o nome do membro da equipe.');
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim())) return setModalError('Informe um e-mail válido.');
     setSaving(true);
     setModalError('');
@@ -135,11 +135,12 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({ currentUserId, c
     }
   };
 
-  const toggleRole = async (m: TeamMember) => {
-    const next = m.role === 'admin' ? 'treinador' : 'admin';
-    const ok = await confirm(next === 'admin' ? `Tornar ${m.nome} administrador do clube?` : `Tirar ${m.nome} da administração do clube?`);
+  const changeRole = async (m: TeamMember, next: TeamRole) => {
+    if (next === m.role) return;
+    const label = next === 'admin' ? 'administrador' : next === 'fisio' ? 'fisioterapeuta' : 'treinador';
+    const ok = await confirm(`Mudar o papel de ${m.nome} para ${label}?`);
     if (!ok) return;
-    runAction(m, () => setCoachRole(m.user_id, next), next === 'admin' ? `${m.nome} agora é administrador.` : `${m.nome} agora é treinador.`);
+    runAction(m, () => setCoachRole(m.user_id, next), `${m.nome} agora é ${label}.`);
   };
 
   const toggleActive = async (m: TeamMember) => {
@@ -151,10 +152,14 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({ currentUserId, c
   const RoleBadge: React.FC<{ m: TeamMember }> = ({ m }) => (
     <span
       className={`text-[11px] px-2 py-0.5 rounded-md border font-bold whitespace-nowrap ${
-        m.role === 'admin' ? 'bg-sky-500/15 text-sky-300 border-sky-500/30' : 'bg-slate-800 text-slate-300 border-slate-700'
+        m.role === 'admin'
+          ? 'bg-sky-500/15 text-sky-300 border-sky-500/30'
+          : m.role === 'fisio'
+          ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+          : 'bg-slate-800 text-slate-300 border-slate-700'
       }`}
     >
-      {m.role === 'admin' ? 'Admin' : 'Treinador'}
+      {m.role === 'admin' ? 'Admin' : m.role === 'fisio' ? 'Fisioterapeuta' : 'Treinador'}
     </span>
   );
 
@@ -172,16 +177,17 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({ currentUserId, c
     const busy = busyId === m.user_id;
     return (
       <div className="flex items-center gap-2 flex-wrap">
-        <button
-          type="button"
-          onClick={() => toggleRole(m)}
+        <select
+          value={m.role}
+          onChange={(e) => changeRole(m, e.target.value as TeamRole)}
           disabled={busy || self || !m.active}
-          title={self ? 'Você não pode mudar o próprio papel' : undefined}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 border border-sky-500/30 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed"
+          title={self ? 'Você não pode mudar o próprio papel' : 'Papel no clube'}
+          className="px-2.5 py-1.5 rounded-lg bg-slate-950 text-slate-200 border border-slate-700 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          <ShieldCheck className="w-3.5 h-3.5" />
-          {m.role === 'admin' ? 'Tirar admin' : 'Tornar admin'}
-        </button>
+          <option value="treinador">Treinador</option>
+          <option value="fisio">Fisioterapeuta</option>
+          <option value="admin">Admin</option>
+        </select>
         <button
           type="button"
           onClick={() => toggleActive(m)}
@@ -222,7 +228,7 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({ currentUserId, c
         <div className="flex-1">
           <p className="text-sm font-bold text-white">Equipe do {clubName}</p>
           <p className="text-xs text-slate-400">
-            Cadastre os treinadores do clube. Cada um recebe uma senha temporária e cria a própria senha no primeiro acesso.
+            Cadastre treinadores e fisioterapeutas do clube. Cada um recebe uma senha temporária e cria a própria senha no primeiro acesso.
           </p>
         </div>
         <button
@@ -231,7 +237,7 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({ currentUserId, c
           className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-sm shadow-lg shadow-sky-500/20 active:scale-95 transition-all"
         >
           <UserPlus className="w-4 h-4" />
-          Cadastrar treinador
+          Cadastrar membro
         </button>
       </div>
 
@@ -310,7 +316,7 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({ currentUserId, c
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4">
           <div className="bg-slate-900 border border-slate-700 rounded-t-3xl sm:rounded-3xl w-full max-w-md max-h-[92vh] overflow-y-auto shadow-2xl">
             <div className="px-5 sm:px-6 py-4 border-b border-slate-800 flex items-center justify-between">
-              <h3 className="text-lg font-bold text-white">{created ? 'Acesso criado' : 'Cadastrar treinador'}</h3>
+              <h3 className="text-lg font-bold text-white">{created ? 'Acesso criado' : 'Cadastrar membro'}</h3>
               <button type="button" onClick={() => setModalOpen(false)} className="p-1.5 rounded-xl hover:bg-slate-800 text-slate-400 hover:text-white" title="Fechar">
                 <X className="w-5 h-5" />
               </button>
@@ -379,8 +385,12 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({ currentUserId, c
                 </label>
                 <div>
                   <span className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5">Papel</span>
-                  <div className="grid grid-cols-2 gap-2">
-                    {([['treinador', 'Treinador', 'Usa todo o app'], ['admin', 'Admin', 'Também gerencia a equipe']] as const).map(([v, label, desc]) => (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    {([
+                      ['treinador', 'Treinador', 'Usa todo o app'],
+                      ['fisio', 'Fisioterapeuta', 'Só a fisioterapia'],
+                      ['admin', 'Admin', 'Também gerencia a equipe'],
+                    ] as const).map(([v, label, desc]) => (
                       <button
                         key={v}
                         type="button"

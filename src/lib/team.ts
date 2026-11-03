@@ -1,10 +1,12 @@
 import { createDetachedClient, supabase } from './supabase';
 
+export type TeamRole = 'admin' | 'treinador' | 'fisio';
+
 export interface TeamMember {
   user_id: string;
   nome: string;
   email: string;
-  role: 'admin' | 'treinador';
+  role: TeamRole;
   active: boolean;
   must_change_password: boolean;
   created_at: string;
@@ -12,7 +14,7 @@ export interface TeamMember {
 
 const MESSAGES: Record<string, string> = {
   nao_autorizado: 'Só o administrador do clube pode fazer isso.',
-  nome_obrigatorio: 'Informe o nome do treinador.',
+  nome_obrigatorio: 'Informe o nome do membro da equipe.',
   email_invalido: 'Informe um e-mail válido.',
   email_ja_cadastrado: 'Este e-mail já tem uma conta na plataforma.',
   papel_invalido: 'Papel inválido.',
@@ -58,7 +60,7 @@ export async function listTeam(): Promise<TeamMember[]> {
  * 3. o banco confere o convite e liga a conta ao clube.
  * Devolve a senha temporária para o admin repassar.
  */
-export async function addCoach(nome: string, email: string, role: 'admin' | 'treinador'): Promise<string> {
+export async function addCoach(nome: string, email: string, role: TeamRole): Promise<string> {
   if (!supabase) throw new Error('Supabase não configurado.');
   const { data: token, error } = await supabase.rpc('club_add_coach', { p_nome: nome, p_email: email, p_role: role });
   if (error) throw new Error(teamError(error));
@@ -78,7 +80,7 @@ export async function addCoach(nome: string, email: string, role: 'admin' | 'tre
   return password;
 }
 
-export async function setCoachRole(userId: string, role: 'admin' | 'treinador') {
+export async function setCoachRole(userId: string, role: TeamRole) {
   const { error } = await supabase!.rpc('club_set_coach_role', { p_user_id: userId, p_role: role });
   if (error) throw new Error(teamError(error));
 }

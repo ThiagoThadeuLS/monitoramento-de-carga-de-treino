@@ -18,6 +18,8 @@ interface Props {
   onAction: (a: TodayAction) => void;
   /** Cartão da próxima competição (fica no alto quando existir) */
   competitionCard?: React.ReactNode;
+  /** Cartão da fisioterapia (plano e check-in do atleta) */
+  physioCard?: React.ReactNode;
 }
 
 const kg = (v: number) => `${v.toFixed(1).replace('.', ',')} kg`;
@@ -93,7 +95,7 @@ const Row: React.FC<{
 );
 
 /** Tela "Hoje": o que falta responder e os treinos do dia, numa lista só. */
-export const AthleteToday: React.FC<Props> = ({ home, loading, error, onReload, onAction, competitionCard }) => {
+export const AthleteToday: React.FC<Props> = ({ home, loading, error, onReload, onAction, competitionCard, physioCard }) => {
   if (!home) {
     return (
       <div className="py-16 flex flex-col items-center gap-3 text-slate-400">
@@ -157,6 +159,7 @@ export const AthleteToday: React.FC<Props> = ({ home, loading, error, onReload, 
   return (
     <div className="space-y-5">
       {competitionCard}
+      {physioCard}
 
       <section data-tour="athlete-today" className="space-y-2.5">
         <div className="flex items-center justify-between">

@@ -16,17 +16,16 @@ import { WeightForm } from './WeightForm';
 import { AthleteLogin } from './AthleteLogin';
 import { AthleteChangePassword } from './AthleteChangePassword';
 import { AthleteToday, TodayAction, sessionMinutes } from './athlete/AthleteToday';
-import { AthleteCompetitionList } from './athlete/AthleteCompetitionList';
 import { PseRecord, PsrRecord, WeightRecord } from '../types';
 import { isSupabaseConfigured } from '../lib/supabase';
 import { useHistoryState } from '../lib/navigation';
 import { useTodayISO } from '../lib/useToday';
 import { nowTimeHM } from '../lib/date';
+import { AthleteAgenda } from './athlete/AthleteAgenda';
 import {
   AthleteHome,
   AthleteSession,
   getAthleteHome,
-  getAthleteSchedule,
   getTermsStatus,
   logoutAthlete,
   restoreAthleteSession,
@@ -43,13 +42,14 @@ const loadHistory = () => import('./AthleteHistory');
 const loadPrs = () => import('./AthletePrView');
 const loadWorkout = () => import('./AthletePhysicalWorkoutExecution');
 const loadCompetition = () => import('./AthleteCompetitionCard');
+const loadPhysio = () => import('./athlete/AthletePhysioCard');
 const loadTour = () => import('./tour/Tour');
-const TrainingSchedule = named(loadSchedule, (m) => m.TrainingSchedule);
 const AdversaryManagement = named(loadAdversaries, (m) => m.AdversaryManagement);
 const AthleteHistory = named(loadHistory, (m) => m.AthleteHistory);
 const AthletePrView = named(loadPrs, (m) => m.AthletePrView);
 const AthletePhysicalWorkoutExecution = named(loadWorkout, (m) => m.AthletePhysicalWorkoutExecution);
 const AthleteCompetitionCard = named(loadCompetition, (m) => m.AthleteCompetitionCard);
+const AthletePhysioCard = named(loadPhysio, (m) => m.AthletePhysioCard);
 const Tour = named(loadTour, (m) => m.Tour);
 
 type View = 'hoje' | 'agenda' | 'historico' | 'prs' | 'rivais';
@@ -198,7 +198,7 @@ export const AthleteArea: React.FC = () => {
   useEffect(() => {
     if (!home) return;
     const t = window.setTimeout(() => {
-      [loadSchedule, loadHistory, loadWorkout, loadCompetition, loadAdversaries, loadPrs].forEach((l) => l().catch(() => undefined));
+      [loadSchedule, loadHistory, loadWorkout, loadCompetition, loadAdversaries, loadPrs, loadPhysio].forEach((l) => l().catch(() => undefined));
     }, 1500);
     return () => window.clearTimeout(t);
   }, [home]);
@@ -507,23 +507,24 @@ export const AthleteArea: React.FC = () => {
                 />
               </Suspense>
             }
+            physioCard={
+              <Suspense fallback={null}>
+                <AthletePhysioCard token={readyToken} refreshKey={homeVersion} />
+              </Suspense>
+            }
           />
         )}
 
         {pane(
           'agenda',
-          <div data-tour="athlete-schedule" className="space-y-4">
-            <AthleteCompetitionList token={token} today={today} />
-            <TrainingSchedule
-              readOnly
-              listOnly
-              fetchSessions={(from: string, to: string) => getAthleteSchedule(token, from, to)}
-              onSelectSession={(s: { id: string; name?: string; training_type: string }) => {
-                if (isPhysicalTraining(s.training_type)) openOverlay({ kind: 'treino', id: s.id, name: s.name || 'Treino Físico' });
-                else notify('Só os treinos físicos têm ficha de execução.', 'info');
-              }}
-            />
-          </div>
+          <AthleteAgenda
+            token={token}
+            today={today}
+            onSelectSession={(s: { id: string; name?: string; training_type: string }) => {
+              if (isPhysicalTraining(s.training_type)) openOverlay({ kind: 'treino', id: s.id, name: s.name || 'Treino Físico' });
+              else notify('Só os treinos físicos têm ficha de execução.', 'info');
+            }}
+          />
         )}
 
         {pane(
