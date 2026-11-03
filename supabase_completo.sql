@@ -20,6 +20,7 @@
   --   8. Tutorial e cores do clube
   --   9. Carga interna (duração da PSE), termo LGPD e histórico do atleta
   --  10. Adversários: sexo, autor da ficha, observações táticas e "apagar para mim"
+  --  11. Competições e acompanhamento seguro de peso
   --
   -- Depois de rodar pela primeira vez: publicar a função "enviar-lembretes" e criar
   -- o agendamento (passo a passo no fim da parte 7).
@@ -2953,5 +2954,193 @@
   grant execute on function public.athlete_delete_adversario(uuid, uuid) to anon, authenticated;
   grant execute on function public.athlete_add_observacao(uuid, uuid, text) to anon, authenticated;
   grant execute on function public.athlete_delete_observacao(uuid, uuid) to anon, authenticated;
+
+
+  -- ############################################################
+  -- PARTE 11. COMPETIÇÕES
+  -- ############################################################
+
+  -- ------------------------------------------------------------
+  -- 1. Competições do clube (mesmo público dos treinos)
+  -- ------------------------------------------------------------
+  create table if not exists public.competitions (
+    id uuid primary key default gen_random_uuid(),
+    club_id uuid not null default public.current_club_id() references public.clubs(id) on delete cascade,
+    nome text not null check (length(trim(nome)) > 0),
+    data date not null,
+    data_pesagem date not null,
+    hora_pesagem time,
+    local text,
+    observacoes text,
+    audience text not null default 'todos',
+    target_group_ids uuid[] not null default '{}',
+    target_athlete_ids uuid[] not null default '{}',
+    created_by uuid default auth.uid(),
+    created_at timestamp with time zone default now() not null,
+    updated_at timestamp with time zone default now() not null,
+    constraint competitions_pesagem_antes check (data_pesagem <= data),
+    constraint competitions_audience_check check (audience in ('todos', 'incluir', 'exceto'))
+  );
+
+  create index if not exists competitions_club_date_idx on public.competitions (club_id, data_pesagem);
+
+  drop trigger if exists competitions_touch on public.competitions;
+  create trigger competitions_touch before update on public.competitions
+    for each row execute function public.training_sessions_touch();
+
+  -- A mesma validação de público dos treinos: grupos e atletas do mesmo clube
+  drop trigger if exists competitions_check_audience on public.competitions;
+  create trigger competitions_check_audience before insert or update on public.competitions
+    for each row execute function public.training_sessions_check_audience();
+
+  -- A competição é para este atleta?
+  create or replace function public.competition_applies_to(p_competition public.competitions, p_athlete uuid)
+  returns boolean
+  language sql
+  stable
+  security definer
+  set search_path = ''
+  as $$
+    select case p_competition.audience
+      when 'todos' then true
+      else (
+        p_athlete = any(p_competition.target_athlete_ids)
+        or exists (
+          select 1 from public.athlete_group_members m
+          where m.athlete_id = p_athlete and m.group_id = any(p_competition.target_group_ids)
+        )
+      ) = (p_competition.audience = 'incluir')
+    end;
+  $$;
+
+  -- ------------------------------------------------------------
+  -- 2. Visão do treinador: atletas do público + última pesagem
+  -- ------------------------------------------------------------
+  create or replace function public.coach_competition_summary(p_competition_id uuid)
+  returns table (
+    athlete_id uuid,
+    nome text,
+    categoria text,
+    classe text,
+    peso_atual numeric,
+    peso_data date
+  )
+  language plpgsql
+  stable
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_competition public.competitions;
+  begin
+    if auth.uid() is null then
+      raise exception 'nao_autorizado';
+    end if;
+
+    select c.* into v_competition
+    from public.competitions c
+    where c.id = p_competition_id
+      and c.club_id = public.current_club_id();
+
+    if not found then
+      raise exception 'competicao_nao_encontrada';
+    end if;
+
+    return query
+      select a.id, a.nome, a.categoria, a.classe, w.weight, w.date
+      from public.athletes a
+      left join lateral (
+        select wr.weight, wr.date
+        from public.weight_records wr
+        where wr.athlete_id = a.id
+        order by wr.date desc, wr.created_at desc
+        limit 1
+      ) w on true
+      where a.club_id = v_competition.club_id
+        and a.active
+        and public.competition_applies_to(v_competition, a.id)
+      order by a.nome;
+  end;
+  $$;
+
+  -- ------------------------------------------------------------
+  -- 3. Atleta: competições destinadas a ele + última pesagem
+  -- ------------------------------------------------------------
+  create or replace function public.athlete_list_competitions(p_token uuid)
+  returns json
+  language plpgsql
+  stable
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_athlete uuid := public._athlete_ready(p_token);
+    v_club uuid;
+    v_categoria text;
+  begin
+    select a.club_id, a.categoria into v_club, v_categoria
+    from public.athletes a
+    where a.id = v_athlete;
+
+    return coalesce((
+      select json_agg(row_to_json(x) order by x.data_pesagem, x.data)
+      from (
+        select c.id, c.nome, c.data, c.data_pesagem, c.hora_pesagem, c.local, c.observacoes,
+               v_categoria as categoria,
+               w.weight as peso_atual,
+               w.date as peso_data
+        from public.competitions c
+        left join lateral (
+          select wr.weight, wr.date
+          from public.weight_records wr
+          where wr.athlete_id = v_athlete
+          order by wr.date desc, wr.created_at desc
+          limit 1
+        ) w on true
+        where c.club_id = v_club
+          and c.data >= public.training_today() - 7
+          and public.competition_applies_to(c, v_athlete)
+      ) x
+    ), '[]'::json);
+  end;
+  $$;
+
+  -- ------------------------------------------------------------
+  -- 4. Regras de acesso (clube; escrita bloqueada no modo suporte)
+  -- ------------------------------------------------------------
+  alter table public.competitions enable row level security;
+  revoke all on public.competitions from anon;
+  grant select, insert, update, delete on public.competitions to authenticated;
+
+  drop policy if exists "Competições: leitura" on public.competitions;
+  drop policy if exists "Competições: inclusão" on public.competitions;
+  drop policy if exists "Competições: alteração" on public.competitions;
+  drop policy if exists "Competições: exclusão" on public.competitions;
+
+  create policy "Competições: leitura" on public.competitions
+    for select to authenticated
+    using (club_id = public.current_club_id());
+
+  create policy "Competições: inclusão" on public.competitions
+    for insert to authenticated
+    with check (club_id = public.current_club_id() and public.support_club_id() is null);
+
+  create policy "Competições: alteração" on public.competitions
+    for update to authenticated
+    using (club_id = public.current_club_id() and public.support_club_id() is null)
+    with check (club_id = public.current_club_id());
+
+  create policy "Competições: exclusão" on public.competitions
+    for delete to authenticated
+    using (club_id = public.current_club_id() and public.support_club_id() is null);
+
+  revoke execute on function public.competition_applies_to(public.competitions, uuid) from public, anon;
+  grant execute on function public.competition_applies_to(public.competitions, uuid) to authenticated;
+
+  revoke execute on function public.coach_competition_summary(uuid) from public, anon;
+  grant execute on function public.coach_competition_summary(uuid) to authenticated;
+
+  revoke execute on function public.athlete_list_competitions(uuid) from public;
+  grant execute on function public.athlete_list_competitions(uuid) to anon, authenticated;
 
   notify pgrst, 'reload schema';
