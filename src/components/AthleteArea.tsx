@@ -20,6 +20,7 @@ import { AthleteChangePassword } from './AthleteChangePassword';
 import { AthletePrView } from './AthletePrView';
 import { AthleteWorkoutsTab } from './AthleteWorkoutsTab';
 import { AthletePhysicalWorkoutExecution } from './AthletePhysicalWorkoutExecution';
+import { AthleteCompetitionCard } from './AthleteCompetitionCard';
 import { PseRecord, PsrRecord, WeightRecord } from '../types';
 import { isSupabaseConfigured } from '../lib/supabase';
 import {
@@ -58,6 +59,7 @@ export const AthleteArea: React.FC = () => {
   const { setClub } = useClub();
 
   const [activePhysicalWorkout, setActivePhysicalWorkout] = useState<{ id: string; name: string } | null>(null);
+  const [weightVersion, setWeightVersion] = useState(0);
   const tabsScrollRef = useRef<HTMLDivElement>(null);
 
   const scrollTabs = (direction: 'left' | 'right') => {
@@ -187,7 +189,11 @@ export const AthleteArea: React.FC = () => {
 
   const handlePseSubmit = (record: Omit<PseRecord, 'id' | 'created_at'>) => submitWith(submitPse, record);
   const handlePsrSubmit = (record: Omit<PsrRecord, 'id' | 'created_at'>) => submitWith(submitPsr, record);
-  const handleWeightSubmit = (record: Omit<WeightRecord, 'id' | 'created_at'>) => submitWith(submitWeight, record);
+  const handleWeightSubmit = async (record: Omit<WeightRecord, 'id' | 'created_at'>) => {
+    const ok = await submitWith(submitWeight, record);
+    if (ok) setWeightVersion((v) => v + 1);
+    return ok;
+  };
 
   if (!isSupabaseConfigured) {
     return (
@@ -432,7 +438,12 @@ export const AthleteArea: React.FC = () => {
           <PsrForm athleteId={athlete.id} athleteName={athlete.nome} onSubmit={handlePsrSubmit} />
         )}
         {activeTab === 'weight' && (
-          <WeightForm athleteId={athlete.id} athleteName={athlete.nome} onSubmit={handleWeightSubmit} />
+          <div className="space-y-4">
+            <AthleteCompetitionCard token={readyToken} refreshKey={weightVersion} />
+            <div id="weight-entry">
+              <WeightForm athleteId={athlete.id} athleteName={athlete.nome} onSubmit={handleWeightSubmit} />
+            </div>
+          </div>
         )}
       </div>
       )}

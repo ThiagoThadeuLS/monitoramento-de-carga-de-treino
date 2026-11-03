@@ -60,3 +60,22 @@ export interface TrainingSession {
   created_at?: string;
   updated_at?: string;
 }
+
+/** Competição cadastrada pela comissão técnica. */
+export interface Competition {
+  id: string;
+  nome: string;
+  /** Data da competição (AAAA-MM-DD). */
+  data: string;
+  /** Data da pesagem oficial (AAAA-MM-DD). */
+  data_pesagem: string;
+  hora_pesagem?: string | null;
+  local?: string | null;
+  observacoes?: string | null;
+  /** Mesmo público dos treinos: todos, somente (incluir) ou todos exceto. */
+  audience?: 'todos' | 'incluir' | 'exceto';
+  target_group_ids?: string[];
+  target_athlete_ids?: string[];
+  created_at?: string;
+  updated_at?: string;
+}
