@@ -227,7 +227,11 @@ export const AthleteArea: React.FC = () => {
         if (cancelled) return;
         setPushState(st);
         // Assinatura recusada pelo serviço de notificações: volta a pedir para ativar
-        if (st === 'on') relinkPush(readyToken).then((r) => !cancelled && r === 'expired' && setPushState('off'));
+        if (st === 'on') {
+          relinkPush(readyToken).then((r: any) => {
+            if (!cancelled && r === 'expired') setPushState('off');
+          });
+        }
       })
       .catch(() => !cancelled && setPushState('unsupported'));
     return () => {
