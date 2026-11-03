@@ -87,7 +87,7 @@ export const WeightForm: React.FC<WeightFormProps> = ({ athleteId, athleteName, 
         </label>
 
         {/* Big Input with kg unit */}
-        <div className="inline-flex items-baseline justify-center gap-2">
+        <div className="inline-flex w-full items-baseline justify-center gap-2">
           <input
             type="number"
             step="0.05"
@@ -96,10 +96,10 @@ export const WeightForm: React.FC<WeightFormProps> = ({ athleteId, athleteName, 
             inputMode="decimal"
             value={weight}
             onChange={(e) => setWeight(e.target.value)}
-            className="w-48 text-center font-black text-5xl sm:text-6xl text-white bg-slate-800/80 border-2 border-slate-700 rounded-2xl py-3 px-2 focus:outline-none focus:border-sky-500 focus:ring-4 focus:ring-sky-500/20 transition-all"
+            className="w-full max-w-[13.5rem] text-center font-black text-4xl sm:text-5xl tabular-nums tracking-tight text-white bg-slate-800/80 border-2 border-slate-700 rounded-2xl py-3 px-3 focus:outline-none focus:border-sky-500 focus:ring-4 focus:ring-sky-500/20 transition-all"
             placeholder={lastWeight ? fmt(lastWeight) : '75,0'}
           />
-          <span className="text-2xl font-bold text-slate-400">kg</span>
+          <span className="text-xl font-bold text-slate-400">kg</span>
         </div>
         {lastWeight ? (
           <p className="text-xs text-slate-500">Último registro: {fmt(lastWeight)} kg</p>

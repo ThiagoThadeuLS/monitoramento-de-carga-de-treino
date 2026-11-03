@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { LogOut, BarChart3, Users, Loader2, LineChart, CalendarDays, Shield, AlertTriangle, UserCog, Settings2, UsersRound, Palette, Gauge, ChevronLeft, ChevronRight, Dumbbell } from 'lucide-react';
+import { LogOut, BarChart3, Users, Loader2, LineChart, CalendarDays, Shield, AlertTriangle, UserCog, Settings2, UsersRound, Palette, Gauge, ChevronLeft, ChevronRight, Dumbbell, Trophy } from 'lucide-react';
 import { exitSupport } from '../lib/platform';
 import { TeamManagement } from './coach/TeamManagement';
 import { GroupManagement } from './coach/GroupManagement';
@@ -19,9 +19,10 @@ import { AdversaryManagement } from './coach/AdversaryManagement';
 import { LoadAnalysis } from './coach/LoadAnalysis';
 import { AthleteProfile } from './coach/AthleteProfile';
 import { PhysicalWorkoutBuilder } from './coach/PhysicalWorkoutBuilder';
+import { CompetitionManagement } from './coach/CompetitionManagement';
 import { Athlete } from '../types';
 
-type CoachTab = 'overview' | 'period' | 'load' | 'schedule' | 'fisica' | 'adversaries' | 'management';
+type CoachTab = 'overview' | 'period' | 'load' | 'schedule' | 'fisica' | 'competitions' | 'adversaries' | 'management';
 type ManagementSection = 'athletes' | 'groups' | 'team' | 'colors';
 
 const COACH_TABS: { id: CoachTab; label: string; short: string; icon: typeof BarChart3 }[] = [
@@ -30,6 +31,7 @@ const COACH_TABS: { id: CoachTab; label: string; short: string; icon: typeof Bar
   { id: 'load', label: 'Carga Interna', short: 'Carga', icon: Gauge },
   { id: 'schedule', label: 'Cronograma', short: 'Agenda', icon: CalendarDays },
   { id: 'fisica', label: 'Prep. Física', short: 'Física', icon: Dumbbell },
+  { id: 'competitions', label: 'Competições', short: 'Comp.', icon: Trophy },
   { id: 'adversaries', label: 'Atletas Adversários', short: 'Rivais', icon: Shield },
   { id: 'management', label: 'Gestão', short: 'Gestão', icon: Settings2 },
 ];
@@ -379,6 +381,7 @@ export const CoachArea: React.FC<{ recovery?: boolean }> = ({ recovery = false }
       {currentTab === 'load' && <LoadAnalysis onOpenProfile={setProfileId} />}
       {currentTab === 'schedule' && <TrainingSchedule />}
       {currentTab === 'fisica' && <PhysicalWorkoutBuilder />}
+      {currentTab === 'competitions' && <CompetitionManagement />}
       {currentTab === 'management' && (
         <div className="space-y-4">
           {/* Seções da Gestão: atletas e grupos para todos; treinadores só para admin */}

@@ -22,6 +22,7 @@ import { AthleteChangePassword } from './AthleteChangePassword';
 import { AthletePrView } from './AthletePrView';
 import { AthleteWorkoutsTab } from './AthleteWorkoutsTab';
 import { AthletePhysicalWorkoutExecution } from './AthletePhysicalWorkoutExecution';
+import { AthleteCompetitionCard } from './AthleteCompetitionCard';
 import { PseRecord, PsrRecord, WeightRecord } from '../types';
 import { isSupabaseConfigured } from '../lib/supabase';
 import {
@@ -457,7 +458,12 @@ export const AthleteArea: React.FC = () => {
           <PsrForm athleteId={athlete.id} athleteName={athlete.nome} onSubmit={handlePsrSubmit} />
         )}
         {activeTab === 'weight' && (
-          <WeightForm athleteId={athlete.id} athleteName={athlete.nome} lastWeight={lastWeight} onSubmit={handleWeightSubmit} />
+          <div className="space-y-4">
+            <AthleteCompetitionCard token={readyToken} refreshKey={weightVersion} />
+            <div id="weight-entry">
+              <WeightForm athleteId={athlete.id} athleteName={athlete.nome} lastWeight={lastWeight} onSubmit={handleWeightSubmit} />
+            </div>
+          </div>
         )}
       </div>
       )}
