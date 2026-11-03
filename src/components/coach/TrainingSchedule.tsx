@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  ChevronLeft, ChevronRight, Plus, Clock, Loader2, AlertCircle, X, Trash2, CalendarDays, StickyNote, CheckCircle2, ChevronRight as Chevron, Flame, Pencil,
+  ChevronLeft, ChevronRight, Plus, Clock, Loader2, AlertCircle, X, Trash2, CalendarDays, StickyNote, CheckCircle2, ChevronRight as Chevron, Flame, Pencil, Dumbbell,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { addDaysISO, scheduleWeekBounds, startOfWeekISO, todayLocalISO } from '../../lib/date';
@@ -60,9 +60,11 @@ interface TrainingScheduleProps {
   fetchSessions?: (from: string, to: string) => Promise<TrainingSession[]>;
   /** Força a lista por dia mesmo em telas largas (área estreita do atleta). */
   listOnly?: boolean;
+  /** Ação ao selecionar ou abrir um treino (ex: executar treino físico). */
+  onSelectSession?: (session: TrainingSession) => void;
 }
 
-export const TrainingSchedule: React.FC<TrainingScheduleProps> = ({ readOnly = false, fetchSessions, listOnly = false }) => {
+export const TrainingSchedule: React.FC<TrainingScheduleProps> = ({ readOnly = false, fetchSessions, listOnly = false, onSelectSession }) => {
   const [weekStart, setWeekStart] = useState(() => startOfWeekISO(todayLocalISO()));
   const [sessions, setSessions] = useState<TrainingSession[]>([]);
   const [loading, setLoading] = useState(true);
@@ -508,6 +510,31 @@ export const TrainingSchedule: React.FC<TrainingScheduleProps> = ({ readOnly = f
                 )}
               </div>
             </div>
+            {readOnly && onSelectSession && (
+              <div className="px-5 py-4 border-t border-slate-800 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setViewing(null)}
+                  className="px-4 py-2.5 rounded-xl border border-slate-700 text-slate-300 hover:bg-slate-800 text-sm font-semibold"
+                >
+                  Fechar
+                </button>
+                {((viewing.training_type || '').toLowerCase().includes('fisico') ||
+                  (viewing.training_type || '').toLowerCase().includes('físico')) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const s = viewing;
+                      setViewing(null);
+                      onSelectSession(s);
+                    }}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-violet-500 hover:bg-violet-400 text-slate-950 text-sm font-bold shadow-lg shadow-violet-500/20"
+                  >
+                    <Dumbbell className="w-4 h-4" /> Iniciar Treino Físico
+                  </button>
+                )}
+              </div>
+            )}
             {!readOnly && (
               <div className="px-5 py-4 border-t border-slate-800 flex items-center justify-end gap-3">
                 <button

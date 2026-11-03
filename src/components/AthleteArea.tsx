@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Flame, HeartPulse, Scale, ShieldAlert, LogOut, Loader2, User, CalendarDays, History, Shield, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Flame, HeartPulse, Scale, ShieldAlert, LogOut, Loader2, User, CalendarDays, History, Shield, ChevronLeft, ChevronRight, Trophy, Dumbbell } from 'lucide-react';
 import { TERMS_VERSION, TermsGate } from './TermsGate';
 import { AthleteHistory } from './AthleteHistory';
 import { todayLocalISO } from '../lib/date';
@@ -17,6 +17,9 @@ import { PsrForm } from './PsrForm';
 import { WeightForm } from './WeightForm';
 import { AthleteLogin } from './AthleteLogin';
 import { AthleteChangePassword } from './AthleteChangePassword';
+import { AthletePrView } from './AthletePrView';
+import { AthleteWorkoutsTab } from './AthleteWorkoutsTab';
+import { AthletePhysicalWorkoutExecution } from './AthletePhysicalWorkoutExecution';
 import { PseRecord, PsrRecord, WeightRecord } from '../types';
 import { isSupabaseConfigured } from '../lib/supabase';
 import {
@@ -30,20 +33,21 @@ import {
   submitWeight,
 } from '../lib/athleteAuth';
 
-type AthleteTab = 'pse' | 'psr' | 'weight' | 'schedule' | 'history' | 'adversarios';
+type AthleteTab = 'pse' | 'psr' | 'weight' | 'prs' | 'treinos' | 'schedule' | 'history' | 'adversarios';
 
 const ATHLETE_TABS: { id: AthleteTab; label: string; short: string; icon: typeof Flame; active: string }[] = [
   { id: 'pse', label: 'PSE (Esforço)', short: 'PSE', icon: Flame, active: 'bg-orange-500 text-slate-950 shadow-md shadow-orange-500/20' },
   { id: 'psr', label: 'PSR (Bem-Estar)', short: 'PSR', icon: HeartPulse, active: 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20' },
   { id: 'weight', label: 'Peso', short: 'Peso', icon: Scale, active: 'bg-sky-500 text-slate-950 shadow-md shadow-sky-500/20' },
-  { id: 'schedule', label: 'Cronograma', short: 'Agenda', icon: CalendarDays, active: 'bg-violet-500 text-slate-950 shadow-md shadow-violet-500/20' },
+  { id: 'prs', label: 'Meus PRs', short: 'PRs', icon: Trophy, active: 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20' },
+  { id: 'treinos', label: 'Meus Treinos', short: 'Treinos', icon: Dumbbell, active: 'bg-violet-500 text-slate-950 shadow-md shadow-violet-500/20' },
+  { id: 'schedule', label: 'Cronograma', short: 'Agenda', icon: CalendarDays, active: 'bg-indigo-500 text-slate-950 shadow-md shadow-indigo-500/20' },
   { id: 'adversarios', label: 'Adversários', short: 'Rivais', icon: Shield, active: 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20' },
   { id: 'history', label: 'Histórico', short: 'Hist.', icon: History, active: 'bg-slate-200 text-slate-950 shadow-md shadow-slate-200/20' },
 ];
 
-// Aba pedida pelo link da notificação (?aba=...), lida uma única vez quando o app abre
 const INITIAL_TAB: AthleteTab | null = (() => {
-  const map: Record<string, AthleteTab> = { pse: 'pse', psr: 'psr', peso: 'weight', agenda: 'schedule', adversarios: 'adversarios' };
+  const map: Record<string, AthleteTab> = { pse: 'pse', psr: 'psr', peso: 'weight', prs: 'prs', treinos: 'treinos', agenda: 'schedule', adversarios: 'adversarios' };
   return map[new URLSearchParams(window.location.search).get('aba') ?? ''] ?? null;
 })();
 
@@ -53,7 +57,7 @@ export const AthleteArea: React.FC = () => {
   const [session, setSession] = useState<AthleteSession | null>(null);
   const { setClub } = useClub();
 
-  // Referência para o container de abas roláveis com setas
+  const [activePhysicalWorkout, setActivePhysicalWorkout] = useState<{ id: string; name: string } | null>(null);
   const tabsScrollRef = useRef<HTMLDivElement>(null);
 
   const scrollTabs = (direction: 'left' | 'right') => {
@@ -64,11 +68,9 @@ export const AthleteArea: React.FC = () => {
     }
   };
 
-  // Notificações neste aparelho: confere o estado e religa ao atleta que entrou (sem perguntar de novo)
   const [pushState, setPushState] = useState<PushState | null>(null);
   const passwordToken = session && !session.mustChangePassword ? session.token : null;
 
-  // Termo de uso dos dados (LGPD): aceito uma vez, antes de usar o app
   const [terms, setTerms] = useState<{ accepted_at: string | null; version: string | null } | null>(null);
   useEffect(() => {
     setTerms(null);
@@ -84,9 +86,11 @@ export const AthleteArea: React.FC = () => {
   const termsOk = !!terms?.accepted_at && terms.version === TERMS_VERSION;
   const readyToken = passwordToken && termsOk ? passwordToken : null;
 
-  // Duração dos treinos de hoje (sugestão no campo de duração da PSE)
   const [scheduledDurations, setScheduledDurations] = useState<Record<string, number>>({});
   const [suggestedType, setSuggestedType] = useState<string | undefined>();
+  const [overrideDuration, setOverrideDuration] = useState<number | undefined>();
+  const [overrideType, setOverrideType] = useState<string | undefined>();
+
   useEffect(() => {
     if (!readyToken) return;
     const today = todayLocalISO();
@@ -94,7 +98,6 @@ export const AthleteArea: React.FC = () => {
       .then((list) => {
         const now = new Date().toTimeString().slice(0, 5);
         const map: Record<string, number> = {};
-        // o treino daquele tipo que já começou mais recentemente (senão, o primeiro do dia)
         const sorted = [...list].sort((a, b) => a.start_time.localeCompare(b.start_time));
         for (const t of sorted) {
           const [h1, m1] = t.start_time.split(':').map(Number);
@@ -109,7 +112,6 @@ export const AthleteArea: React.FC = () => {
       .catch(() => undefined);
   }, [readyToken]);
 
-  // Tour: aparece sozinho no primeiro acesso; depois, pelo botão "?"
   const [tutorial, setTutorial] = useState(false);
   const readyAthleteId = readyToken ? session!.athlete.id : null;
   useEffect(() => {
@@ -139,19 +141,16 @@ export const AthleteArea: React.FC = () => {
     };
   }, [readyToken]);
 
-  // Cabeçalho mostra o clube do atleta logado
   useEffect(() => {
     setClub(session?.club ?? null);
   }, [session?.club?.id]);
   const [checkingSession, setCheckingSession] = useState(isSupabaseConfigured);
   const [notice, setNotice] = useState<string | null>(null);
-  // Ao tocar numa notificação o app abre com ?aba=pse|psr|peso (lido uma vez ao carregar)
-  const [activeTab, setActiveTab] = useState<AthleteTab>(INITIAL_TAB ?? 'pse');
+  const [activeTab, setActiveTab] = useState<AthleteTab>(INITIAL_TAB ?? 'treinos');
   useEffect(() => {
     if (INITIAL_TAB) window.history.replaceState(null, '', window.location.pathname);
   }, []);
 
-  // Retoma a sessão salva neste aparelho (atleta não precisa logar todo dia)
   useEffect(() => {
     if (!isSupabaseConfigured) return;
     restoreAthleteSession()
@@ -161,13 +160,11 @@ export const AthleteArea: React.FC = () => {
   }, []);
 
   const handleLogout = async () => {
-    // As notificações continuam ativas no aparelho (permanente); só a sessão é encerrada
     if (session) await logoutAthlete(session.token).catch(() => undefined);
     setSession(null);
-    setActiveTab('pse');
+    setActiveTab('treinos');
   };
 
-  // Envia o registro; o banco identifica o atleta pelo token da sessão
   const submitWith = async <T,>(
     send: (token: string, record: T) => Promise<void>,
     { athlete_id: _ignored, ...record }: T & { athlete_id: string }
@@ -236,7 +233,6 @@ export const AthleteArea: React.FC = () => {
     );
   }
 
-  // Primeiro acesso (ou senha resetada pelo treinador): troca obrigatória
   if (session.mustChangePassword) {
     return (
       <AthleteChangePassword
@@ -247,7 +243,6 @@ export const AthleteArea: React.FC = () => {
     );
   }
 
-  // Termo de uso dos dados (LGPD)
   if (!terms) {
     return (
       <div className="py-24 flex flex-col items-center justify-center gap-3 text-slate-400">
@@ -266,7 +261,6 @@ export const AthleteArea: React.FC = () => {
     );
   }
 
-  // Celular: só usa o app depois de aceitar as notificações
   if (MOBILE && pushState !== 'on') {
     if (pushState === null) {
       return (
@@ -284,7 +278,7 @@ export const AthleteArea: React.FC = () => {
     <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
       <HelpButton onClick={() => setTutorial(true)} />
       {tutorial && <Tour steps={athleteTourSteps(athlete.nome, setActiveTab)} onClose={finishTutorial} />}
-      {/* 1. Atleta logado */}
+      
       <div data-tour="athlete-card" className="w-full bg-slate-800/80 border border-slate-700/80 rounded-2xl p-4 shadow-xl backdrop-blur flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center flex-shrink-0">
@@ -307,13 +301,10 @@ export const AthleteArea: React.FC = () => {
         </button>
       </div>
 
-      {/* Lembretes no celular */}
-      {/* Computador: lembretes opcionais (no celular já são obrigatórios) */}
       {!MOBILE && <RemindersCard token={session.token} />}
 
-      {/* 2. Abas com setas de rolagem lateral */}
+      {/* Abas com setas de rolagem lateral */}
       <div className="relative flex items-center p-1.5 bg-slate-900/90 border border-slate-800 rounded-2xl">
-        {/* Seta Esquerda */}
         <button
           type="button"
           onClick={() => scrollTabs('left')}
@@ -323,7 +314,6 @@ export const AthleteArea: React.FC = () => {
           <ChevronLeft className="w-4 h-4" />
         </button>
 
-        {/* Container rolável das abas */}
         <div
           ref={tabsScrollRef}
           data-tour="athlete-tabs"
@@ -334,9 +324,12 @@ export const AthleteArea: React.FC = () => {
             <button
               key={id}
               type="button"
-              onClick={() => setActiveTab(id)}
+              onClick={() => {
+                setActivePhysicalWorkout(null);
+                setActiveTab(id);
+              }}
               className={`py-3 px-3 sm:px-4 rounded-xl text-[11px] sm:text-sm font-bold flex flex-col sm:flex-row items-center justify-center gap-1.5 transition-all flex-shrink-0 ${
-                activeTab === id ? active : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                activeTab === id && !activePhysicalWorkout ? active : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
               }`}
             >
               <Icon className="w-4 h-4" />
@@ -346,7 +339,6 @@ export const AthleteArea: React.FC = () => {
           ))}
         </div>
 
-        {/* Seta Direita */}
         <button
           type="button"
           onClick={() => scrollTabs('right')}
@@ -357,8 +349,30 @@ export const AthleteArea: React.FC = () => {
         </button>
       </div>
 
-      {/* 3. Conteúdo das abas */}
-      {activeTab === 'history' ? (
+      {/* Conteúdo das abas ou Execução de Treino Físico */}
+      {activePhysicalWorkout ? (
+        <AthletePhysicalWorkoutExecution
+          token={session.token}
+          athleteId={athlete.id}
+          sessionId={activePhysicalWorkout.id}
+          sessionName={activePhysicalWorkout.name}
+          onFinishAndGoToPse={(durationMinutes) => {
+            setOverrideDuration(durationMinutes);
+            setOverrideType('Treino Físico');
+            setActivePhysicalWorkout(null);
+            setActiveTab('pse');
+          }}
+          onBack={() => setActivePhysicalWorkout(null)}
+        />
+      ) : activeTab === 'treinos' ? (
+        <AthleteWorkoutsTab
+          token={session.token}
+          athleteId={athlete.id}
+          onStartWorkout={(sessionId, sessionName) => {
+            setActivePhysicalWorkout({ id: sessionId, name: sessionName });
+          }}
+        />
+      ) : activeTab === 'history' ? (
         <div data-tour="athlete-history">
           <AthleteHistory
             token={session.token}
@@ -369,21 +383,50 @@ export const AthleteArea: React.FC = () => {
           />
         </div>
       ) : activeTab === 'schedule' ? (
-        <div data-tour="athlete-schedule">
+        <div data-tour="athlete-schedule" className="space-y-4">
           <TrainingSchedule
             readOnly
             listOnly
             fetchSessions={(from, to) => getAthleteSchedule(session.token, from, to)}
+            onSelectSession={(sessionItem: any) => {
+              const tipoTreino = (sessionItem.training_type || sessionItem.tipo || '').toLowerCase();
+              if (tipoTreino.includes('fisico') || tipoTreino.includes('físico')) {
+                setActivePhysicalWorkout({
+                  id: sessionItem.id,
+                  name: sessionItem.name || sessionItem.titulo || 'Treino Físico',
+                });
+              } else {
+                alert('Apenas treinos físicos possuem ficha de execução interativa.');
+              }
+            }}
           />
         </div>
       ) : activeTab === 'adversarios' ? (
         <div data-tour="athlete-adversaries">
           <AdversaryManagement />
         </div>
+      ) : activeTab === 'prs' ? (
+        <div data-tour="athlete-prs">
+          <AthletePrView athleteId={athlete.id} />
+        </div>
       ) : (
       <div data-tour="athlete-form" className="bg-slate-900/50 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-2xl backdrop-blur">
         {activeTab === 'pse' && (
-          <PseForm athleteId={athlete.id} athleteName={athlete.nome} onSubmit={handlePseSubmit} scheduledDurations={scheduledDurations} suggestedType={suggestedType} />
+          <PseForm
+            athleteId={athlete.id}
+            athleteName={athlete.nome}
+            onSubmit={async (record) => {
+              const ok = await handlePseSubmit(record);
+              if (ok) {
+                setOverrideDuration(undefined);
+                setOverrideType(undefined);
+              }
+              return ok;
+            }}
+            scheduledDurations={scheduledDurations}
+            suggestedType={overrideType ?? suggestedType}
+            initialDuration={overrideDuration}
+          />
         )}
         {activeTab === 'psr' && (
           <PsrForm athleteId={athlete.id} athleteName={athlete.nome} onSubmit={handlePsrSubmit} />

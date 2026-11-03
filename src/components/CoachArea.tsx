@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { LogOut, BarChart3, Users, Loader2, LineChart, CalendarDays, Shield, AlertTriangle, UserCog, Settings2, UsersRound, Palette, Gauge, ChevronLeft, ChevronRight } from 'lucide-react';
+import { LogOut, BarChart3, Users, Loader2, LineChart, CalendarDays, Shield, AlertTriangle, UserCog, Settings2, UsersRound, Palette, Gauge, ChevronLeft, ChevronRight, Dumbbell } from 'lucide-react';
 import { exitSupport } from '../lib/platform';
 import { TeamManagement } from './coach/TeamManagement';
 import { GroupManagement } from './coach/GroupManagement';
@@ -18,9 +18,10 @@ import { AthleteManagement } from './coach/AthleteManagement';
 import { AdversaryManagement } from './coach/AdversaryManagement';
 import { LoadAnalysis } from './coach/LoadAnalysis';
 import { AthleteProfile } from './coach/AthleteProfile';
+import { PhysicalWorkoutBuilder } from './coach/PhysicalWorkoutBuilder';
 import { Athlete } from '../types';
 
-type CoachTab = 'overview' | 'period' | 'load' | 'schedule' | 'management' | 'adversaries';
+type CoachTab = 'overview' | 'period' | 'load' | 'schedule' | 'fisica' | 'adversaries' | 'management';
 type ManagementSection = 'athletes' | 'groups' | 'team' | 'colors';
 
 const COACH_TABS: { id: CoachTab; label: string; short: string; icon: typeof BarChart3 }[] = [
@@ -28,7 +29,8 @@ const COACH_TABS: { id: CoachTab; label: string; short: string; icon: typeof Bar
   { id: 'period', label: 'Análise do Período', short: 'Período', icon: LineChart },
   { id: 'load', label: 'Carga Interna', short: 'Carga', icon: Gauge },
   { id: 'schedule', label: 'Cronograma', short: 'Agenda', icon: CalendarDays },
-  { id: 'adversaries', label: 'Atletas Adversários', short: 'Adversários', icon: Shield },
+  { id: 'fisica', label: 'Prep. Física', short: 'Física', icon: Dumbbell },
+  { id: 'adversaries', label: 'Atletas Adversários', short: 'Rivais', icon: Shield },
   { id: 'management', label: 'Gestão', short: 'Gestão', icon: Settings2 },
 ];
 
@@ -376,6 +378,7 @@ export const CoachArea: React.FC<{ recovery?: boolean }> = ({ recovery = false }
       {currentTab === 'period' && <PeriodAnalysis />}
       {currentTab === 'load' && <LoadAnalysis onOpenProfile={setProfileId} />}
       {currentTab === 'schedule' && <TrainingSchedule />}
+      {currentTab === 'fisica' && <PhysicalWorkoutBuilder />}
       {currentTab === 'management' && (
         <div className="space-y-4">
           {/* Seções da Gestão: atletas e grupos para todos; treinadores só para admin */}

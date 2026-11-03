@@ -11,6 +11,10 @@ interface PseFormProps {
   scheduledDurations?: Record<string, number>;
   /** Tipo do treino de hoje (o último que já começou), pré-selecionado */
   suggestedType?: string;
+  /** Duração inicial vinda da execução cronometrada do treino */
+  initialDuration?: number;
+  /** Feedback ou observações iniciais vindas da execução do treino */
+  initialObservations?: string;
 }
 
 const TRAINING_TYPES = [
@@ -32,25 +36,51 @@ const FOSTER_SCALE_LABELS: Record<number, { text: string; color: string; desc: s
   10: { text: 'Máximo Absoluto', color: 'text-red-400 bg-red-600/20 border-red-500/50', desc: 'O maior esforço físico possível', thumbColor: '#dc2626', cardClass: 'bg-red-950/45 border-red-600/70 shadow-red-950/50' },
 };
 
-export const PseForm: React.FC<PseFormProps> = ({ athleteId, athleteName, onSubmit, scheduledDurations, suggestedType }) => {
-  const [trainingType, setTrainingType] = useState<string>(suggestedType ?? 'Treino Técnico');
+export const PseForm: React.FC<PseFormProps> = ({
+  athleteId,
+  athleteName,
+  onSubmit,
+  scheduledDurations,
+  suggestedType,
+  initialDuration,
+  initialObservations,
+}) => {
+  const [trainingType, setTrainingType] = useState<string>(
+    suggestedType ?? (initialDuration ? 'Treino Físico' : 'Treino Técnico')
+  );
   const [typeTouched, setTypeTouched] = useState(false);
   useEffect(() => {
     if (suggestedType && !typeTouched) setTrainingType(suggestedType);
   }, [suggestedType, typeTouched]);
-  const [duration, setDuration] = useState('');
-  const [durationTouched, setDurationTouched] = useState(false);
+
+  const [duration, setDuration] = useState(() => (initialDuration ? String(initialDuration) : ''));
+  const [durationTouched, setDurationTouched] = useState(Boolean(initialDuration));
   const scheduled = scheduledDurations?.[trainingType];
+
+  useEffect(() => {
+    if (initialDuration) {
+      setDuration(String(initialDuration));
+      setDurationTouched(true);
+    }
+  }, [initialDuration]);
+
   // Sugere a duração do treino programado (até o atleta mexer no campo)
   useEffect(() => {
-    if (!durationTouched) setDuration(scheduled ? String(scheduled) : '');
-  }, [scheduled, durationTouched]);
+    if (!durationTouched && !initialDuration) setDuration(scheduled ? String(scheduled) : '');
+  }, [scheduled, durationTouched, initialDuration]);
+
   const durationNum = duration.trim() ? Number(duration) : null;
   const durationError =
     durationNum !== null && (!Number.isInteger(durationNum) || durationNum < 1 || durationNum > 600) ? 'Informe de 1 a 600 minutos.' : '';
   const [rpeScore, setRpeScore] = useState<number>(5);
   const [didNotTrain, setDidNotTrain] = useState<boolean>(false);
-  const [observations, setObservations] = useState<string>('');
+  const [observations, setObservations] = useState<string>(() => initialObservations ?? '');
+
+  useEffect(() => {
+    if (initialObservations) {
+      setObservations(initialObservations);
+    }
+  }, [initialObservations]);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');

@@ -307,7 +307,7 @@ export function AdversaryManagement({ readOnly = false }: { readOnly?: boolean }
     }
   }
 
-  async function handleDeleteObservacao(obsId: string, adversarioId: string) {
+  async function handleDeleteObservacao(obsId: string, _adversarioId?: string) {
     if (!supabase) return;
     if (!confirm('Deseja excluir esta observação?')) return;
 
