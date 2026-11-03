@@ -357,7 +357,7 @@ export function AdversaryManagement({ readOnly = false, athleteToken }: { readOn
     await loadUserAndData();
   }
 
-  async function handleDeleteObservacao(obsId: string) {
+  async function handleDeleteObservacao(obsId: string, _adversarioId?: string) {
     if (!supabase) return;
     if (!confirm('Deseja excluir esta observação?')) return;
 
