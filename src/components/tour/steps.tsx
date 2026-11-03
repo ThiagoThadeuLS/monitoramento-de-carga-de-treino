@@ -13,7 +13,7 @@ const List: React.FC<{ items: React.ReactNode[] }> = ({ items }) => (
   </ul>
 );
 
-type AthleteTab = 'pse' | 'psr' | 'weight' | 'schedule' | 'history';
+type AthleteTab = 'pse' | 'psr' | 'weight' | 'schedule' | 'history' | 'adversarios';
 
 /** Tour do atleta: passa por todas as abas e explica cada uma. */
 export function athleteTourSteps(nome: string, setTab: (t: AthleteTab) => void): TourStep[] {
@@ -45,6 +45,7 @@ export function athleteTourSteps(nome: string, setTab: (t: AthleteTab) => void):
             <><B>Peso</B>: registro de pesagem</>,
             <><B>Agenda</B>: treinos programados para você</>,
             <><B>Histórico</B>: suas respostas e sua evolução</>,
+            <><B>Adversários</B> (Rivais no celular): fichas de quem você pode enfrentar</>,
           ]}
         />
       ),
@@ -109,6 +110,23 @@ export function athleteTourSteps(nome: string, setTab: (t: AthleteTab) => void):
           <p>
             Enviou algo errado hoje? Toque em <B>Corrigir</B>: a resposta é apagada e o formulário abre para enviar de novo. Lá embaixo fica o{' '}
             <B>termo de uso dos dados</B> que você aceitou.
+          </p>
+        </>
+      ),
+    },
+    {
+      target: 'athlete-adversaries',
+      before: () => setTab('adversarios'),
+      title: 'Adversários',
+      body: (
+        <>
+          <p>Fichas de atletas de outros clubes e países: categoria, classe e origem. Busque e filtre para estudar quem você pode enfrentar.</p>
+          <p>
+            Toque num adversário para ver os detalhes e deixar <B>observações táticas</B>. Você também pode cadastrar um adversário novo e apagar as
+            observações que escreveu.
+          </p>
+          <p>
+            <B>Apagar para mim</B> tira a ficha só da sua lista (dá para trazer de volta em &quot;Apagados para mim&quot;).
           </p>
         </>
       ),
@@ -320,7 +338,14 @@ export function coachTourSteps(
       target: 'coach-content',
       before: go('adversaries'),
       title: 'Atletas adversários',
-      body: <p>Fichas de atletas de outros clubes ou países: categoria, classe, origem e observações (estilo de luta, pontos fortes). Busque e filtre por classe e origem.</p>,
+      body: (
+        <>
+          <p>Fichas de atletas de outros clubes ou países: categoria, classe, origem e observações (estilo de luta, pontos fortes). Busque e filtre por classe e origem.</p>
+          <p>
+            Não quer ver uma ficha? <B>Apagar para mim</B> tira só da sua lista; os outros continuam vendo. Quem cadastrou pode <B>excluir para todos</B>.
+          </p>
+        </>
+      ),
     },
     {
       target: 'management-tabs',

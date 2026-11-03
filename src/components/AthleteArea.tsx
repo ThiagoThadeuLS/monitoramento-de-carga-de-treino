@@ -403,7 +403,7 @@ export const AthleteArea: React.FC = () => {
         </div>
       ) : activeTab === 'adversarios' ? (
         <div data-tour="athlete-adversaries">
-          <AdversaryManagement />
+          <AdversaryManagement athleteToken={session.token} />
         </div>
       ) : activeTab === 'prs' ? (
         <div data-tour="athlete-prs">

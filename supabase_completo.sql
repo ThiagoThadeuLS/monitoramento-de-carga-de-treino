@@ -19,6 +19,7 @@
   --   7. Lembretes por notificação
   --   8. Tutorial e cores do clube
   --   9. Carga interna (duração da PSE), termo LGPD e histórico do atleta
+  --  10. Adversários: sexo, autor da ficha, observações táticas e "apagar para mim"
   --
   -- Depois de rodar pela primeira vez: publicar a função "enviar-lembretes" e criar
   -- o agendamento (passo a passo no fim da parte 7).
@@ -2553,5 +2554,404 @@
   grant execute on function public.athlete_accept_terms(uuid, text) to anon, authenticated;
   grant execute on function public.athlete_get_history(uuid, date, date) to anon, authenticated;
   grant execute on function public.athlete_delete_record(uuid, text, uuid) to anon, authenticated;
+
+  notify pgrst, 'reload schema';
+
+
+  -- ############################################################
+  -- PARTE 10. ADVERSÁRIOS: SEXO, AUTOR DA FICHA E OBSERVAÇÕES
+  -- Treinador usa as tabelas direto (regras por clube). Atleta não tem login do
+  -- Supabase: usa as funções athlete_* abaixo, com o token da sessão dele.
+  -- Atleta vê as fichas da comissão técnica e as próprias; vê as observações da
+  -- comissão técnica e as próprias; só altera e apaga o que ele mesmo cadastrou.
+  -- ############################################################
+  alter table public.adversarios add column if not exists sexo text;
+  alter table public.adversarios add column if not exists criado_por_id uuid;
+  alter table public.adversarios add column if not exists criado_por_tipo text;
+  alter table public.adversarios alter column criado_por_tipo set default 'tecnico';
+  -- fichas de antes do campo "autor" são da comissão técnica
+  update public.adversarios set criado_por_tipo = 'tecnico' where criado_por_tipo is null;
+
+  -- Correção: ficha gravada no clube errado volta para o clube de quem cadastrou
+  -- (a versão anterior da tela podia usar o clube de outra ficha da lista).
+  -- Se o clube certo já tem ficha com o mesmo nome, deixa como está.
+  update public.adversarios a
+    set club_id = t.club_id
+  from public.athletes t
+  where a.criado_por_tipo = 'atleta' and t.id::text = a.criado_por_id::text and a.club_id <> t.club_id
+    and not exists (select 1 from public.adversarios b where b.club_id = t.club_id and lower(b.nome) = lower(a.nome));
+  update public.adversarios a
+    set club_id = c.club_id
+  from public.coaches c
+  where a.criado_por_tipo = 'tecnico' and c.user_id::text = a.criado_por_id::text and a.club_id <> c.club_id
+    and not exists (select 1 from public.adversarios b where b.club_id = c.club_id and lower(b.nome) = lower(a.nome));
+
+  do $$
+  begin
+    if not exists (select 1 from pg_constraint where conname = 'adversarios_sexo_valido') then
+      alter table public.adversarios
+        add constraint adversarios_sexo_valido check (sexo is null or sexo in ('masculino', 'feminino')) not valid;
+    end if;
+    if not exists (select 1 from pg_constraint where conname = 'adversarios_autor_valido') then
+      alter table public.adversarios
+        add constraint adversarios_autor_valido check (criado_por_tipo in ('atleta', 'tecnico')) not valid;
+    end if;
+  end $$;
+
+  -- Treinador cadastra ficha sempre em nome próprio, como comissão técnica
+  drop policy if exists "Adversários: autor da ficha" on public.adversarios;
+  create policy "Adversários: autor da ficha" on public.adversarios
+    as restrictive for insert to authenticated
+    with check (coalesce(criado_por_tipo, 'tecnico') = 'tecnico' and (criado_por_id is null or criado_por_id::text = auth.uid()::text));
+
+  -- ------------------------------------------------------------
+  -- 1. Observações táticas
+  -- ------------------------------------------------------------
+  create table if not exists public.adversario_observacoes (
+    id uuid primary key default gen_random_uuid(),
+    adversario_id uuid not null references public.adversarios(id) on delete cascade,
+    autor_id uuid not null,
+    autor_tipo text not null check (autor_tipo in ('atleta', 'tecnico')),
+    texto text not null check (length(trim(texto)) between 1 and 2000),
+    created_at timestamp with time zone default now() not null
+  );
+
+  -- Se a tabela foi criada antes pelo painel: completa as colunas
+  alter table public.adversario_observacoes add column if not exists autor_id uuid;
+  alter table public.adversario_observacoes add column if not exists autor_tipo text;
+  alter table public.adversario_observacoes add column if not exists texto text;
+  alter table public.adversario_observacoes add column if not exists created_at timestamp with time zone default now();
+  create index if not exists adversario_observacoes_adversario_idx on public.adversario_observacoes (adversario_id);
+
+  -- Apagar a ficha apaga as observações dela
+  do $$
+  declare
+    c record;
+  begin
+    if (select format_type(a.atttypid, a.atttypmod) from pg_attribute a
+        where a.attrelid = 'public.adversario_observacoes'::regclass and a.attname = 'adversario_id' and not a.attisdropped) = 'uuid' then
+      for c in
+        select conname from pg_constraint
+        where conrelid = 'public.adversario_observacoes'::regclass and contype = 'f'
+          and confrelid = 'public.adversarios'::regclass and confdeltype <> 'c'
+      loop
+        execute format('alter table public.adversario_observacoes drop constraint %I', c.conname);
+      end loop;
+      if not exists (
+        select 1 from pg_constraint
+        where conrelid = 'public.adversario_observacoes'::regclass and contype = 'f' and confrelid = 'public.adversarios'::regclass
+      ) then
+        alter table public.adversario_observacoes
+          add constraint adversario_observacoes_adversario_fk
+          foreign key (adversario_id) references public.adversarios(id) on delete cascade not valid;
+      end if;
+    end if;
+  end $$;
+
+  -- Regras de acesso: só treinadores do clube (atleta usa as funções abaixo).
+  -- Remove regras antigas criadas pelo painel (podiam liberar acesso anônimo).
+  alter table public.adversario_observacoes enable row level security;
+  revoke all on public.adversario_observacoes from anon;
+  grant select, insert, delete on public.adversario_observacoes to authenticated;
+  do $$
+  declare
+    p record;
+  begin
+    for p in select policyname from pg_policies where schemaname = 'public' and tablename = 'adversario_observacoes' loop
+      execute format('drop policy %I on public.adversario_observacoes', p.policyname);
+    end loop;
+  end $$;
+
+  -- Autor é de outro clube? (observações escritas de fora, por falha antiga, não aparecem)
+  create or replace function public._autor_de_outro_clube(p_tipo text, p_autor text, p_club uuid)
+  returns boolean
+  language sql
+  stable
+  security definer
+  set search_path = ''
+  as $$
+    select case
+      when p_tipo = 'tecnico' then exists (select 1 from public.coaches c where c.user_id::text = p_autor and c.club_id <> p_club)
+      when p_tipo = 'atleta' then exists (select 1 from public.athletes t where t.id::text = p_autor and t.club_id <> p_club)
+      else false
+    end;
+  $$;
+  revoke execute on function public._autor_de_outro_clube(text, text, uuid) from public, anon;
+  grant execute on function public._autor_de_outro_clube(text, text, uuid) to authenticated;
+
+  create policy "Observações: leitura do clube" on public.adversario_observacoes
+    for select to authenticated
+    using (
+      exists (select 1 from public.adversarios a where a.id = adversario_id and a.club_id = public.current_club_id())
+      and not public._autor_de_outro_clube(autor_tipo, autor_id::text, public.current_club_id())
+    );
+
+  create policy "Observações: treinador escreve" on public.adversario_observacoes
+    for insert to authenticated
+    with check (
+      autor_tipo = 'tecnico' and autor_id::text = auth.uid()::text and public.support_club_id() is null
+      and exists (select 1 from public.adversarios a where a.id = adversario_id and a.club_id = public.current_club_id())
+    );
+
+  create policy "Observações: autor apaga" on public.adversario_observacoes
+    for delete to authenticated
+    using (
+      autor_tipo = 'tecnico' and autor_id::text = auth.uid()::text and public.support_club_id() is null
+      and exists (select 1 from public.adversarios a where a.id = adversario_id and a.club_id = public.current_club_id())
+    );
+
+  -- ------------------------------------------------------------
+  -- 2. "Apagar para mim": a ficha some só da lista de quem apagou
+  --    (os outros continuam vendo; dá para mostrar de novo)
+  -- ------------------------------------------------------------
+  create table if not exists public.adversario_ocultos (
+    id uuid primary key default gen_random_uuid(),
+    adversario_id uuid not null references public.adversarios(id) on delete cascade,
+    athlete_id uuid references public.athletes(id) on delete cascade,
+    coach_id uuid references auth.users(id) on delete cascade,
+    created_at timestamp with time zone default now() not null,
+    constraint adversario_ocultos_um_dono check ((athlete_id is null) <> (coach_id is null))
+  );
+  create unique index if not exists adversario_ocultos_atleta_unico
+    on public.adversario_ocultos (adversario_id, athlete_id) where athlete_id is not null;
+  create unique index if not exists adversario_ocultos_treinador_unico
+    on public.adversario_ocultos (adversario_id, coach_id) where coach_id is not null;
+
+  -- Treinador lê só o que ele apagou; gravar é pelas funções
+  alter table public.adversario_ocultos enable row level security;
+  revoke all on public.adversario_ocultos from anon, authenticated;
+  grant select on public.adversario_ocultos to authenticated;
+  drop policy if exists "Ocultos: treinador vê os próprios" on public.adversario_ocultos;
+  create policy "Ocultos: treinador vê os próprios" on public.adversario_ocultos
+    for select to authenticated
+    using (coach_id = auth.uid());
+
+  create or replace function public.coach_set_adversario_oculto(p_id uuid, p_oculto boolean)
+  returns void
+  language plpgsql
+  volatile
+  security definer
+  set search_path = ''
+  as $$
+  begin
+    if auth.uid() is null or public.support_club_id() is not null
+       or not exists (select 1 from public.adversarios a where a.id = p_id and a.club_id = public.current_club_id()) then
+      raise exception 'nao_autorizado';
+    end if;
+    if p_oculto then
+      insert into public.adversario_ocultos (adversario_id, coach_id) values (p_id, auth.uid())
+      on conflict (adversario_id, coach_id) where coach_id is not null do nothing;
+    else
+      delete from public.adversario_ocultos where adversario_id = p_id and coach_id = auth.uid();
+    end if;
+  end;
+  $$;
+
+  revoke execute on function public.coach_set_adversario_oculto(uuid, boolean) from public, anon;
+  grant execute on function public.coach_set_adversario_oculto(uuid, boolean) to authenticated;
+
+  -- ------------------------------------------------------------
+  -- 3. Funções do atleta
+  -- ------------------------------------------------------------
+
+  -- Ficha que o atleta pode ver: do clube dele, da comissão técnica ou dele mesmo
+  create or replace function public._athlete_sees_adversario(p_athlete uuid, p_adversario uuid)
+  returns boolean
+  language sql
+  stable
+  security definer
+  set search_path = ''
+  as $$
+    select exists (
+      select 1
+      from public.adversarios a
+      join public.athletes t on t.id = p_athlete and t.club_id = a.club_id
+      where a.id = p_adversario
+        and (coalesce(a.criado_por_tipo, 'tecnico') = 'tecnico' or a.criado_por_id::text = p_athlete::text)
+    );
+  $$;
+
+  create or replace function public.athlete_list_adversarios(p_token uuid)
+  returns json
+  language plpgsql
+  stable
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_me uuid := public._athlete_ready(p_token);
+  begin
+    return json_build_object(
+      'me', v_me,
+      'adversarios', coalesce((
+        select json_agg(x order by lower(x.nome))
+        from (
+          select a.id, a.club_id, a.nome, a.sexo, a.categoria_peso, a.classe_idade, a.tipo_origem, a.origem_valor,
+                 a.criado_por_id, coalesce(a.criado_por_tipo, 'tecnico') as criado_por_tipo,
+                 exists (select 1 from public.adversario_ocultos h where h.adversario_id = a.id and h.athlete_id = v_me) as oculto
+          from public.adversarios a
+          where public._athlete_sees_adversario(v_me, a.id)
+        ) x
+      ), '[]'::json),
+      'observacoes', coalesce((
+        select json_agg(x order by x.created_at desc)
+        from (
+          select o.id, o.adversario_id, o.autor_id, o.autor_tipo, o.texto, o.created_at
+          from public.adversario_observacoes o
+          join public.adversarios a on a.id = o.adversario_id
+          where public._athlete_sees_adversario(v_me, o.adversario_id)
+            and (o.autor_tipo = 'tecnico' or o.autor_id::text = v_me::text)
+            and not public._autor_de_outro_clube(o.autor_tipo, o.autor_id::text, a.club_id)
+        ) x
+      ), '[]'::json)
+    );
+  end;
+  $$;
+
+  -- Cadastra (p_id nulo) ou edita uma ficha do próprio atleta
+  create or replace function public.athlete_save_adversario(
+    p_token uuid, p_id uuid, p_nome text, p_sexo text, p_categoria_peso text,
+    p_classe_idade text, p_tipo_origem text, p_origem_valor text
+  )
+  returns uuid
+  language plpgsql
+  volatile
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_me uuid := public._athlete_ready(p_token);
+    v_club uuid;
+    v_id uuid;
+  begin
+    if length(trim(coalesce(p_nome, ''))) = 0 or length(trim(coalesce(p_categoria_peso, ''))) = 0
+       or length(trim(coalesce(p_origem_valor, ''))) = 0 then
+      raise exception 'adversario_incompleto';
+    end if;
+    if length(trim(p_nome)) > 120 or length(trim(p_origem_valor)) > 120 or length(trim(p_categoria_peso)) > 20
+       or coalesce(p_sexo, '') not in ('masculino', 'feminino')
+       or coalesce(p_classe_idade, '') not in ('juvenil', 'júnior', 'sênior')
+       or coalesce(p_tipo_origem, '') not in ('pais', 'clube') then
+      raise exception 'adversario_invalido';
+    end if;
+
+    select a.club_id into v_club from public.athletes a where a.id = v_me;
+
+    if p_id is null then
+      insert into public.adversarios (club_id, nome, sexo, categoria_peso, classe_idade, tipo_origem, origem_valor, criado_por_id, criado_por_tipo)
+      values (v_club, trim(p_nome), p_sexo, trim(p_categoria_peso), p_classe_idade, p_tipo_origem, trim(p_origem_valor), v_me, 'atleta')
+      returning id into v_id;
+    else
+      update public.adversarios
+        set nome = trim(p_nome), sexo = p_sexo, categoria_peso = trim(p_categoria_peso),
+            classe_idade = p_classe_idade, tipo_origem = p_tipo_origem, origem_valor = trim(p_origem_valor)
+      where id = p_id and club_id = v_club and criado_por_tipo = 'atleta' and criado_por_id::text = v_me::text
+      returning id into v_id;
+      if v_id is null then
+        raise exception 'nao_autorizado';
+      end if;
+    end if;
+    return v_id;
+  end;
+  $$;
+
+  create or replace function public.athlete_delete_adversario(p_token uuid, p_id uuid)
+  returns void
+  language plpgsql
+  volatile
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_me uuid := public._athlete_ready(p_token);
+  begin
+    delete from public.adversarios a
+    where a.id = p_id and a.criado_por_tipo = 'atleta' and a.criado_por_id::text = v_me::text
+      and a.club_id = (select t.club_id from public.athletes t where t.id = v_me);
+    if not found then
+      raise exception 'nao_autorizado';
+    end if;
+  end;
+  $$;
+
+  create or replace function public.athlete_add_observacao(p_token uuid, p_adversario uuid, p_texto text)
+  returns void
+  language plpgsql
+  volatile
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_me uuid := public._athlete_ready(p_token);
+  begin
+    if length(trim(coalesce(p_texto, ''))) = 0 then
+      raise exception 'observacao_vazia';
+    end if;
+    if length(trim(p_texto)) > 2000 then
+      raise exception 'observacao_longa';
+    end if;
+    if not public._athlete_sees_adversario(v_me, p_adversario) then
+      raise exception 'registro_nao_encontrado';
+    end if;
+    insert into public.adversario_observacoes (adversario_id, autor_id, autor_tipo, texto)
+    values (p_adversario, v_me, 'atleta', trim(p_texto));
+  end;
+  $$;
+
+  create or replace function public.athlete_delete_observacao(p_token uuid, p_id uuid)
+  returns void
+  language plpgsql
+  volatile
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_me uuid := public._athlete_ready(p_token);
+  begin
+    delete from public.adversario_observacoes o
+    where o.id = p_id and o.autor_tipo = 'atleta' and o.autor_id::text = v_me::text;
+    if not found then
+      raise exception 'registro_nao_encontrado';
+    end if;
+  end;
+  $$;
+
+  -- "Apagar para mim" (p_oculto = true) ou mostrar de novo (false)
+  create or replace function public.athlete_set_adversario_oculto(p_token uuid, p_id uuid, p_oculto boolean)
+  returns void
+  language plpgsql
+  volatile
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_me uuid := public._athlete_ready(p_token);
+  begin
+    if not public._athlete_sees_adversario(v_me, p_id) then
+      raise exception 'registro_nao_encontrado';
+    end if;
+    if p_oculto then
+      insert into public.adversario_ocultos (adversario_id, athlete_id) values (p_id, v_me)
+      on conflict (adversario_id, athlete_id) where athlete_id is not null do nothing;
+    else
+      delete from public.adversario_ocultos where adversario_id = p_id and athlete_id = v_me;
+    end if;
+  end;
+  $$;
+
+  revoke execute on function public.athlete_set_adversario_oculto(uuid, uuid, boolean) from public;
+  grant execute on function public.athlete_set_adversario_oculto(uuid, uuid, boolean) to anon, authenticated;
+
+  revoke execute on function public._athlete_sees_adversario(uuid, uuid) from public, anon, authenticated;
+  revoke execute on function public.athlete_list_adversarios(uuid) from public;
+  revoke execute on function public.athlete_save_adversario(uuid, uuid, text, text, text, text, text, text) from public;
+  revoke execute on function public.athlete_delete_adversario(uuid, uuid) from public;
+  revoke execute on function public.athlete_add_observacao(uuid, uuid, text) from public;
+  revoke execute on function public.athlete_delete_observacao(uuid, uuid) from public;
+  grant execute on function public.athlete_list_adversarios(uuid) to anon, authenticated;
+  grant execute on function public.athlete_save_adversario(uuid, uuid, text, text, text, text, text, text) to anon, authenticated;
+  grant execute on function public.athlete_delete_adversario(uuid, uuid) to anon, authenticated;
+  grant execute on function public.athlete_add_observacao(uuid, uuid, text) to anon, authenticated;
+  grant execute on function public.athlete_delete_observacao(uuid, uuid) to anon, authenticated;
 
   notify pgrst, 'reload schema';
