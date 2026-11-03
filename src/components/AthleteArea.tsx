@@ -1,16 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Flame, HeartPulse, Scale, ShieldAlert, LogOut, Loader2, User, CalendarDays, History, Shield, ChevronLeft, ChevronRight, Trophy, Dumbbell } from 'lucide-react';
+import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { lazyNamed } from '../lib/lazy';
+import { ArrowLeft, CalendarDays, HelpCircle, History, Home, Loader2, LogOut, Shield, ShieldAlert, Trophy, User } from 'lucide-react';
 import { TERMS_VERSION, TermsGate } from './TermsGate';
-import { AthleteHistory } from './AthleteHistory';
-import { addDaysISO, nowTimeHM, todayISO } from '../lib/date';
-import { isPhysicalTraining } from '../data/constants';
+import { isPhysicalTraining, PHYSICAL_TRAINING } from '../data/constants';
 import { useDialogs } from './ui/Dialogs';
-import { TrainingSchedule } from './coach/TrainingSchedule';
-import { AdversaryManagement } from './coach/AdversaryManagement';
 import { RemindersCard } from './RemindersCard';
 import { PushState, getPushState, isMobileDevice, relinkPush } from '../lib/push';
 import { NotificationGate } from './NotificationGate';
-import { HelpButton, Tour } from './tour/Tour';
 import { athleteTourSteps } from './tour/steps';
 import { athleteTutorialPending, markAthleteTutorialDone } from '../lib/tutorial';
 import { useClub } from '../lib/club';
@@ -19,15 +15,17 @@ import { PsrForm } from './PsrForm';
 import { WeightForm } from './WeightForm';
 import { AthleteLogin } from './AthleteLogin';
 import { AthleteChangePassword } from './AthleteChangePassword';
-import { AthletePrView } from './AthletePrView';
-import { AthleteWorkoutsTab } from './AthleteWorkoutsTab';
-import { AthletePhysicalWorkoutExecution } from './AthletePhysicalWorkoutExecution';
-import { AthleteCompetitionCard } from './AthleteCompetitionCard';
+import { AthleteToday, TodayAction, sessionMinutes } from './athlete/AthleteToday';
+import { AthleteCompetitionList } from './athlete/AthleteCompetitionList';
 import { PseRecord, PsrRecord, WeightRecord } from '../types';
 import { isSupabaseConfigured } from '../lib/supabase';
+import { useHistoryState } from '../lib/navigation';
+import { useTodayISO } from '../lib/useToday';
+import { nowTimeHM } from '../lib/date';
 import {
+  AthleteHome,
   AthleteSession,
-  getAthleteHistory,
+  getAthleteHome,
   getAthleteSchedule,
   getTermsStatus,
   logoutAthlete,
@@ -37,119 +35,190 @@ import {
   submitWeight,
 } from '../lib/athleteAuth';
 
-type AthleteTab = 'pse' | 'psr' | 'weight' | 'prs' | 'treinos' | 'schedule' | 'history' | 'adversarios';
+// Telas abertas de vez em quando: baixadas só quando o atleta abre (app mais leve)
+const named = lazyNamed;
+const loadSchedule = () => import('./coach/TrainingSchedule');
+const loadAdversaries = () => import('./coach/AdversaryManagement');
+const loadHistory = () => import('./AthleteHistory');
+const loadPrs = () => import('./AthletePrView');
+const loadWorkout = () => import('./AthletePhysicalWorkoutExecution');
+const loadCompetition = () => import('./AthleteCompetitionCard');
+const loadTour = () => import('./tour/Tour');
+const TrainingSchedule = named(loadSchedule, (m) => m.TrainingSchedule);
+const AdversaryManagement = named(loadAdversaries, (m) => m.AdversaryManagement);
+const AthleteHistory = named(loadHistory, (m) => m.AthleteHistory);
+const AthletePrView = named(loadPrs, (m) => m.AthletePrView);
+const AthletePhysicalWorkoutExecution = named(loadWorkout, (m) => m.AthletePhysicalWorkoutExecution);
+const AthleteCompetitionCard = named(loadCompetition, (m) => m.AthleteCompetitionCard);
+const Tour = named(loadTour, (m) => m.Tour);
 
-const ATHLETE_TABS: { id: AthleteTab; label: string; short: string; icon: typeof Flame; active: string }[] = [
-  { id: 'pse', label: 'PSE (Esforço)', short: 'PSE', icon: Flame, active: 'bg-orange-500 text-slate-950 shadow-md shadow-orange-500/20' },
-  { id: 'psr', label: 'PSR (Bem-Estar)', short: 'PSR', icon: HeartPulse, active: 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20' },
-  { id: 'weight', label: 'Peso', short: 'Peso', icon: Scale, active: 'bg-sky-500 text-slate-950 shadow-md shadow-sky-500/20' },
-  { id: 'prs', label: 'Meus PRs', short: 'PRs', icon: Trophy, active: 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20' },
-  { id: 'treinos', label: 'Meus Treinos', short: 'Treinos', icon: Dumbbell, active: 'bg-violet-500 text-slate-950 shadow-md shadow-violet-500/20' },
-  { id: 'schedule', label: 'Cronograma', short: 'Agenda', icon: CalendarDays, active: 'bg-indigo-500 text-slate-950 shadow-md shadow-indigo-500/20' },
-  { id: 'adversarios', label: 'Adversários', short: 'Rivais', icon: Shield, active: 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20' },
-  { id: 'history', label: 'Histórico', short: 'Hist.', icon: History, active: 'bg-slate-200 text-slate-950 shadow-md shadow-slate-200/20' },
+type View = 'hoje' | 'agenda' | 'historico' | 'prs' | 'rivais';
+
+/** Tela aberta por cima da área (formulário ou ficha do treino físico) */
+type Overlay =
+  | { kind: 'psr' }
+  | { kind: 'peso' }
+  | { kind: 'pse'; trainingType?: string; duration?: number }
+  | { kind: 'treino'; id: string; name: string }
+  | null;
+
+const VIEWS: { id: View; label: string; icon: typeof Home }[] = [
+  { id: 'hoje', label: 'Hoje', icon: Home },
+  { id: 'agenda', label: 'Agenda', icon: CalendarDays },
+  { id: 'historico', label: 'Histórico', icon: History },
+  { id: 'prs', label: 'PRs', icon: Trophy },
+  { id: 'rivais', label: 'Rivais', icon: Shield },
 ];
 
-const INITIAL_TAB: AthleteTab | null = (() => {
-  const map: Record<string, AthleteTab> = { pse: 'pse', psr: 'psr', peso: 'weight', prs: 'prs', treinos: 'treinos', agenda: 'schedule', adversarios: 'adversarios' };
-  return map[new URLSearchParams(window.location.search).get('aba') ?? ''] ?? null;
+// Link dos lembretes (/?aba=...): abre direto o formulário certo
+const INITIAL = (() => {
+  const aba = new URLSearchParams(window.location.search).get('aba') ?? '';
+  const overlay: Overlay =
+    aba === 'pse' ? { kind: 'pse' } : aba === 'psr' ? { kind: 'psr' } : aba === 'peso' ? { kind: 'peso' } : null;
+  const view: View =
+    aba === 'agenda' ? 'agenda' : aba === 'prs' ? 'prs' : aba === 'adversarios' ? 'rivais' : aba === 'historico' ? 'historico' : 'hoje';
+  return { aba, overlay, view };
 })();
 
 const MOBILE = isMobileDevice();
+
+const Spinner = () => (
+  <div className="py-16 flex justify-center">
+    <Loader2 className="w-7 h-7 animate-spin text-emerald-400" />
+  </div>
+);
 
 export const AthleteArea: React.FC = () => {
   const [session, setSession] = useState<AthleteSession | null>(null);
   const { setClub } = useClub();
   const { notify } = useDialogs();
+  const today = useTodayISO();
 
-  const [activePhysicalWorkout, setActivePhysicalWorkout] = useState<{ id: string; name: string } | null>(null);
-  const tabsScrollRef = useRef<HTMLDivElement>(null);
-
-  const scrollTabs = (direction: 'left' | 'right') => {
-    if (tabsScrollRef.current) {
-      const { scrollLeft, clientWidth } = tabsScrollRef.current;
-      const offset = direction === 'left' ? -clientWidth / 2 : clientWidth / 2;
-      tabsScrollRef.current.scrollTo({ left: scrollLeft + offset, behavior: 'smooth' });
-    }
+  const [view, setViewRaw] = useHistoryState<View>('atleta_aba', INITIAL.view);
+  const [overlay, setOverlayRaw] = useHistoryState<Overlay>('atleta_tela', INITIAL.overlay);
+  const currentView: View = VIEWS.some((v) => v.id === view) ? view : 'hoje';
+  // Abas já abertas ficam montadas (trocar de volta é instantâneo)
+  const [visited, setVisited] = useState<Set<View>>(() => new Set<View>(['hoje', currentView]));
+  const setView = (v: View) => {
+    setVisited((cur) => (cur.has(v) ? cur : new Set(cur).add(v)));
+    setViewRaw(v);
   };
+  useEffect(() => {
+    setVisited((cur) => (cur.has(currentView) ? cur : new Set(cur).add(currentView)));
+  }, [currentView]);
+
+  // Fechar a tela aberta: volta no histórico quantos passos ela abriu (o "voltar" do celular
+  // volta um de cada vez). Ex.: ficha do treino -> PSE = 2 passos.
+  const overlayDepth = useRef(0);
+  const openOverlay = (o: Overlay) => {
+    overlayDepth.current += 1;
+    setOverlayRaw(o);
+  };
+  const closeOverlay = useCallback(() => {
+    const depth = overlayDepth.current;
+    overlayDepth.current = 0;
+    if (depth > 0) window.history.go(-depth);
+    else setOverlayRaw(null);
+  }, [setOverlayRaw]);
+  useEffect(() => {
+    const onPop = () => {
+      overlayDepth.current = Math.max(0, overlayDepth.current - 1);
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+
+  useEffect(() => {
+    if (INITIAL.aba) window.history.replaceState(window.history.state, '', window.location.pathname);
+  }, []);
 
   const [pushState, setPushState] = useState<PushState | null>(null);
   const passwordToken = session && !session.mustChangePassword ? session.token : null;
 
+  // Termo de uso: já vem com a sessão (bancos antigos: busca à parte)
   const [terms, setTerms] = useState<{ accepted_at: string | null; version: string | null } | null>(null);
+  const sessionTerms = session?.terms;
   useEffect(() => {
-    setTerms(null);
-    if (!passwordToken) return;
+    if (!passwordToken) {
+      setTerms(null);
+      return;
+    }
+    if (sessionTerms) {
+      setTerms(sessionTerms);
+      return;
+    }
     let cancelled = false;
+    setTerms(null);
     getTermsStatus(passwordToken)
       .then((t) => !cancelled && setTerms(t))
       .catch(() => !cancelled && setTerms({ accepted_at: null, version: null }));
     return () => {
       cancelled = true;
     };
-  }, [passwordToken]);
+  }, [passwordToken, sessionTerms]);
   const termsOk = !!terms?.accepted_at && terms.version === TERMS_VERSION;
   const readyToken = passwordToken && termsOk ? passwordToken : null;
 
-  const [scheduledDurations, setScheduledDurations] = useState<Record<string, number>>({});
-  const [suggestedType, setSuggestedType] = useState<string | undefined>();
-  const [overrideDuration, setOverrideDuration] = useState<number | undefined>();
-  const [overrideType, setOverrideType] = useState<string | undefined>();
-
+  // Tela "Hoje": uma consulta só; recarrega ao enviar algo, ao virar o dia e ao voltar para o app
+  const [home, setHome] = useState<AthleteHome | null>(null);
+  const [homeLoading, setHomeLoading] = useState(false);
+  const [homeError, setHomeError] = useState('');
+  const [homeVersion, setHomeVersion] = useState(0);
+  const reloadHome = useCallback(() => setHomeVersion((v) => v + 1), []);
   useEffect(() => {
-    if (!readyToken) return;
-    const today = todayISO();
-    getAthleteSchedule(readyToken, today, today)
-      .then((list) => {
-        const now = nowTimeHM();
-        const map: Record<string, number> = {};
-        const sorted = [...list].sort((a, b) => a.start_time.localeCompare(b.start_time));
-        for (const t of sorted) {
-          const [h1, m1] = t.start_time.split(':').map(Number);
-          const [h2, m2] = (t.end_time ?? '').split(':').map(Number);
-          const min = t.end_time ? h2 * 60 + m2 - (h1 * 60 + m1) : 90;
-          if (min > 0 && (map[t.training_type] === undefined || t.start_time.slice(0, 5) <= now)) map[t.training_type] = min;
-        }
-        setScheduledDurations(map);
-        const started = sorted.filter((t) => t.start_time.slice(0, 5) <= now);
-        setSuggestedType((started[started.length - 1] ?? sorted[0])?.training_type);
-      })
-      .catch(() => undefined);
-  }, [readyToken]);
-
-  // Último peso registrado: sugestão no formulário (o campo começa vazio para não enviar sem querer)
-  const [lastWeight, setLastWeight] = useState<number | null>(null);
-  const [weightVersion, setWeightVersion] = useState(0);
-  useEffect(() => {
-    if (!readyToken) return;
+    if (!readyToken) {
+      setHome(null);
+      return;
+    }
     let cancelled = false;
-    const today = todayISO();
-    getAthleteHistory(readyToken, addDaysISO(today, -90), today)
-      .then((h) => {
+    setHomeLoading(true);
+    setHomeError('');
+    getAthleteHome(readyToken)
+      .then((h) => !cancelled && setHome(h))
+      .catch((err) => {
         if (cancelled) return;
-        const last = [...h.weight].sort((a, b) => a.date.localeCompare(b.date)).pop();
-        setLastWeight(last ? last.weight : null);
+        setHomeError(
+          err?.code === 'migracao_pendente' ? 'A tela "Hoje" ainda não foi ativada no banco. Avise a comissão técnica.' : err?.message ?? 'Não foi possível carregar.'
+        );
+        if (err?.code === 'sessao_invalida') setSession(null);
       })
-      .catch(() => undefined);
+      .finally(() => !cancelled && setHomeLoading(false));
     return () => {
       cancelled = true;
     };
-  }, [readyToken, weightVersion]);
+  }, [readyToken, homeVersion, today]);
+  useEffect(() => {
+    if (!readyToken) return;
+    const onVisible = () => document.visibilityState === 'visible' && reloadHome();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [readyToken, reloadHome]);
+
+  // Depois de carregar o "Hoje", baixa as outras telas em segundo plano (troca de aba sem espera)
+  useEffect(() => {
+    if (!home) return;
+    const t = window.setTimeout(() => {
+      [loadSchedule, loadHistory, loadWorkout, loadCompetition, loadAdversaries, loadPrs].forEach((l) => l().catch(() => undefined));
+    }, 1500);
+    return () => window.clearTimeout(t);
+  }, [home]);
 
   const [tutorial, setTutorial] = useState(false);
   const readyAthleteId = readyToken ? session!.athlete.id : null;
+  const tutorialFlag = session?.tutorialPending;
   useEffect(() => {
-    if (!readyToken || !readyAthleteId) return;
+    if (!readyToken || !readyAthleteId || tutorialFlag === false) return;
     let cancelled = false;
     athleteTutorialPending(readyToken, readyAthleteId).then((p) => !cancelled && p && setTutorial(true));
     return () => {
       cancelled = true;
     };
-  }, [readyToken, readyAthleteId]);
+  }, [readyToken, readyAthleteId, tutorialFlag]);
   const finishTutorial = () => {
     setTutorial(false);
     if (readyToken && readyAthleteId) markAthleteTutorialDone(readyToken, readyAthleteId).catch(() => undefined);
   };
+
   useEffect(() => {
     if (!readyToken) return;
     let cancelled = false;
@@ -171,10 +240,6 @@ export const AthleteArea: React.FC = () => {
   }, [sessionClub, setClub]);
   const [checkingSession, setCheckingSession] = useState(isSupabaseConfigured);
   const [notice, setNotice] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<AthleteTab>(INITIAL_TAB ?? 'treinos');
-  useEffect(() => {
-    if (INITIAL_TAB) window.history.replaceState(null, '', window.location.pathname);
-  }, []);
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
@@ -187,7 +252,9 @@ export const AthleteArea: React.FC = () => {
   const handleLogout = async () => {
     if (session) await logoutAthlete(session.token).catch(() => undefined);
     setSession(null);
-    setActiveTab('treinos');
+    setHome(null);
+    setOverlayRaw(null);
+    setViewRaw('hoje');
   };
 
   /** Envia a resposta. Devolve null se deu certo, ou a mensagem de erro para o formulário. */
@@ -200,7 +267,6 @@ export const AthleteArea: React.FC = () => {
       await send(session.token, record as unknown as T);
       return null;
     } catch (err: any) {
-      console.error('Erro ao salvar no Supabase:', err);
       if (err.code === 'sessao_invalida' || err.code === 'troca_de_senha_pendente') {
         setNotice(err.message);
         setSession(null);
@@ -211,13 +277,19 @@ export const AthleteArea: React.FC = () => {
     }
   };
 
-  const handlePseSubmit = (record: Omit<PseRecord, 'id' | 'created_at'>) => submitWith(submitPse, record);
-  const handlePsrSubmit = (record: Omit<PsrRecord, 'id' | 'created_at'>) => submitWith(submitPsr, record);
-  const handleWeightSubmit = async (record: Omit<WeightRecord, 'id' | 'created_at'>) => {
-    const error = await submitWith(submitWeight, record);
-    if (!error) setWeightVersion((v) => v + 1);
+  // Deu certo: atualiza o "Hoje" e fecha o formulário depois de mostrar a confirmação
+  const [weightVersion, setWeightVersion] = useState(0);
+  const afterSubmit = (error: string | null, kind?: 'peso') => {
+    if (!error) {
+      reloadHome();
+      if (kind === 'peso') setWeightVersion((v) => v + 1);
+      window.setTimeout(closeOverlay, 1200);
+    }
     return error;
   };
+  const handlePseSubmit = async (record: Omit<PseRecord, 'id' | 'created_at'>) => afterSubmit(await submitWith(submitPse, record));
+  const handlePsrSubmit = async (record: Omit<PsrRecord, 'id' | 'created_at'>) => afterSubmit(await submitWith(submitPsr, record));
+  const handleWeightSubmit = async (record: Omit<WeightRecord, 'id' | 'created_at'>) => afterSubmit(await submitWith(submitWeight, record), 'peso');
 
   if (!isSupabaseConfigured) {
     return (
@@ -264,13 +336,7 @@ export const AthleteArea: React.FC = () => {
   }
 
   if (session.mustChangePassword) {
-    return (
-      <AthleteChangePassword
-        session={session}
-        onPasswordChanged={setSession}
-        onLogout={handleLogout}
-      />
-    );
+    return <AthleteChangePassword session={session} onPasswordChanged={setSession} onLogout={handleLogout} />;
   }
 
   if (!terms) {
@@ -303,24 +369,110 @@ export const AthleteArea: React.FC = () => {
   }
 
   const { athlete } = session;
+  const token = session.token;
+
+  // Duração programada de cada tipo de treino de hoje (sugestão na PSE)
+  const scheduledDurations: Record<string, number> = {};
+  for (const s of home?.sessions ?? []) {
+    const min = sessionMinutes(s);
+    if (min && scheduledDurations[s.training_type] === undefined) scheduledDurations[s.training_type] = min;
+  }
+
+  const onTodayAction = (a: TodayAction) => openOverlay(a);
+
+  // PSE sem treino escolhido: sugere o último treino de hoje que já começou
+  const now = nowTimeHM();
+  const started = (home?.sessions ?? []).filter((s) => s.start_time.slice(0, 5) <= now);
+  const autoType = (started[started.length - 1] ?? home?.sessions[0])?.training_type;
+
+  const overlayTitle =
+    overlay?.kind === 'psr'
+      ? 'Bem-estar (PSR)'
+      : overlay?.kind === 'peso'
+      ? 'Peso'
+      : overlay?.kind === 'pse'
+      ? 'PSE (esforço do treino)'
+      : '';
+
+  const renderOverlay = () => {
+    if (!overlay) return null;
+    if (overlay.kind === 'treino') {
+      return (
+        <AthletePhysicalWorkoutExecution
+          token={token}
+          athleteId={athlete.id}
+          sessionId={overlay.id}
+          sessionName={overlay.name}
+          onFinishAndGoToPse={(durationMinutes: number) => {
+            reloadHome();
+            // Ficha concluída: abre a PSE com a duração cronometrada
+            openOverlay({ kind: 'pse', trainingType: PHYSICAL_TRAINING, duration: durationMinutes });
+          }}
+          onBack={closeOverlay}
+        />
+      );
+    }
+    return (
+      <div className="space-y-4">
+        <button type="button" onClick={closeOverlay} className="flex items-center gap-2 text-sm font-bold text-slate-300 hover:text-white">
+          <ArrowLeft className="w-4 h-4" /> Voltar
+          <span className="text-slate-500 font-medium">• {overlayTitle}</span>
+        </button>
+        <div className="bg-slate-900/50 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-2xl backdrop-blur">
+          {overlay.kind === 'pse' && (
+            <PseForm
+              athleteId={athlete.id}
+              athleteName={athlete.nome}
+              onSubmit={handlePseSubmit}
+              scheduledDurations={scheduledDurations}
+              suggestedType={overlay.trainingType ?? autoType}
+              initialDuration={overlay.duration}
+            />
+          )}
+          {overlay.kind === 'psr' && <PsrForm athleteId={athlete.id} athleteName={athlete.nome} onSubmit={handlePsrSubmit} />}
+          {overlay.kind === 'peso' && (
+            <WeightForm athleteId={athlete.id} athleteName={athlete.nome} lastWeight={home?.lastWeight?.weight ?? null} onSubmit={handleWeightSubmit} />
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const pane = (id: View, content: React.ReactNode) =>
+    visited.has(id) ? (
+      <div hidden={currentView !== id || !!overlay}>
+        <Suspense fallback={<Spinner />}>{content}</Suspense>
+      </div>
+    ) : null;
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
-      <HelpButton onClick={() => setTutorial(true)} />
-      {tutorial && <Tour steps={athleteTourSteps(athlete.nome, setActiveTab)} onClose={finishTutorial} />}
-      
-      <div data-tour="athlete-card" className="w-full bg-slate-800/80 border border-slate-700/80 rounded-2xl p-4 shadow-xl backdrop-blur flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center flex-shrink-0">
-            <User className="w-5 h-5 text-emerald-400" />
-          </div>
-          <div className="min-w-0">
-            <p className="font-bold text-white truncate">{athlete.nome}</p>
-            <p className="text-xs text-slate-400">
-              {[athlete.classe && `Classe ${athlete.classe}`, athlete.categoria].filter(Boolean).join(' • ') || 'Atleta'}
-            </p>
-          </div>
+    <div className="max-w-2xl mx-auto px-4 pt-6 pb-28 space-y-5">
+      {tutorial && (
+        <Suspense fallback={null}>
+          <Tour steps={athleteTourSteps(athlete.nome, (v) => { setOverlayRaw(null); setView(v); })} onClose={finishTutorial} />
+        </Suspense>
+      )}
+
+      <div data-tour="athlete-card" className="w-full bg-slate-800/80 border border-slate-700/80 rounded-2xl p-3.5 shadow-xl backdrop-blur flex items-center gap-3">
+        <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center flex-shrink-0">
+          <User className="w-5 h-5 text-emerald-400" />
         </div>
+        <div className="min-w-0 flex-1">
+          <p className="font-bold text-white truncate">{athlete.nome}</p>
+          <p className="text-xs text-slate-400">
+            {[athlete.classe && `Classe ${athlete.classe}`, athlete.categoria].filter(Boolean).join(' • ') || 'Atleta'}
+          </p>
+        </div>
+        <button
+          type="button"
+          data-tour="help"
+          onClick={() => setTutorial(true)}
+          className="p-2 rounded-xl bg-slate-900 text-slate-400 hover:text-white border border-slate-700/60 flex-shrink-0"
+          title="Como usar o app"
+          aria-label="Como usar o app"
+        >
+          <HelpCircle className="w-4 h-4" />
+        </button>
         <button
           type="button"
           onClick={handleLogout}
@@ -331,142 +483,112 @@ export const AthleteArea: React.FC = () => {
         </button>
       </div>
 
-      {!MOBILE && <RemindersCard token={session.token} />}
+      {!MOBILE && <RemindersCard token={token} />}
 
-      {/* Abas com setas de rolagem lateral */}
-      <div className="relative flex items-center p-1.5 bg-slate-900/90 border border-slate-800 rounded-2xl">
-        <button
-          type="button"
-          onClick={() => scrollTabs('left')}
-          className="absolute left-0 z-10 p-1.5 bg-slate-900/90 hover:bg-slate-800 text-slate-300 rounded-full shadow-md border border-slate-700 backdrop-blur-sm -ml-2 sm:flex items-center justify-center transition-all hidden"
-          title="Rolar para esquerda"
-        >
-          <ChevronLeft className="w-4 h-4" />
-        </button>
+      <Suspense fallback={<Spinner />}>
+        {overlay && renderOverlay()}
 
-        <div
-          ref={tabsScrollRef}
-          data-tour="athlete-tabs"
-          className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto scrollbar-none px-2 sm:px-6 w-full scroll-smooth"
-          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-        >
-          {ATHLETE_TABS.map(({ id, label, short, icon: Icon, active }) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => {
-                setActivePhysicalWorkout(null);
-                setActiveTab(id);
+        {pane(
+          'hoje',
+          <AthleteToday
+            home={home}
+            loading={homeLoading}
+            error={homeError}
+            onReload={reloadHome}
+            onAction={onTodayAction}
+            competitionCard={
+              <Suspense fallback={null}>
+                <AthleteCompetitionCard
+                  token={readyToken}
+                  refreshKey={weightVersion}
+                  weighedToday={!!home?.weight}
+                  canRegisterWeight={!!home?.weighDay}
+                  onRegisterWeight={() => openOverlay({ kind: 'peso' })}
+                />
+              </Suspense>
+            }
+          />
+        )}
+
+        {pane(
+          'agenda',
+          <div data-tour="athlete-schedule" className="space-y-4">
+            <AthleteCompetitionList token={token} today={today} />
+            <TrainingSchedule
+              readOnly
+              listOnly
+              fetchSessions={(from: string, to: string) => getAthleteSchedule(token, from, to)}
+              onSelectSession={(s: { id: string; name?: string; training_type: string }) => {
+                if (isPhysicalTraining(s.training_type)) openOverlay({ kind: 'treino', id: s.id, name: s.name || 'Treino Físico' });
+                else notify('Só os treinos físicos têm ficha de execução.', 'info');
               }}
-              className={`py-3 px-3 sm:px-4 rounded-xl text-[11px] sm:text-sm font-bold flex flex-col sm:flex-row items-center justify-center gap-1.5 transition-all flex-shrink-0 ${
-                activeTab === id && !activePhysicalWorkout ? active : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-              }`}
-            >
-              <Icon className="w-4 h-4" />
-              <span className="sm:hidden truncate">{short}</span>
-              <span className="hidden sm:inline">{label}</span>
-            </button>
-          ))}
-        </div>
-
-        <button
-          type="button"
-          onClick={() => scrollTabs('right')}
-          className="absolute right-0 z-10 p-1.5 bg-slate-900/90 hover:bg-slate-800 text-slate-300 rounded-full shadow-md border border-slate-700 backdrop-blur-sm -mr-2 sm:flex items-center justify-center transition-all hidden"
-          title="Rolar para direita"
-        >
-          <ChevronRight className="w-4 h-4" />
-        </button>
-      </div>
-
-      {/* Conteúdo das abas ou Execução de Treino Físico */}
-      {activePhysicalWorkout ? (
-        <AthletePhysicalWorkoutExecution
-          token={session.token}
-          athleteId={athlete.id}
-          sessionId={activePhysicalWorkout.id}
-          sessionName={activePhysicalWorkout.name}
-          onFinishAndGoToPse={(durationMinutes) => {
-            setOverrideDuration(durationMinutes);
-            setOverrideType('Treino Físico');
-            setActivePhysicalWorkout(null);
-            setActiveTab('pse');
-          }}
-          onBack={() => setActivePhysicalWorkout(null)}
-        />
-      ) : activeTab === 'treinos' ? (
-        <AthleteWorkoutsTab
-          token={session.token}
-          athleteId={athlete.id}
-          onStartWorkout={(sessionId, sessionName) => {
-            setActivePhysicalWorkout({ id: sessionId, name: sessionName });
-          }}
-        />
-      ) : activeTab === 'history' ? (
-        <div data-tour="athlete-history">
-          <AthleteHistory
-            token={session.token}
-            athleteId={athlete.id}
-            clubName={session.club?.nome ?? 'seu clube'}
-            termsAcceptedAt={terms.accepted_at}
-            onCorrect={(k) => setActiveTab(k === 'pse' ? 'pse' : k === 'psr' ? 'psr' : 'weight')}
-          />
-        </div>
-      ) : activeTab === 'schedule' ? (
-        <div data-tour="athlete-schedule" className="space-y-4">
-          <TrainingSchedule
-            readOnly
-            listOnly
-            fetchSessions={(from, to) => getAthleteSchedule(session.token, from, to)}
-            onSelectSession={(sessionItem) => {
-              if (isPhysicalTraining(sessionItem.training_type)) {
-                setActivePhysicalWorkout({ id: sessionItem.id, name: sessionItem.name || 'Treino Físico' });
-              } else {
-                notify('Só os treinos físicos têm ficha de execução.', 'info');
-              }
-            }}
-          />
-        </div>
-      ) : activeTab === 'adversarios' ? (
-        <div data-tour="athlete-adversaries">
-          <AdversaryManagement athleteToken={session.token} />
-        </div>
-      ) : activeTab === 'prs' ? (
-        <div data-tour="athlete-prs">
-          <AthletePrView token={session.token} />
-        </div>
-      ) : (
-      <div data-tour="athlete-form" className="bg-slate-900/50 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-2xl backdrop-blur">
-        {activeTab === 'pse' && (
-          <PseForm
-            athleteId={athlete.id}
-            athleteName={athlete.nome}
-            onSubmit={async (record) => {
-              const error = await handlePseSubmit(record);
-              if (!error) {
-                setOverrideDuration(undefined);
-                setOverrideType(undefined);
-              }
-              return error;
-            }}
-            scheduledDurations={scheduledDurations}
-            suggestedType={overrideType ?? suggestedType}
-            initialDuration={overrideDuration}
-          />
-        )}
-        {activeTab === 'psr' && (
-          <PsrForm athleteId={athlete.id} athleteName={athlete.nome} onSubmit={handlePsrSubmit} />
-        )}
-        {activeTab === 'weight' && (
-          <div className="space-y-4">
-            <AthleteCompetitionCard token={readyToken} refreshKey={weightVersion} />
-            <div id="weight-entry">
-              <WeightForm athleteId={athlete.id} athleteName={athlete.nome} lastWeight={lastWeight} onSubmit={handleWeightSubmit} />
-            </div>
+            />
           </div>
         )}
-      </div>
-      )}
+
+        {pane(
+          'historico',
+          <div data-tour="athlete-history">
+            <AthleteHistory
+              token={token}
+              athleteId={athlete.id}
+              clubName={session.club?.nome ?? 'seu clube'}
+              termsAcceptedAt={terms.accepted_at}
+              onCorrect={(k: 'pse' | 'psr' | 'peso') => {
+                reloadHome();
+                openOverlay(k === 'pse' ? { kind: 'pse' } : k === 'psr' ? { kind: 'psr' } : { kind: 'peso' });
+              }}
+            />
+          </div>
+        )}
+
+        {pane(
+          'prs',
+          <div data-tour="athlete-prs">
+            <AthletePrView token={token} />
+          </div>
+        )}
+
+        {pane(
+          'rivais',
+          <div data-tour="athlete-adversaries">
+            <AdversaryManagement athleteToken={token} />
+          </div>
+        )}
+      </Suspense>
+
+      {/* Navegação fixa embaixo */}
+      <nav
+        data-tour="athlete-nav"
+        className="fixed bottom-0 inset-x-0 z-40 bg-slate-950/95 backdrop-blur border-t border-slate-800"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+      >
+        <div className="max-w-2xl mx-auto grid grid-cols-5">
+          {VIEWS.map(({ id, label, icon: Icon }) => {
+            const active = currentView === id && !overlay;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => {
+                  if (overlay) {
+                    overlayDepth.current = 0;
+                    setOverlayRaw(null);
+                  }
+                  setView(id);
+                }}
+                className={`py-2.5 flex flex-col items-center gap-1 text-[11px] font-bold transition-colors ${
+                  active ? 'text-sky-400' : 'text-slate-400 hover:text-white'
+                }`}
+                aria-current={active ? 'page' : undefined}
+              >
+                <Icon className="w-5 h-5" />
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      </nav>
     </div>
   );
 };

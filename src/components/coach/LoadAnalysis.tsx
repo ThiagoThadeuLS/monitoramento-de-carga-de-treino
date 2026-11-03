@@ -1,9 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Gauge, RefreshCw, Loader2, AlertCircle, Download, Info, ChevronRight, ChevronDown, TriangleAlert, Timer } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { addDaysISO, todayISO } from '../../lib/date';
 import { PseRecord } from '../../types';
 import { useClubGroups } from '../../lib/groups';
+import { fetchClubAthletes } from '../../lib/athletes';
+import { useClub } from '../../lib/club';
 import { AthleteSelection, EMPTY_SELECTION, GroupFilter, resolveSelection, selectionLabel } from './GroupFilter';
 import { DailyStatsChart } from './DailyStatsChart';
 import { MONOTONY_LIMIT, ZONE_INFO, dailyLoads, format2, formatUA, groupSeries, loadMetrics, sessionLoad } from '../../lib/load';
@@ -46,35 +48,39 @@ export const LoadAnalysis: React.FC<{ onOpenProfile?: (athleteId: string) => voi
   const [sort, setSort] = useState<SortKey>('acwr');
   const [help, setHelp] = useState(false);
   const { groups } = useClubGroups();
+  const { club } = useClub();
+  const clubId = club?.id ?? null;
 
   const from = addDaysISO(ref, -55); // 28 dias de gráfico + 28 de histórico para a carga crônica
 
-  const load = useCallback(async () => {
-    if (!supabase) return;
-    setLoading(true);
-    setError('');
-    try {
-      const [a, p] = await Promise.all([
-        supabase.from('athletes').select('id, nome, active').order('nome'),
-        fetchPse(from, ref),
-      ]);
-      if (a.error) throw a.error;
-      setAthletes((a.data ?? []) as AthleteRow[]);
-      setPse(p);
-    } catch (err: any) {
-      setError(
-        /duration_minutes/.test(err?.message ?? '')
-          ? 'A carga interna ainda não foi ativada no banco. Rode o arquivo supabase_completo.sql no Supabase.'
-          : `Não foi possível carregar: ${err?.message ?? err}`
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [from, ref]);
+  const [reloadKey, setReloadKey] = useState(0);
+  const load = () => setReloadKey((k) => k + 1);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    if (!supabase) return;
+    // Trocar a data rápido: só a última busca atualiza a tela
+    let cancelled = false;
+    setLoading(true);
+    setError('');
+    Promise.all([fetchClubAthletes(clubId, reloadKey > 0), fetchPse(from, ref)])
+      .then(([a, p]) => {
+        if (cancelled) return;
+        setAthletes(a);
+        setPse(p);
+      })
+      .catch((err: any) => {
+        if (cancelled) return;
+        setError(
+          /duration_minutes/.test(err?.message ?? '')
+            ? 'A carga interna ainda não foi ativada no banco. Rode o arquivo supabase_completo.sql no Supabase.'
+            : `Não foi possível carregar: ${err?.message ?? err}`
+        );
+      })
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [from, ref, reloadKey, clubId]);
 
   const selected = useMemo(() => resolveSelection(selection, groups), [selection, groups]);
   const people = useMemo(
@@ -82,17 +88,20 @@ export const LoadAnalysis: React.FC<{ onOpenProfile?: (athleteId: string) => voi
     [athletes, selected]
   );
   const perAthlete = useMemo(() => dailyLoads(pse), [pse]);
-  const missingDuration = useMemo(
-    () => pse.filter((r) => !r.did_not_train && r.rpe_score && !r.duration_minutes && people.some((p) => p.id === r.athlete_id)).length,
-    [pse, people]
-  );
+  const missingDuration = useMemo(() => {
+    const ids = new Set(people.map((p) => p.id));
+    return pse.filter((r) => !r.did_not_train && r.rpe_score && !r.duration_minutes && ids.has(r.athlete_id)).length;
+  }, [pse, people]);
 
   const rows = useMemo(() => {
     const weekStart = addDaysISO(ref, -6);
-    const list = people.map((a) => {
-      const sessions = pse.filter((r) => r.athlete_id === a.id && r.date >= weekStart && r.date <= ref && sessionLoad(r) !== null).length;
-      return { ...a, m: loadMetrics(perAthlete.get(a.id), ref, sessions) };
-    });
+    const weekSessions = new Map<string, number>();
+    for (const r of pse) {
+      if (r.date >= weekStart && r.date <= ref && sessionLoad(r) !== null) {
+        weekSessions.set(r.athlete_id, (weekSessions.get(r.athlete_id) ?? 0) + 1);
+      }
+    }
+    const list = people.map((a) => ({ ...a, m: loadMetrics(perAthlete.get(a.id), ref, weekSessions.get(a.id) ?? 0) }));
     const val = (r: (typeof list)[number]) =>
       sort === 'acwr' ? r.m.acwr ?? -1 : sort === 'acute' ? r.m.acute : sort === 'monotony' ? r.m.monotony ?? -1 : 0;
     return list.sort((x, y) => (sort === 'nome' ? x.nome.localeCompare(y.nome, 'pt-BR') : val(y) - val(x)));

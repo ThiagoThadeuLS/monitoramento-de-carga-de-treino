@@ -16,6 +16,8 @@ interface ClubExercise {
   id: string;
   nome: string;
   exige_pr: boolean;
+  /** Exercício com barra olímpica (a ficha do atleta mostra as anilhas) */
+  usa_barra?: boolean;
 }
 
 interface Prescription {
@@ -29,11 +31,15 @@ interface Prescription {
   observacoes_tecnico?: string | null;
 }
 
-export function PhysicalWorkoutBuilder() {
+/** `sessionId`: treino aberto pela agenda (sem isso, começa pelo mais recente). */
+export function PhysicalWorkoutBuilder({ sessionId }: { sessionId?: string | null } = {}) {
   const { confirm, notify } = useDialogs();
   const [loadingSessions, setLoadingSessions] = useState(true);
   const [sessions, setSessions] = useState<TrainingSessionItem[]>([]);
-  const [selectedSessionId, setSelectedSessionId] = useState<string>('');
+  const [selectedSessionId, setSelectedSessionId] = useState<string>(sessionId ?? '');
+  useEffect(() => {
+    if (sessionId) setSelectedSessionId(sessionId);
+  }, [sessionId]);
   
   const [catalog, setCatalog] = useState<ClubExercise[]>([]);
   const [loadingCatalog, setLoadingCatalog] = useState(false);
@@ -43,6 +49,7 @@ export function PhysicalWorkoutBuilder() {
   const [editingCatalogId, setEditingCatalogId] = useState<string | null>(null);
   const [newCatNome, setNewCatNome] = useState('');
   const [newCatExigePr, setNewCatExigePr] = useState(true);
+  const [newCatUsaBarra, setNewCatUsaBarra] = useState(true);
   const [savingCatalog, setSavingCatalog] = useState(false);
 
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
@@ -75,7 +82,7 @@ export function PhysicalWorkoutBuilder() {
         const fisicos = data as TrainingSessionItem[];
         setSessions(fisicos);
         if (fisicos.length > 0) {
-          setSelectedSessionId(fisicos[0].id);
+          setSelectedSessionId((cur) => cur || fisicos[0].id);
         }
       }
       setLoadingSessions(false);
@@ -142,12 +149,14 @@ export function PhysicalWorkoutBuilder() {
     setEditingCatalogId(null);
     setNewCatNome('');
     setNewCatExigePr(true);
+    setNewCatUsaBarra(true);
   };
 
   const startEditCatalog = (c: ClubExercise) => {
     setEditingCatalogId(c.id);
     setNewCatNome(c.nome);
     setNewCatExigePr(c.exige_pr);
+    setNewCatUsaBarra(c.usa_barra !== false);
   };
 
   async function handleSaveCatalogExercise(e: React.FormEvent) {
@@ -159,6 +168,7 @@ export function PhysicalWorkoutBuilder() {
       nome: newCatNome.trim(),
       bloco: 'Geral',
       exige_pr: newCatExigePr,
+      usa_barra: newCatUsaBarra,
     };
 
     if (editingCatalogId) {
@@ -170,7 +180,7 @@ export function PhysicalWorkoutBuilder() {
 
       setSavingCatalog(false);
       if (!error) {
-        setCatalog(catalog.map(c => c.id === editingCatalogId ? { ...c, nome: payload.nome, exige_pr: payload.exige_pr } : c));
+        setCatalog(catalog.map(c => c.id === editingCatalogId ? { ...c, nome: payload.nome, exige_pr: payload.exige_pr, usa_barra: payload.usa_barra } : c));
         resetCatalogForm();
       } else {
         notify(`Erro ao atualizar o catálogo: ${error.message}`, 'error');
@@ -387,6 +397,16 @@ export function PhysicalWorkoutBuilder() {
                 />
               </div>
 
+              <div className="flex items-center justify-between bg-slate-900 border border-slate-800 p-2.5 rounded-xl">
+                <span className="text-[10px] uppercase font-bold text-slate-400">Usa barra (mostra as anilhas)?</span>
+                <input
+                  type="checkbox"
+                  checked={newCatUsaBarra}
+                  onChange={(e) => setNewCatUsaBarra(e.target.checked)}
+                  className="w-4 h-4 accent-sky-500 rounded cursor-pointer"
+                />
+              </div>
+
               <button
                 type="submit"
                 disabled={savingCatalog}
@@ -411,7 +431,7 @@ export function PhysicalWorkoutBuilder() {
                     <div key={c.id} className={`bg-slate-900 border p-2.5 rounded-xl flex items-center justify-between text-xs transition-colors ${editingCatalogId === c.id ? 'border-amber-500/80 bg-amber-950/10' : 'border-slate-800'}`}>
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-white">{c.nome}</span>
-                        <span className="text-[10px] text-slate-400">({c.exige_pr ? 'Com PR' : 'Sem PR'})</span>
+                        <span className="text-[10px] text-slate-400">({c.exige_pr ? 'Com PR' : 'Sem PR'}{c.usa_barra === false ? ' • sem barra' : ''})</span>
                       </div>
                       <div className="flex items-center gap-1">
                         <button

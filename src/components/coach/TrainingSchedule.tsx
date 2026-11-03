@@ -63,6 +63,8 @@ interface TrainingScheduleProps {
   listOnly?: boolean;
   /** Ação ao selecionar ou abrir um treino (ex: executar treino físico). */
   onSelectSession?: (session: TrainingSession) => void;
+  /** Treinador: abre a ficha (exercícios) de um treino físico */
+  onOpenWorkout?: (sessionId: string) => void;
 }
 
 function friendlyError(err: any) {
@@ -75,7 +77,7 @@ function friendlyError(err: any) {
   return err?.code === 'sessao_invalida' ? msg : `Erro: ${msg}`;
 }
 
-export const TrainingSchedule: React.FC<TrainingScheduleProps> = ({ readOnly = false, fetchSessions, listOnly = false, onSelectSession }) => {
+export const TrainingSchedule: React.FC<TrainingScheduleProps> = ({ readOnly = false, fetchSessions, listOnly = false, onSelectSession, onOpenWorkout }) => {
   const { confirm } = useDialogs();
   const [weekStart, setWeekStart] = useState(() => startOfWeekISO(todayISO()));
   const [sessions, setSessions] = useState<TrainingSession[]>([]);
@@ -551,6 +553,19 @@ export const TrainingSchedule: React.FC<TrainingScheduleProps> = ({ readOnly = f
                 >
                   Fechar
                 </button>
+                {onOpenWorkout && isPhysicalTraining(viewing.training_type) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const id = viewing.id;
+                      setViewing(null);
+                      onOpenWorkout(id);
+                    }}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-violet-500/15 border border-violet-500/40 text-violet-200 hover:bg-violet-500/25 text-sm font-bold"
+                  >
+                    <Dumbbell className="w-4 h-4" /> Ficha física
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => {

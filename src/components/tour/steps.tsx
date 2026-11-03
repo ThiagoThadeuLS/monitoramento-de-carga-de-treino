@@ -13,10 +13,10 @@ const List: React.FC<{ items: React.ReactNode[] }> = ({ items }) => (
   </ul>
 );
 
-type AthleteTab = 'pse' | 'psr' | 'weight' | 'schedule' | 'history' | 'adversarios';
+export type AthleteTourView = 'hoje' | 'agenda' | 'historico' | 'prs' | 'rivais';
 
-/** Tour do atleta: passa por todas as abas e explica cada uma. */
-export function athleteTourSteps(nome: string, setTab: (t: AthleteTab) => void): TourStep[] {
+/** Tour do atleta: passa pelas abas e explica cada uma. */
+export function athleteTourSteps(nome: string, setView: (v: AthleteTourView) => void): TourStep[] {
   const first = nome.split(' ')[0];
   return [
     {
@@ -27,7 +27,7 @@ export function athleteTourSteps(nome: string, setTab: (t: AthleteTab) => void):
           <p>Suas respostas ajudam a comissão técnica a ajustar a carga de treino e prevenir lesões.</p>
         </>
       ),
-      before: () => setTab('psr'),
+      before: () => setView('hoje'),
     },
     {
       target: 'athlete-card',
@@ -35,74 +35,51 @@ export function athleteTourSteps(nome: string, setTab: (t: AthleteTab) => void):
       body: <p>Aqui aparecem seu nome, classe e categoria. O botão <B>Sair</B> encerra o acesso neste aparelho — os lembretes continuam chegando.</p>,
     },
     {
-      target: 'athlete-tabs',
+      target: 'athlete-nav',
       title: 'As abas',
       body: (
         <List
           items={[
-            <><B>PSE</B>: esforço de cada treino</>,
-            <><B>PSR</B>: como você está antes de treinar</>,
-            <><B>Peso</B>: registro de pesagem</>,
-            <><B>Agenda</B>: treinos programados para você</>,
+            <><B>Hoje</B>: o que falta responder e os treinos do dia</>,
+            <><B>Agenda</B>: treinos e competições programados para você</>,
             <><B>Histórico</B>: suas respostas e sua evolução</>,
-            <><B>Adversários</B> (Rivais no celular): fichas de quem você pode enfrentar</>,
+            <><B>PRs</B>: suas cargas máximas nos exercícios</>,
+            <><B>Rivais</B>: fichas de quem você pode enfrentar</>,
           ]}
         />
       ),
     },
     {
-      target: 'athlete-form',
-      before: () => setTab('psr'),
-      title: 'PSR — bem-estar',
+      target: 'athlete-today',
+      before: () => setView('hoje'),
+      title: 'Hoje: sua lista do dia',
       body: (
-        <>
-          <p>
-            Responda <B>uma vez por dia, antes do primeiro treino</B>. Arraste cada barra de 1 (muito ruim) a 10 (excelente): recuperação, disposição,
-            sono, dor muscular, estresse e humor.
-          </p>
-          <p>Seja sincero: notas abaixo de 5 viram alerta para a comissão técnica.</p>
-        </>
+        <List
+          items={[
+            <><B>Bem-estar (PSR)</B>: uma vez por dia, antes do primeiro treino. Notas abaixo de 5 viram alerta para a comissão técnica.</>,
+            <><B>Peso</B>: aparece só nos dias de pesagem definidos pelo treinador. Registre como aparece na balança (ex.: 72,5).</>,
+            <><B>PSE</B>: depois de cada treino, uma nota de 1 a 10 para o quanto foi pesado. A duração já vem do cronograma. Se não treinou, marque <B>Não treinei</B> e diga o motivo.</>,
+            <>Treino físico: <B>Abrir ficha</B> mostra os exercícios, a carga pelo seu PR e o cronômetro.</>,
+          ]}
+        />
       ),
-    },
-    {
-      target: 'athlete-form',
-      before: () => setTab('pse'),
-      title: 'PSE — esforço do treino',
-      body: (
-        <>
-          <p>
-            Responda <B>depois de cada treino</B>: escolha o tipo (técnico, randori ou físico), confira a <B>duração</B> em minutos (já vem do cronograma) e
-            dê uma nota de 1 a 10 para o quanto foi pesado. Se teve dois treinos, envie duas respostas.
-          </p>
-          <p>A nota × a duração é a sua <B>carga de treino</B>, que a comissão técnica acompanha.</p>
-          <p>
-            Se não treinou, marque <B>Não treinei</B> e escreva o motivo — ele é obrigatório.
-          </p>
-        </>
-      ),
-    },
-    {
-      target: 'athlete-form',
-      before: () => setTab('weight'),
-      title: 'Peso',
-      body: <p>Nos dias de pesagem definidos pelo clube, registre seu peso em quilos, como aparece na balança (ex.: 72,5).</p>,
     },
     {
       target: 'athlete-schedule',
-      before: () => setTab('schedule'),
-      title: 'Agenda da semana',
+      before: () => setView('agenda'),
+      title: 'Agenda',
       body: (
         <>
           <p>Mostra só os treinos destinados a você, com horário, tipo e PSE esperada. Use as setas para ver a semana passada e a próxima.</p>
           <p>
-            Quando o treino tiver <B>Ver anotações</B>, toque nele para ler o recado do treinador.
+            As próximas competições aparecem no alto. Quando o treino tiver <B>Ver anotações</B>, toque nele para ler o recado do treinador.
           </p>
         </>
       ),
     },
     {
       target: 'athlete-history',
-      before: () => setTab('history'),
+      before: () => setView('historico'),
       title: 'Histórico',
       body: (
         <>
@@ -115,24 +92,31 @@ export function athleteTourSteps(nome: string, setTab: (t: AthleteTab) => void):
       ),
     },
     {
+      target: 'athlete-prs',
+      before: () => setView('prs'),
+      title: 'PRs',
+      body: (
+        <p>
+          Cadastre e atualize sua carga máxima (1 repetição) em cada exercício do catálogo do clube. A ficha do treino físico usa esses valores para
+          calcular a carga de cada série.
+        </p>
+      ),
+    },
+    {
       target: 'athlete-adversaries',
-      before: () => setTab('adversarios'),
-      title: 'Adversários',
+      before: () => setView('rivais'),
+      title: 'Rivais',
       body: (
         <>
           <p>Fichas de atletas de outros clubes e países: categoria, classe e origem. Busque e filtre para estudar quem você pode enfrentar.</p>
           <p>
-            Toque num adversário para ver os detalhes e deixar <B>observações táticas</B>. Você também pode cadastrar um adversário novo e apagar as
-            observações que escreveu.
-          </p>
-          <p>
-            <B>Apagar para mim</B> tira a ficha só da sua lista (dá para trazer de volta em &quot;Apagados para mim&quot;).
+            Toque num adversário para ver os detalhes e deixar <B>observações táticas</B>. <B>Apagar para mim</B> tira a ficha só da sua lista.
           </p>
         </>
       ),
     },
     {
-      before: () => setTab('pse'),
+      before: () => setView('hoje'),
       title: 'Lembretes no celular',
       body: (
         <List
@@ -148,30 +132,21 @@ export function athleteTourSteps(nome: string, setTab: (t: AthleteTab) => void):
     {
       target: 'help',
       title: 'Pronto!',
-      body: <p>Sempre que tiver dúvida, toque neste botão <B>?</B> para ver o tour de novo.</p>,
+      body: <p>Sempre que tiver dúvida, toque no botão <B>?</B> ao lado do seu nome para ver o tour de novo.</p>,
     },
   ];
 }
 
-type CoachTab = 'overview' | 'period' | 'load' | 'schedule' | 'management' | 'adversaries';
-type Section = 'athletes' | 'groups' | 'team' | 'colors';
+export type CoachTourArea = 'hoje' | 'analises' | 'planejamento' | 'elenco' | 'config';
 
-/** Tour do treinador: passa por todas as abas e seções da gestão. */
-export function coachTourSteps(
-  nome: string,
-  isAdmin: boolean,
-  setTab: (t: CoachTab) => void,
-  setSection: (s: Section) => void
-): TourStep[] {
+/** Tour do treinador: passa pelas áreas e explica cada tela. `go(área, seção)` troca a tela. */
+export function coachTourSteps(nome: string, isAdmin: boolean, go: (area: CoachTourArea, sub?: string) => void): TourStep[] {
   const first = nome.split(' ')[0];
-  const go = (t: CoachTab, s?: Section) => () => {
-    setTab(t);
-    if (s) setSection(s);
-  };
+  const to = (area: CoachTourArea, sub?: string) => () => go(area, sub);
   const steps: (TourStep | false)[] = [
     {
       title: `Bem-vindo, ${first}!`,
-      before: go('overview'),
+      before: to('hoje'),
       body: (
         <>
           <p>Vamos passar por todas as telas do painel da comissão técnica e explicar o que cada uma faz.</p>
@@ -182,28 +157,26 @@ export function coachTourSteps(
     {
       target: 'coach-banner',
       title: 'Seu painel',
-      body: <p>Mostra o clube, seu nome e seu papel (<B>admin do clube</B> ou <B>treinador</B>). O admin também gerencia treinadores e cores.</p>,
+      body: <p>Mostra o clube, seu nome e seu papel (<B>admin do clube</B> ou <B>treinador</B>). O admin tem a engrenagem para treinadores e cores.</p>,
     },
     {
       target: 'coach-tabs',
-      title: 'As abas',
+      title: 'As 4 áreas',
       body: (
         <List
           items={[
-            <><B>Dia</B>: respostas de hoje</>,
-            <><B>Período</B>: gráficos, alertas e quem não respondeu</>,
-            <><B>Carga</B>: carga interna, ACWR, monotonia e strain</>,
-            <><B>Agenda</B>: cronograma e horário dos avisos</>,
-            <><B>Adversários</B>: fichas de atletas de outros clubes</>,
-            <><B>Gestão</B>: atletas, grupos, treinadores e cores</>,
+            <><B>Hoje</B>: respostas do dia e quem está em risco de peso na próxima competição</>,
+            <><B>Análises</B>: período (gráficos, alertas, quem não respondeu) e carga interna</>,
+            <><B>Planejamento</B>: agenda, fichas de preparação física e competições</>,
+            <><B>Elenco</B>: atletas, grupos e adversários</>,
           ]}
         />
       ),
     },
     {
       target: 'daily-filters',
-      before: go('overview'),
-      title: 'Dia: escolha a data e os atletas',
+      before: to('hoje'),
+      title: 'Hoje: escolha a data e os atletas',
       body: <p>Escolha o dia e filtre por grupos ou pessoas específicas. <B>Atualizar dados</B> busca as respostas mais recentes.</p>,
     },
     {
@@ -226,7 +199,7 @@ export function coachTourSteps(
     },
     {
       target: 'period-filters',
-      before: go('period'),
+      before: to('analises', 'periodo'),
       title: 'Período: filtros',
       body: (
         <List
@@ -273,7 +246,7 @@ export function coachTourSteps(
     },
     {
       target: 'load-filters',
-      before: go('load'),
+      before: to('analises', 'carga'),
       title: 'Carga interna',
       body: (
         <>
@@ -310,7 +283,7 @@ export function coachTourSteps(
     },
     {
       target: 'schedule-reminders',
-      before: go('schedule'),
+      before: to('planejamento', 'agenda'),
       title: 'Agenda: horário dos avisos e pesagem',
       body: (
         <>
@@ -327,16 +300,42 @@ export function coachTourSteps(
       body: (
         <>
           <p>
-            Programe a semana passada, a atual e a próxima (as mais antigas são apagadas). Cada treino tem horário, tipo, <B>PSE esperada</B>, anotações e
+            Programe a semana passada, a atual e a próxima (os treinos antigos continuam guardados para as análises). Cada treino tem horário, tipo, <B>PSE esperada</B>, anotações e
             <B> para quem</B>: todos, somente alguns grupos/pessoas ou todos exceto.
           </p>
-          <p>O horário de fim define quando sai o lembrete de PSE. Toque num treino para ver detalhes e editar.</p>
+          <p>
+            O horário de fim define quando sai o lembrete de PSE. Toque num treino para ver detalhes e editar; nos treinos físicos, <B>Ficha física</B>{' '}
+            abre os exercícios.
+          </p>
         </>
       ),
     },
     {
       target: 'coach-content',
-      before: go('adversaries'),
+      before: to('planejamento', 'fisica'),
+      title: 'Planejamento: preparação física',
+      body: (
+        <p>
+          Monte a ficha de cada treino físico: exercícios do <B>catálogo do clube</B>, séries, repetições e % do PR. O atleta vê a carga já calculada pelo
+          PR dele (sempre arredondada para baixo) e, nos exercícios com barra, a montagem das anilhas.
+        </p>
+      ),
+    },
+    {
+      target: 'coach-content',
+      before: to('planejamento', 'competicoes'),
+      title: 'Planejamento: competições',
+      body: (
+        <p>
+          Cadastre as competições com a data da pesagem e para quem valem. Cada atleta vê quanto está acima da categoria e o limite do clube: até{' '}
+          <B>8%</B> longe da competição, <B>5%</B> na semana anterior e <B>3%</B> na semana da competição. Aqui você acompanha o grupo todo, e quem
+          estiver <B>acima do limite</B> aparece também em Hoje.
+        </p>
+      ),
+    },
+    {
+      target: 'coach-content',
+      before: to('elenco', 'adversarios'),
       title: 'Atletas adversários',
       body: (
         <>
@@ -348,9 +347,9 @@ export function coachTourSteps(
       ),
     },
     {
-      target: 'management-tabs',
-      before: go('management', 'athletes'),
-      title: 'Gestão: atletas',
+      target: 'coach-subtabs',
+      before: to('elenco', 'atletas'),
+      title: 'Elenco: atletas',
       body: (
         <p>
           Cadastre atletas com <B>CPF</B>. Eles entram com o CPF e a senha inicial é o <B>nome completo junto, em minúsculas</B>; no primeiro acesso criam a
@@ -361,25 +360,25 @@ export function coachTourSteps(
     },
     {
       target: 'coach-content',
-      before: go('management', 'groups'),
-      title: 'Gestão: grupos',
+      before: to('elenco', 'grupos'),
+      title: 'Elenco: grupos',
       body: <p>Crie grupos (ex.: Pesados, Sub-18). Um atleta pode estar em vários. Os grupos servem para programar treinos e filtrar as análises.</p>,
     },
     isAdmin && {
       target: 'coach-content',
-      before: go('management', 'team'),
-      title: 'Gestão: treinadores',
+      before: to('config', 'treinadores'),
+      title: 'Configurações: treinadores',
       body: <p>Cadastre outros treinadores do clube (eles recebem uma senha temporária), defina quem é admin, desative acessos e troque o escudo do clube.</p>,
     },
     isAdmin && {
       target: 'coach-content',
-      before: go('management', 'colors'),
-      title: 'Gestão: cores',
+      before: to('config', 'cores'),
+      title: 'Configurações: cores',
       body: <p>Escolha uma paleta pronta ou informe o hexadecimal das suas cores. Vale para todos os treinadores e atletas do clube.</p>,
     },
     {
       target: 'help',
-      before: go('overview'),
+      before: to('hoje'),
       title: 'Pronto!',
       body: <p>Sempre que tiver dúvida, toque neste botão <B>?</B> para ver o tour de novo.</p>,
     },

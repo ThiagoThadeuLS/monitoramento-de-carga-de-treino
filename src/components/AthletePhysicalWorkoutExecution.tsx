@@ -20,6 +20,9 @@ interface AthletePhysicalWorkoutExecutionProps {
   onBack: () => void;
 }
 
+const BAR_WEIGHT = 20;
+const fmtKg = (v: number) => String(v).replace('.', ',');
+
 // ─── Visual barbell plate display ────────────────────────────────────────────
 function PlateVisual({
   totalWeight,
@@ -285,16 +288,23 @@ export function AthletePhysicalWorkoutExecution({
     onFinishAndGoToPse(durationMinutes);
   };
 
-  const calculateLoad = (exercicio: string, porcentagem?: number | null) => {
-    if (!porcentagem) return null;
-    const pr = athletePrs[exercicio.toLowerCase().trim()];
+  /**
+   * Carga do exercício pelo PR. Nunca arredonda para cima: com barra, usa o maior peso
+   * montável até a carga; sem barra (ou abaixo dos 20 kg da barra), arredonda para baixo
+   * de 0,5 em 0,5 kg e não mostra anilhas.
+   */
+  const calculateLoad = (p: WorkoutPrescription) => {
+    if (!p.porcentagem_pr) return null;
+    const pr = athletePrs[p.exercicio.toLowerCase().trim()];
     if (!pr) return null;
-    const teorico = (pr * porcentagem) / 100;
-    const { pesoAjustado } = ajustarCargaMontavel(teorico, 20);
-    return {
-      pesoAjustado,
-      teorico: Math.round(teorico * 10) / 10,
-    };
+    const teorico = (pr * p.porcentagem_pr) / 100;
+    const arredondado = Math.floor(teorico * 2 + 1e-9) / 2;
+    const base = { teorico: Math.round(teorico * 10) / 10 };
+    if (p.usa_barra === false) return { ...base, pesoAjustado: arredondado, plates: false, note: '' };
+    if (teorico < BAR_WEIGHT) {
+      return { ...base, pesoAjustado: arredondado, plates: false, note: `Abaixo da barra de ${BAR_WEIGHT} kg: use uma barra mais leve ou halteres.` };
+    }
+    return { ...base, pesoAjustado: ajustarCargaMontavel(teorico, BAR_WEIGHT).pesoAjustado, plates: true, note: '' };
   };
 
   // ── READ-ONLY mode (treino já concluído) ───────────────────────────────────
@@ -330,7 +340,7 @@ export function AthletePhysicalWorkoutExecution({
         {/* Prescriptions read-only */}
         <div className="space-y-3">
           {prescriptions.map((p, index) => {
-            const carga = calculateLoad(p.exercicio, p.porcentagem_pr ?? undefined);
+            const carga = calculateLoad(p);
             return (
               <div key={p.id} className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-md opacity-80">
                 <div className="flex items-center gap-2">
@@ -341,7 +351,7 @@ export function AthletePhysicalWorkoutExecution({
                 </div>
                 {carga !== null && (
                   <p className="text-xs text-slate-400">
-                    Carga: <span className="text-emerald-400 font-bold">{carga.pesoAjustado} kg</span> ({p.porcentagem_pr}% do PR)
+                    Carga: <span className="text-emerald-400 font-bold">{fmtKg(carga.pesoAjustado)} kg</span> ({p.porcentagem_pr}% do PR)
                     {carga.teorico !== carga.pesoAjustado && (
                       <span className="text-[10px] text-slate-500 ml-1">
                         (teórico: {carga.teorico.toString().replace('.', ',')} kg)
@@ -468,9 +478,10 @@ export function AthletePhysicalWorkoutExecution({
         {/* Prescriptions */}
         <div className="space-y-3">
           {prescriptions.map((p, index) => {
-            const carga = calculateLoad(p.exercicio, p.porcentagem_pr ?? undefined);
+            const carga = calculateLoad(p);
             const showPlates = expandedPlates.has(p.id);
             const hasCarga = carga !== null;
+            const hasPlates = !!carga?.plates;
 
             return (
               <div key={p.id} className="bg-slate-900/90 border border-slate-800 rounded-2xl overflow-hidden shadow-md">
@@ -500,7 +511,7 @@ export function AthletePhysicalWorkoutExecution({
                           <div className="flex flex-col">
                             <div className="flex items-baseline gap-1.5 flex-wrap">
                               <span className="font-black text-emerald-400 text-base leading-none">
-                                {carga.pesoAjustado} kg
+                                {fmtKg(carga.pesoAjustado)} kg
                               </span>
                               {carga.teorico !== carga.pesoAjustado && (
                                 <span className="text-[10px] text-amber-400/90 font-medium">
@@ -508,9 +519,10 @@ export function AthletePhysicalWorkoutExecution({
                                 </span>
                               )}
                             </div>
+                            {carga.note && <span className="text-[10px] text-amber-300/90 mt-1">{carga.note}</span>}
                           </div>
                         ) : (
-                          <span className="text-amber-400 text-[11px] font-medium">Cadastre seu PR na aba "Meus PRs"</span>
+                          <span className="text-amber-400 text-[11px] font-medium">Cadastre seu PR em Evolução › Meus PRs</span>
                         )
                       ) : (
                         <span className="text-slate-400 text-[11px]">Carga livre / Sem PR</span>
@@ -525,7 +537,7 @@ export function AthletePhysicalWorkoutExecution({
                   </div>
 
                   {/* Plate calculator button */}
-                  {hasCarga && (
+                  {hasPlates && (
                     <button
                       type="button"
                       onClick={() => togglePlates(p.id)}
@@ -537,7 +549,7 @@ export function AthletePhysicalWorkoutExecution({
                     >
                       <span className="flex items-center gap-2">
                         <Dumbbell className="w-3.5 h-3.5" />
-                        {showPlates ? 'Ocultar montagem da barra' : `Ver montagem da barra (${carga.pesoAjustado} kg total)`}
+                        {showPlates ? 'Ocultar montagem da barra' : `Ver montagem da barra (${fmtKg(carga!.pesoAjustado)} kg total)`}
                       </span>
                       <span className="text-[10px] font-normal">{showPlates ? '▲' : '▼'}</span>
                     </button>
@@ -545,16 +557,16 @@ export function AthletePhysicalWorkoutExecution({
                 </div>
 
                 {/* Plate visualization panel */}
-                {hasCarga && showPlates && (
+                {hasPlates && showPlates && (
                   <div className="border-t border-slate-800 bg-slate-950/60 px-4 py-4 space-y-3">
                     <div className="flex items-center justify-between mb-1">
                       <p className="text-[10px] uppercase font-bold text-violet-400 tracking-wider">Montagem da Barra</p>
                       <span className="text-[10px] text-slate-500">barra olímpica 20 kg</span>
                     </div>
                     <PlateVisual
-                      totalWeight={carga.pesoAjustado}
-                      theoreticalWeight={carga.teorico}
-                      barWeight={20}
+                      totalWeight={carga!.pesoAjustado}
+                      theoreticalWeight={carga!.teorico}
+                      barWeight={BAR_WEIGHT}
                     />
                   </div>
                 )}

@@ -22,6 +22,7 @@
   --  11. Competições e acompanhamento seguro de peso
   --  12. Preparação física (catálogo, fichas, PRs, treinos concluídos), uma PSR/peso
   --      por dia e grupos salvos de uma vez
+  --  13. Desempenho: índices e a tela "Hoje" do atleta numa consulta só
   --
   -- Datas das respostas dos atletas: sempre o dia de hoje no horário de Brasília
   -- (o banco decide; o app usa o mesmo fuso). O cronograma guarda todos os treinos.
@@ -884,8 +885,8 @@
       execute format('drop policy if exists %I on public.%I', 'Clube: acesso da comissão técnica', t);
       execute format(
         'create policy %I on public.%I for all to authenticated
-          using (club_id = public.current_club_id())
-          with check (club_id = public.current_club_id())',
+          using (club_id = (select public.current_club_id()))
+          with check (club_id = (select public.current_club_id()))',
         'Clube: acesso da comissão técnica', t);
     end loop;
   end $$;
@@ -897,11 +898,11 @@
 
   drop policy if exists "Clube: treinador vê o próprio clube" on public.clubs;
   create policy "Clube: treinador vê o próprio clube" on public.clubs
-    for select to authenticated using (id = public.current_club_id());
+    for select to authenticated using (id = (select public.current_club_id()));
 
   drop policy if exists "Equipe: treinador vê colegas do clube" on public.coaches;
   create policy "Equipe: treinador vê colegas do clube" on public.coaches
-    for select to authenticated using (club_id = public.current_club_id());
+    for select to authenticated using (club_id = (select public.current_club_id()));
   -- platform_owners: sem políticas (só as funções acima leem)
 
   -- ------------------------------------------------------------
@@ -937,6 +938,7 @@
   $$;
 
   -- Sessão do atleta também traz o clube (nome e escudo no cabeçalho)
+  -- (A versão final, com termo e tutorial, está na parte 13.)
   create or replace function public._athlete_session_json(p_token uuid, p_athlete public.athletes)
   returns json
   language sql
@@ -1442,10 +1444,10 @@
       execute format('drop policy if exists %I on public.%I', 'Clube: inclusão', t);
       execute format('drop policy if exists %I on public.%I', 'Clube: alteração', t);
       execute format('drop policy if exists %I on public.%I', 'Clube: exclusão', t);
-      execute format('create policy %I on public.%I for select to authenticated using (club_id = public.current_club_id())', 'Clube: leitura', t);
-      execute format('create policy %I on public.%I for insert to authenticated with check (club_id = public.current_club_id() and public.support_club_id() is null)', 'Clube: inclusão', t);
-      execute format('create policy %I on public.%I for update to authenticated using (club_id = public.current_club_id() and public.support_club_id() is null) with check (club_id = public.current_club_id())', 'Clube: alteração', t);
-      execute format('create policy %I on public.%I for delete to authenticated using (club_id = public.current_club_id() and public.support_club_id() is null)', 'Clube: exclusão', t);
+      execute format('create policy %I on public.%I for select to authenticated using (club_id = (select public.current_club_id()))', 'Clube: leitura', t);
+      execute format('create policy %I on public.%I for insert to authenticated with check (club_id = (select public.current_club_id()) and (select public.support_club_id()) is null)', 'Clube: inclusão', t);
+      execute format('create policy %I on public.%I for update to authenticated using (club_id = (select public.current_club_id()) and (select public.support_club_id()) is null) with check (club_id = (select public.current_club_id()))', 'Clube: alteração', t);
+      execute format('create policy %I on public.%I for delete to authenticated using (club_id = (select public.current_club_id()) and (select public.support_club_id()) is null)', 'Clube: exclusão', t);
     end loop;
   end $$;
 
@@ -1757,17 +1759,17 @@
   drop policy if exists "Escudos: admin do clube envia" on storage.objects;
   create policy "Escudos: admin do clube envia" on storage.objects
     for insert to authenticated
-    with check (bucket_id = 'escudos' and (storage.foldername(name))[1] = public.current_club_id()::text and public.is_club_admin());
+    with check (bucket_id = 'escudos' and (storage.foldername(name))[1] = (select public.current_club_id())::text and (select public.is_club_admin()));
 
   drop policy if exists "Escudos: admin do clube substitui" on storage.objects;
   create policy "Escudos: admin do clube substitui" on storage.objects
     for update to authenticated
-    using (bucket_id = 'escudos' and (storage.foldername(name))[1] = public.current_club_id()::text and public.is_club_admin());
+    using (bucket_id = 'escudos' and (storage.foldername(name))[1] = (select public.current_club_id())::text and (select public.is_club_admin()));
 
   drop policy if exists "Escudos: admin do clube apaga" on storage.objects;
   create policy "Escudos: admin do clube apaga" on storage.objects
     for delete to authenticated
-    using (bucket_id = 'escudos' and (storage.foldername(name))[1] = public.current_club_id()::text and public.is_club_admin());
+    using (bucket_id = 'escudos' and (storage.foldername(name))[1] = (select public.current_club_id())::text and (select public.is_club_admin()));
 
   -- Admin grava o endereço do escudo. Só vale um endereço público do Storage do Supabase
   -- apontando para um arquivo (PNG/JPG/WEBP) que já existe na pasta do próprio clube.
@@ -2001,10 +2003,10 @@
       execute format('drop policy if exists %I on public.%I', 'Clube: inclusão', t);
       execute format('drop policy if exists %I on public.%I', 'Clube: alteração', t);
       execute format('drop policy if exists %I on public.%I', 'Clube: exclusão', t);
-      execute format('create policy %I on public.%I for select to authenticated using (club_id = public.current_club_id())', 'Clube: leitura', t);
-      execute format('create policy %I on public.%I for insert to authenticated with check (club_id = public.current_club_id() and public.support_club_id() is null)', 'Clube: inclusão', t);
-      execute format('create policy %I on public.%I for update to authenticated using (club_id = public.current_club_id() and public.support_club_id() is null) with check (club_id = public.current_club_id())', 'Clube: alteração', t);
-      execute format('create policy %I on public.%I for delete to authenticated using (club_id = public.current_club_id() and public.support_club_id() is null)', 'Clube: exclusão', t);
+      execute format('create policy %I on public.%I for select to authenticated using (club_id = (select public.current_club_id()))', 'Clube: leitura', t);
+      execute format('create policy %I on public.%I for insert to authenticated with check (club_id = (select public.current_club_id()) and (select public.support_club_id()) is null)', 'Clube: inclusão', t);
+      execute format('create policy %I on public.%I for update to authenticated using (club_id = (select public.current_club_id()) and (select public.support_club_id()) is null) with check (club_id = (select public.current_club_id()))', 'Clube: alteração', t);
+      execute format('create policy %I on public.%I for delete to authenticated using (club_id = (select public.current_club_id()) and (select public.support_club_id()) is null)', 'Clube: exclusão', t);
     end loop;
   end $$;
 
@@ -2092,13 +2094,13 @@
   drop policy if exists "Clube: inclusão" on public.club_reminder_settings;
   drop policy if exists "Clube: alteração" on public.club_reminder_settings;
   create policy "Clube: leitura" on public.club_reminder_settings
-    for select to authenticated using (club_id = public.current_club_id());
+    for select to authenticated using (club_id = (select public.current_club_id()));
   create policy "Clube: inclusão" on public.club_reminder_settings
-    for insert to authenticated with check (club_id = public.current_club_id() and public.support_club_id() is null);
+    for insert to authenticated with check (club_id = (select public.current_club_id()) and (select public.support_club_id()) is null);
   create policy "Clube: alteração" on public.club_reminder_settings
     for update to authenticated
-    using (club_id = public.current_club_id() and public.support_club_id() is null)
-    with check (club_id = public.current_club_id());
+    using (club_id = (select public.current_club_id()) and (select public.support_club_id()) is null)
+    with check (club_id = (select public.current_club_id()));
 
   -- ------------------------------------------------------------
   -- 2. Atleta ativa/desativa os lembretes no aparelho
@@ -2612,7 +2614,7 @@
   drop policy if exists "Adversários: autor da ficha" on public.adversarios;
   create policy "Adversários: autor da ficha" on public.adversarios
     as restrictive for insert to authenticated
-    with check (coalesce(criado_por_tipo, 'tecnico') = 'tecnico' and (criado_por_id is null or criado_por_id::text = auth.uid()::text));
+    with check (coalesce(criado_por_tipo, 'tecnico') = 'tecnico' and (criado_por_id is null or criado_por_id::text = (select auth.uid())::text));
 
   -- ------------------------------------------------------------
   -- 1. Observações táticas
@@ -2692,22 +2694,22 @@
   create policy "Observações: leitura do clube" on public.adversario_observacoes
     for select to authenticated
     using (
-      exists (select 1 from public.adversarios a where a.id = adversario_id and a.club_id = public.current_club_id())
-      and not public._autor_de_outro_clube(autor_tipo, autor_id::text, public.current_club_id())
+      exists (select 1 from public.adversarios a where a.id = adversario_id and a.club_id = (select public.current_club_id()))
+      and not public._autor_de_outro_clube(autor_tipo, autor_id::text, (select public.current_club_id()))
     );
 
   create policy "Observações: treinador escreve" on public.adversario_observacoes
     for insert to authenticated
     with check (
-      autor_tipo = 'tecnico' and autor_id::text = auth.uid()::text and public.support_club_id() is null
-      and exists (select 1 from public.adversarios a where a.id = adversario_id and a.club_id = public.current_club_id())
+      autor_tipo = 'tecnico' and autor_id::text = (select auth.uid())::text and (select public.support_club_id()) is null
+      and exists (select 1 from public.adversarios a where a.id = adversario_id and a.club_id = (select public.current_club_id()))
     );
 
   create policy "Observações: autor apaga" on public.adversario_observacoes
     for delete to authenticated
     using (
-      autor_tipo = 'tecnico' and autor_id::text = auth.uid()::text and public.support_club_id() is null
-      and exists (select 1 from public.adversarios a where a.id = adversario_id and a.club_id = public.current_club_id())
+      autor_tipo = 'tecnico' and autor_id::text = (select auth.uid())::text and (select public.support_club_id()) is null
+      and exists (select 1 from public.adversarios a where a.id = adversario_id and a.club_id = (select public.current_club_id()))
     );
 
   -- ------------------------------------------------------------
@@ -2734,7 +2736,7 @@
   drop policy if exists "Ocultos: treinador vê os próprios" on public.adversario_ocultos;
   create policy "Ocultos: treinador vê os próprios" on public.adversario_ocultos
     for select to authenticated
-    using (coach_id = auth.uid());
+    using (coach_id = (select auth.uid()));
 
   create or replace function public.coach_set_adversario_oculto(p_id uuid, p_oculto boolean)
   returns void
@@ -3128,20 +3130,20 @@
 
   create policy "Competições: leitura" on public.competitions
     for select to authenticated
-    using (club_id = public.current_club_id());
+    using (club_id = (select public.current_club_id()));
 
   create policy "Competições: inclusão" on public.competitions
     for insert to authenticated
-    with check (club_id = public.current_club_id() and public.support_club_id() is null);
+    with check (club_id = (select public.current_club_id()) and (select public.support_club_id()) is null);
 
   create policy "Competições: alteração" on public.competitions
     for update to authenticated
-    using (club_id = public.current_club_id() and public.support_club_id() is null)
-    with check (club_id = public.current_club_id());
+    using (club_id = (select public.current_club_id()) and (select public.support_club_id()) is null)
+    with check (club_id = (select public.current_club_id()));
 
   create policy "Competições: exclusão" on public.competitions
     for delete to authenticated
-    using (club_id = public.current_club_id() and public.support_club_id() is null);
+    using (club_id = (select public.current_club_id()) and (select public.support_club_id()) is null);
 
   revoke execute on function public.competition_applies_to(public.competitions, uuid) from public, anon;
   grant execute on function public.competition_applies_to(public.competitions, uuid) to authenticated;
@@ -3197,6 +3199,8 @@
   alter table public.club_exercises add column if not exists club_id uuid references public.clubs(id) on delete cascade;
   alter table public.club_exercises add column if not exists bloco text default 'Geral';
   alter table public.club_exercises add column if not exists exige_pr boolean default true;
+  -- Exercício com barra olímpica de 20 kg: a ficha do atleta mostra as anilhas
+  alter table public.club_exercises add column if not exists usa_barra boolean not null default true;
   alter table public.club_exercises add column if not exists created_at timestamp with time zone default now();
 
   -- Versões antigas exigiam nome único no sistema todo; agora é único por clube
@@ -3361,12 +3365,12 @@
       for p in select policyname from pg_policies where schemaname = 'public' and tablename = t loop
         execute format('drop policy %I on public.%I', p.policyname, t);
       end loop;
-      execute format('create policy %I on public.%I for select to authenticated using (club_id = public.current_club_id())', 'Clube: leitura', t);
+      execute format('create policy %I on public.%I for select to authenticated using (club_id = (select public.current_club_id()))', 'Clube: leitura', t);
       -- treino concluído só é gravado pelo atleta (função abaixo)
       continue when t = 'workout_completions';
-      execute format('create policy %I on public.%I for insert to authenticated with check (club_id = public.current_club_id() and public.support_club_id() is null)', 'Clube: inclusão', t);
-      execute format('create policy %I on public.%I for update to authenticated using (club_id = public.current_club_id() and public.support_club_id() is null) with check (club_id = public.current_club_id())', 'Clube: alteração', t);
-      execute format('create policy %I on public.%I for delete to authenticated using (club_id = public.current_club_id() and public.support_club_id() is null)', 'Clube: exclusão', t);
+      execute format('create policy %I on public.%I for insert to authenticated with check (club_id = (select public.current_club_id()) and (select public.support_club_id()) is null)', 'Clube: inclusão', t);
+      execute format('create policy %I on public.%I for update to authenticated using (club_id = (select public.current_club_id()) and (select public.support_club_id()) is null) with check (club_id = (select public.current_club_id()))', 'Clube: alteração', t);
+      execute format('create policy %I on public.%I for delete to authenticated using (club_id = (select public.current_club_id()) and (select public.support_club_id()) is null)', 'Clube: exclusão', t);
     end loop;
   end $$;
   revoke insert, update, delete on public.workout_completions from authenticated;
@@ -3493,7 +3497,12 @@
       'prescriptions', coalesce((
         select json_agg(json_build_object(
                  'id', w.id, 'bloco', w.bloco, 'exercicio', w.exercicio, 'series', w.series, 'repeticoes', w.repeticoes,
-                 'usa_pr', w.usa_pr, 'porcentagem_pr', w.porcentagem_pr, 'observacoes_tecnico', w.observacoes_tecnico
+                 'usa_pr', w.usa_pr, 'porcentagem_pr', w.porcentagem_pr, 'observacoes_tecnico', w.observacoes_tecnico,
+                 'usa_barra', coalesce((
+                   select e.usa_barra from public.club_exercises e
+                   where e.club_id = v_session.club_id and lower(trim(e.nome)) = lower(trim(w.exercicio))
+                   limit 1
+                 ), true)
                ) order by w.created_at, w.id)
         from public.workout_prescriptions w
         where w.training_session_id = v_session.id
@@ -3584,5 +3593,152 @@
   grant execute on function public.athlete_get_workout(uuid, uuid) to anon, authenticated;
   grant execute on function public.athlete_complete_workout(uuid, uuid, integer) to anon, authenticated;
   grant execute on function public.club_save_group(uuid, text, uuid[]) to authenticated;
+
+  notify pgrst, 'reload schema';
+
+
+  -- ############################################################
+  -- PARTE 13. DESEMPENHO E TELA "HOJE" DO ATLETA
+  -- * As regras de acesso usam (select public.current_club_id()): o banco calcula o
+  --   clube uma vez por consulta, e não uma vez por linha.
+  -- * Índices para as buscas por data e por atleta.
+  -- * athlete_home: tudo o que a tela "Hoje" precisa numa consulta só.
+  -- ############################################################
+
+  -- ------------------------------------------------------------
+  -- 1. Índices (só criam; não mudam dados)
+  -- ------------------------------------------------------------
+  create index if not exists pse_records_club_date_idx on public.pse_records (club_id, date);
+  create index if not exists pse_records_athlete_date_idx on public.pse_records (athlete_id, date);
+  create index if not exists psr_records_club_date_idx on public.psr_records (club_id, date);
+  create index if not exists weight_records_club_date_idx on public.weight_records (club_id, date);
+  create index if not exists training_sessions_club_date_idx on public.training_sessions (club_id, date);
+  create index if not exists athlete_sessions_expires_idx on public.athlete_sessions (expires_at);
+
+  -- Busca por atleta e data em PSR e peso: o índice único "um por dia" já serve;
+  -- se ele não pôde ser criado (dados antigos repetidos), cria um índice comum.
+  do $$
+  begin
+    if to_regclass('public.psr_records_um_por_dia') is null then
+      create index if not exists psr_records_athlete_date_idx on public.psr_records (athlete_id, date);
+    end if;
+    if to_regclass('public.weight_records_um_por_dia') is null then
+      create index if not exists weight_records_athlete_date_idx on public.weight_records (athlete_id, date);
+    end if;
+  end $$;
+
+  -- ------------------------------------------------------------
+  -- 2. "Este treino/competição vale para o atleta?" só dentro das funções do banco
+  --    (a chamada direta permitiria testar grupos de outros clubes)
+  -- ------------------------------------------------------------
+  revoke execute on function public.session_applies_to(public.training_sessions, uuid) from public, anon, authenticated;
+  revoke execute on function public.competition_applies_to(public.competitions, uuid) from public, anon, authenticated;
+
+  -- ------------------------------------------------------------
+  -- 3. Sessão do atleta: já devolve o termo aceito e se falta o tutorial
+  --    (menos idas ao servidor ao abrir o app)
+  -- ------------------------------------------------------------
+  create or replace function public._athlete_session_json(p_token uuid, p_athlete public.athletes)
+  returns json
+  language sql
+  stable
+  security definer
+  set search_path = ''
+  as $$
+    select json_build_object(
+      'token', p_token,
+      'must_change_password', not exists (
+        select 1 from public.athlete_credentials c where c.athlete_id = p_athlete.id
+      ),
+      'athlete', json_build_object(
+        'id', p_athlete.id,
+        'nome', p_athlete.nome,
+        'classe', p_athlete.classe,
+        'categoria', p_athlete.categoria
+      ),
+      'club', (
+        select json_build_object('id', k.id, 'nome', k.nome, 'escudo_url', k.escudo_url)
+        from public.clubs k where k.id = p_athlete.club_id
+      ),
+      'terms', json_build_object('accepted_at', p_athlete.terms_accepted_at, 'version', p_athlete.terms_version),
+      'tutorial_pending', p_athlete.tutorial_done_at is null
+    );
+  $$;
+  revoke execute on function public._athlete_session_json(uuid, public.athletes) from public, anon, authenticated;
+
+  -- ------------------------------------------------------------
+  -- 4. Tela "Hoje" do atleta: o que já respondeu hoje, treinos do dia e último peso
+  -- ------------------------------------------------------------
+  create or replace function public.athlete_home(p_token uuid)
+  returns json
+  language plpgsql
+  stable
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_me uuid := public._athlete_ready(p_token);
+    v_club uuid;
+    v_today date := public.training_today();
+  begin
+    select a.club_id into v_club from public.athletes a where a.id = v_me;
+
+    return json_build_object(
+      'today', v_today,
+      'psr', (
+        select json_build_object('id', r.id, 'created_at', r.created_at)
+        from public.psr_records r
+        where r.athlete_id = v_me and r.date = v_today
+        order by r.created_at desc limit 1
+      ),
+      'weight', (
+        select json_build_object('id', w.id, 'weight', w.weight, 'created_at', w.created_at)
+        from public.weight_records w
+        where w.athlete_id = v_me and w.date = v_today
+        order by w.created_at desc limit 1
+      ),
+      'last_weight', (
+        select json_build_object('weight', w.weight, 'date', w.date)
+        from public.weight_records w
+        where w.athlete_id = v_me
+        order by w.date desc, w.created_at desc limit 1
+      ),
+      'pse', coalesce((
+        select json_agg(json_build_object(
+                 'id', p.id, 'training_type', p.training_type, 'rpe_score', p.rpe_score,
+                 'did_not_train', p.did_not_train, 'duration_minutes', p.duration_minutes, 'created_at', p.created_at
+               ) order by p.created_at)
+        from public.pse_records p
+        where p.athlete_id = v_me and p.date = v_today
+      ), '[]'::json),
+      'weigh_day', coalesce((
+        select extract(isodow from v_today)::integer = any(s.weight_days)
+        from public.club_reminder_settings s
+        where s.club_id = v_club
+      ), false),
+      -- O clube usa preparação física com PR? (senão o app esconde a aba de PRs)
+      'pr_catalog', exists (
+        select 1 from public.club_exercises e where e.club_id = v_club and e.exige_pr
+      ),
+      'sessions', coalesce((
+        select json_agg(json_build_object(
+                 'id', s.id, 'date', s.date, 'start_time', s.start_time, 'end_time', s.end_time, 'name', s.name,
+                 'training_type', s.training_type, 'expected_pse', s.expected_pse, 'notes', s.notes,
+                 'completed', exists (
+                   select 1 from public.workout_completions c
+                   where c.athlete_id = v_me and c.training_session_id = s.id
+                 )
+               ) order by s.start_time)
+        from public.training_sessions s
+        where s.club_id = v_club
+          and s.date = v_today
+          and public.session_applies_to(s, v_me)
+      ), '[]'::json)
+    );
+  end;
+  $$;
+
+  revoke execute on function public.athlete_home(uuid) from public;
+  grant execute on function public.athlete_home(uuid) to anon, authenticated;
 
   notify pgrst, 'reload schema';

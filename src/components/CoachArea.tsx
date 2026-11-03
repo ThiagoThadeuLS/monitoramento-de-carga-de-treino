@@ -1,40 +1,95 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { LogOut, BarChart3, Users, Loader2, LineChart, CalendarDays, Shield, AlertTriangle, UserCog, Settings2, UsersRound, Palette, Gauge, ChevronLeft, ChevronRight, Dumbbell, Trophy } from 'lucide-react';
+import React, { Suspense, useEffect, useRef, useState } from 'react';
+import {
+  LogOut, BarChart3, Users, Loader2, LineChart, CalendarDays, Shield, AlertTriangle, UserCog, Settings2, UsersRound, Palette, Gauge,
+  Dumbbell, Trophy, Home,
+} from 'lucide-react';
 import { exitSupport } from '../lib/platform';
-import { TeamManagement } from './coach/TeamManagement';
-import { GroupManagement } from './coach/GroupManagement';
-import { ThemeSettings } from './coach/ThemeSettings';
-import { HelpButton, Tour } from './tour/Tour';
+import { HelpButton } from './tour/HelpButton';
 import { coachTourSteps } from './tour/steps';
 import { coachTutorialPending, markCoachTutorialDone } from '../lib/tutorial';
 import { CoachChangePassword } from './CoachChangePassword';
 import { ClubCrest, ClubInfo, useClub } from '../lib/club';
 import { supabase } from '../lib/supabase';
 import { CoachLogin } from './CoachLogin';
-import { DailyOverview } from './coach/DailyOverview';
-import { PeriodAnalysis } from './coach/PeriodAnalysis';
-import { TrainingSchedule } from './coach/TrainingSchedule';
-import { AthleteManagement } from './coach/AthleteManagement';
-import { AdversaryManagement } from './coach/AdversaryManagement';
-import { LoadAnalysis } from './coach/LoadAnalysis';
-import { AthleteProfile } from './coach/AthleteProfile';
-import { PhysicalWorkoutBuilder } from './coach/PhysicalWorkoutBuilder';
-import { CompetitionManagement } from './coach/CompetitionManagement';
 import { Athlete } from '../types';
+import { lazyNamed } from '../lib/lazy';
+import { useHistoryState } from '../lib/navigation';
+import { useTodayISO } from '../lib/useToday';
 
-type CoachTab = 'overview' | 'period' | 'load' | 'schedule' | 'fisica' | 'competitions' | 'adversaries' | 'management';
-type ManagementSection = 'athletes' | 'groups' | 'team' | 'colors';
+// Cada tela do painel é baixada quando o treinador abre (o app do atleta não carrega nada disso)
+const DailyOverview = lazyNamed(() => import('./coach/DailyOverview'), (m) => m.DailyOverview);
+const CompetitionRiskCard = lazyNamed(() => import('./coach/CompetitionRiskCard'), (m) => m.CompetitionRiskCard);
+const PeriodAnalysis = lazyNamed(() => import('./coach/PeriodAnalysis'), (m) => m.PeriodAnalysis);
+const LoadAnalysis = lazyNamed(() => import('./coach/LoadAnalysis'), (m) => m.LoadAnalysis);
+const TrainingSchedule = lazyNamed(() => import('./coach/TrainingSchedule'), (m) => m.TrainingSchedule);
+const PhysicalWorkoutBuilder = lazyNamed(() => import('./coach/PhysicalWorkoutBuilder'), (m) => m.PhysicalWorkoutBuilder);
+const CompetitionManagement = lazyNamed(() => import('./coach/CompetitionManagement'), (m) => m.CompetitionManagement);
+const AthleteManagement = lazyNamed(() => import('./coach/AthleteManagement'), (m) => m.AthleteManagement);
+const GroupManagement = lazyNamed(() => import('./coach/GroupManagement'), (m) => m.GroupManagement);
+const AdversaryManagement = lazyNamed(() => import('./coach/AdversaryManagement'), (m) => m.AdversaryManagement);
+const TeamManagement = lazyNamed(() => import('./coach/TeamManagement'), (m) => m.TeamManagement);
+const ThemeSettings = lazyNamed(() => import('./coach/ThemeSettings'), (m) => m.ThemeSettings);
+const AthleteProfile = lazyNamed(() => import('./coach/AthleteProfile'), (m) => m.AthleteProfile);
+const Tour = lazyNamed(() => import('./tour/Tour'), (m) => m.Tour);
 
-const COACH_TABS: { id: CoachTab; label: string; short: string; icon: typeof BarChart3 }[] = [
-  { id: 'overview', label: 'Visão Geral do Dia', short: 'Dia', icon: BarChart3 },
-  { id: 'period', label: 'Análise do Período', short: 'Período', icon: LineChart },
-  { id: 'load', label: 'Carga Interna', short: 'Carga', icon: Gauge },
-  { id: 'schedule', label: 'Cronograma', short: 'Agenda', icon: CalendarDays },
-  { id: 'fisica', label: 'Prep. Física', short: 'Física', icon: Dumbbell },
-  { id: 'competitions', label: 'Competições', short: 'Comp.', icon: Trophy },
-  { id: 'adversaries', label: 'Atletas Adversários', short: 'Rivais', icon: Shield },
-  { id: 'management', label: 'Gestão', short: 'Gestão', icon: Settings2 },
+type CoachAreaId = 'hoje' | 'analises' | 'planejamento' | 'elenco' | 'config';
+type Icon = typeof BarChart3;
+
+/** As 4 áreas do painel (+ configurações na engrenagem, só admin) e as seções de cada uma */
+const AREAS: {
+  id: CoachAreaId;
+  label: string;
+  icon: Icon;
+  adminOnly?: boolean;
+  subs: { id: string; label: string; icon: Icon; adminOnly?: boolean }[];
+}[] = [
+  { id: 'hoje', label: 'Hoje', icon: Home, subs: [{ id: '', label: 'Hoje', icon: BarChart3 }] },
+  {
+    id: 'analises',
+    label: 'Análises',
+    icon: LineChart,
+    subs: [
+      { id: 'periodo', label: 'Período', icon: LineChart },
+      { id: 'carga', label: 'Carga interna', icon: Gauge },
+    ],
+  },
+  {
+    id: 'planejamento',
+    label: 'Planejamento',
+    icon: CalendarDays,
+    subs: [
+      { id: 'agenda', label: 'Agenda', icon: CalendarDays },
+      { id: 'fisica', label: 'Prep. física', icon: Dumbbell },
+      { id: 'competicoes', label: 'Competições', icon: Trophy },
+    ],
+  },
+  {
+    id: 'elenco',
+    label: 'Elenco',
+    icon: Users,
+    subs: [
+      { id: 'atletas', label: 'Atletas', icon: Users },
+      { id: 'grupos', label: 'Grupos', icon: UsersRound },
+      { id: 'adversarios', label: 'Adversários', icon: Shield },
+    ],
+  },
+  {
+    id: 'config',
+    label: 'Configurações',
+    icon: Settings2,
+    adminOnly: true,
+    subs: [
+      { id: 'treinadores', label: 'Treinadores', icon: UserCog, adminOnly: true },
+      { id: 'cores', label: 'Cores', icon: Palette, adminOnly: true },
+    ],
+  },
 ];
+
+const Spinner = () => (
+  <div className="py-16 flex justify-center">
+    <Loader2 className="w-7 h-7 animate-spin text-sky-400" />
+  </div>
+);
 
 type ProfileClub = ClubInfo & { status: 'ativo' | 'suspenso' };
 
@@ -60,21 +115,21 @@ export const CoachArea: React.FC<{ recovery?: boolean }> = ({ recovery = false }
   const [profileError, setProfileError] = useState('');
   const [profileVersion, setProfileVersion] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<CoachTab>('overview');
   const [athleteToEdit, setAthleteToEdit] = useState<Athlete | null>(null);
-  const [managementSection, setManagementSection] = useState<ManagementSection>('athletes');
   const [profileId, setProfileId] = useState<string | null>(null);
+  const [workoutSession, setWorkoutSession] = useState<string | null>(null);
+  const today = useTodayISO();
 
-  // Referência para o container de abas roláveis com setas
-  const tabsScrollRef = useRef<HTMLDivElement>(null);
-
-  const scrollTabs = (direction: 'left' | 'right') => {
-    if (tabsScrollRef.current) {
-      const { scrollLeft, clientWidth } = tabsScrollRef.current;
-      const offset = direction === 'left' ? -clientWidth / 2 : clientWidth / 2;
-      tabsScrollRef.current.scrollTo({ left: scrollLeft + offset, behavior: 'smooth' });
-    }
+  // Área e seção ficam no histórico: o "voltar" do navegador volta para a tela anterior
+  const [nav, setNav] = useHistoryState<{ area: CoachAreaId; sub?: string }>('treinador_nav', { area: 'hoje' });
+  const lastSub = useRef<Partial<Record<CoachAreaId, string>>>({});
+  const go = (area: CoachAreaId, sub?: string) => {
+    const next = sub ?? lastSub.current[area];
+    if (next) lastSub.current[area] = next;
+    setNav({ area, sub: next });
   };
+  // Telas já abertas ficam montadas (voltar a elas é instantâneo, sem buscar tudo de novo)
+  const visitedRef = useRef(new Set<string>());
 
   const checkSession = async () => {
     if (!supabase) {
@@ -177,8 +232,7 @@ export const CoachArea: React.FC<{ recovery?: boolean }> = ({ recovery = false }
 
   const handleEditAthleteFromOverview = (athlete: Athlete) => {
     setAthleteToEdit(athlete);
-    setManagementSection('athletes');
-    setActiveTab('management');
+    go('elenco', 'atletas');
   };
 
   if (loading) {
@@ -290,16 +344,31 @@ export const CoachArea: React.FC<{ recovery?: boolean }> = ({ recovery = false }
 
   const viewClub = coach!.club;
   const isAdmin = coach!.role === 'admin';
-  const tabs = COACH_TABS;
-  const currentTab: CoachTab = tabs.some((t) => t.id === activeTab) ? activeTab : tabs[0].id;
+  const areaDef = AREAS.find((a) => a.id === nav.area && (!a.adminOnly || isAdmin)) ?? AREAS[0];
+  const subs = areaDef.subs.filter((s) => !s.adminOnly || isAdmin);
+  const sub = subs.find((s) => s.id === nav.sub) ?? subs[0];
+  const paneKey = `${areaDef.id}/${sub?.id ?? ''}`;
 
+  visitedRef.current.add(paneKey);
+  const visited = visitedRef.current;
+
+  const pane = (key: string, content: React.ReactNode) =>
+    visited.has(key) ? (
+      <div key={key} hidden={paneKey !== key}>
+        <Suspense fallback={<Spinner />}>{content}</Suspense>
+      </div>
+    ) : null;
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
+    <div className="max-w-6xl mx-auto px-4 py-6 space-y-5">
       <HelpButton onClick={() => setTutorial(true)} />
-      {tutorial && <Tour steps={coachTourSteps(coach!.nome, isAdmin, setActiveTab, setManagementSection)} onClose={finishTutorial} />}
-      {/* Top Banner da Comissão Técnica */}
-      <div data-tour="coach-banner" className="bg-slate-900/90 border border-slate-800 rounded-3xl p-4 sm:p-6 shadow-xl flex items-center justify-between gap-3">
+      {tutorial && (
+        <Suspense fallback={null}>
+          <Tour steps={coachTourSteps(coach!.nome, isAdmin, (area, s) => go(area as CoachAreaId, s))} onClose={finishTutorial} />
+        </Suspense>
+      )}
+      {/* Cabeçalho da comissão técnica */}
+      <div data-tour="coach-banner" className="bg-slate-900/90 border border-slate-800 rounded-3xl p-4 sm:p-5 shadow-xl flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <ClubCrest club={viewClub} className="w-10 h-12 flex-shrink-0" />
           <div className="min-w-0 flex-1">
@@ -312,117 +381,99 @@ export const CoachArea: React.FC<{ recovery?: boolean }> = ({ recovery = false }
           </div>
         </div>
 
-        {/* Botão Sair */}
-        <button
-          type="button"
-          onClick={handleLogout}
-          className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-red-500/20 text-slate-300 hover:text-red-300 border border-slate-700/60 text-xs font-bold transition-all flex-shrink-0"
-          title="Sair"
-        >
-          <LogOut className="w-4 h-4" />
-          <span className="hidden sm:inline">Sair</span>
-        </button>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => go('config')}
+              className={`p-2 rounded-xl border text-xs font-bold transition-all ${
+                areaDef.id === 'config' ? 'bg-sky-500 text-slate-950 border-sky-400' : 'bg-slate-800 text-slate-300 border-slate-700/60 hover:text-white'
+              }`}
+              title="Configurações do clube (treinadores e cores)"
+              aria-label="Configurações do clube"
+            >
+              <Settings2 className="w-4 h-4" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-red-500/20 text-slate-300 hover:text-red-300 border border-slate-700/60 text-xs font-bold transition-all"
+            title="Sair"
+          >
+            <LogOut className="w-4 h-4" />
+            <span className="hidden sm:inline">Sair</span>
+          </button>
+        </div>
       </div>
 
-      {/* Navegação entre Módulos do Treinador com Setas de Rolagem */}
-      <div className="relative flex items-center border-b border-slate-800 pb-2">
-        {/* Seta Esquerda */}
-        <button
-          type="button"
-          onClick={() => scrollTabs('left')}
-          className="absolute left-0 z-10 p-1.5 bg-slate-900/90 hover:bg-slate-800 text-slate-300 rounded-full shadow-md border border-slate-700 backdrop-blur-sm -ml-2 sm:flex items-center justify-center transition-all hidden"
-          title="Rolar para esquerda"
-        >
-          <ChevronLeft className="w-4 h-4" />
-        </button>
+      {/* Áreas: 4 fixas (as configurações ficam na engrenagem) */}
+      <nav data-tour="coach-tabs" className="grid grid-cols-4 gap-1 p-1 bg-slate-900/90 border border-slate-800 rounded-2xl">
+        {AREAS.filter((a) => !a.adminOnly).map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => go(id)}
+            aria-current={areaDef.id === id ? 'page' : undefined}
+            className={`flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-2 py-2.5 rounded-xl text-[11px] sm:text-sm font-bold transition-all ${
+              areaDef.id === id ? 'bg-sky-500 text-slate-950 shadow-lg shadow-sky-500/20' : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+            }`}
+          >
+            <Icon className="w-4 h-4" />
+            {label}
+          </button>
+        ))}
+      </nav>
 
-        {/* Container rolável das abas */}
-        <div
-          ref={tabsScrollRef}
-          data-tour="coach-tabs"
-          className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto scrollbar-none px-2 sm:px-6 w-full scroll-smooth"
-          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-        >
-          {tabs.map(({ id, label, short, icon: Icon }) => (
+      {/* Seções da área (quando tem mais de uma) */}
+      {subs.length > 1 && (
+        <div data-tour="coach-subtabs" className="flex gap-1.5 overflow-x-auto scrollbar-none" role="tablist" style={{ scrollbarWidth: 'none' }}>
+          {subs.map((s) => (
             <button
-              key={id}
+              key={s.id}
               type="button"
-              onClick={() => setActiveTab(id)}
-              className={`flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-3 sm:px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex-shrink-0 ${
-                currentTab === id
-                  ? 'bg-sky-500 text-slate-950 shadow-lg shadow-sky-500/20'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+              role="tab"
+              aria-selected={sub?.id === s.id}
+              onClick={() => go(areaDef.id, s.id)}
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-bold border flex-shrink-0 transition-colors ${
+                sub?.id === s.id ? 'bg-slate-100 text-slate-950 border-slate-100' : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
               }`}
             >
-              <Icon className="w-4 h-4" />
-              <span className="sm:hidden">{short}</span>
-              <span className="hidden sm:inline">{label}</span>
+              <s.icon className="w-3.5 h-3.5" />
+              {s.label}
             </button>
           ))}
         </div>
+      )}
 
-        {/* Seta Direita */}
-        <button
-          type="button"
-          onClick={() => scrollTabs('right')}
-          className="absolute right-0 z-10 p-1.5 bg-slate-900/90 hover:bg-slate-800 text-slate-300 rounded-full shadow-md border border-slate-700 backdrop-blur-sm -mr-2 sm:flex items-center justify-center transition-all hidden"
-          title="Rolar para direita"
-        >
-          <ChevronRight className="w-4 h-4" />
-        </button>
-      </div>
-
-      {/* Conteúdo da Aba Ativa (key: recarrega tudo ao trocar de clube/modo suporte) */}
+      {/* Conteúdo (key: recarrega tudo ao trocar de clube). Telas já abertas ficam montadas. */}
       <div key={viewClub.id} data-tour="coach-content" className="space-y-6">
-      {currentTab === 'overview' && (
-        <DailyOverview onEditAthlete={handleEditAthleteFromOverview} onOpenProfile={setProfileId} />
-      )}
-      {currentTab === 'period' && <PeriodAnalysis />}
-      {currentTab === 'load' && <LoadAnalysis onOpenProfile={setProfileId} />}
-      {currentTab === 'schedule' && <TrainingSchedule />}
-      {currentTab === 'fisica' && <PhysicalWorkoutBuilder />}
-      {currentTab === 'competitions' && <CompetitionManagement />}
-      {currentTab === 'management' && (
-        <div className="space-y-4">
-          {/* Seções da Gestão: atletas e grupos para todos; treinadores só para admin */}
-          {(
-            <div data-tour="management-tabs" className={`grid ${isAdmin ? 'grid-cols-4' : 'grid-cols-2'} sm:inline-flex sm:w-auto p-1 bg-slate-900/90 border border-slate-800 rounded-xl`} role="tablist" aria-label="Seções da gestão">
-              {([['athletes', 'Atletas', Users], ['groups', 'Grupos', UsersRound], ['team', 'Treinadores', UserCog], ['colors', 'Cores', Palette]] as const)
-                .filter(([id]) => (id !== 'team' && id !== 'colors') || isAdmin)
-                .map(([id, label, Icon]) => (
-                <button
-                  key={id}
-                  type="button"
-                  role="tab"
-                  aria-selected={managementSection === id}
-                  onClick={() => setManagementSection(id)}
-                  className={`flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 rounded-lg text-[11px] sm:text-sm font-bold transition-colors ${
-                    managementSection === id ? 'bg-sky-500 text-slate-950' : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  <Icon className="w-4 h-4" />
-                  {label}
-                </button>
-              ))}
-            </div>
-          )}
-          {managementSection === 'groups' && <GroupManagement />}
-          {(managementSection === 'athletes' || ((managementSection === 'team' || managementSection === 'colors') && !isAdmin)) && (
-            <AthleteManagement
-              athleteToEdit={athleteToEdit}
-              onClearAthleteToEdit={() => setAthleteToEdit(null)}
-              onOpenProfile={setProfileId}
-            />
-          )}
-          {isAdmin && managementSection === 'colors' && <ThemeSettings />}
-          {isAdmin && managementSection === 'team' && (
-            <TeamManagement currentUserId={session.user.id} club={coach!.club} onClubChanged={reloadProfile} />
-          )}
-        </div>
-      )}
-      {currentTab === 'adversaries' && <AdversaryManagement />}
+        {pane(
+          'hoje/',
+          <div className="space-y-4">
+            <CompetitionRiskCard today={today} onOpen={() => go('planejamento', 'competicoes')} />
+            <DailyOverview onEditAthlete={handleEditAthleteFromOverview} onOpenProfile={setProfileId} />
+          </div>
+        )}
+        {pane('analises/periodo', <PeriodAnalysis />)}
+        {pane('analises/carga', <LoadAnalysis onOpenProfile={setProfileId} />)}
+        {pane('planejamento/agenda', <TrainingSchedule onOpenWorkout={(id: string) => { setWorkoutSession(id); go('planejamento', 'fisica'); }} />)}
+        {pane('planejamento/fisica', <PhysicalWorkoutBuilder sessionId={workoutSession} />)}
+        {pane('planejamento/competicoes', <CompetitionManagement />)}
+        {pane(
+          'elenco/atletas',
+          <AthleteManagement athleteToEdit={athleteToEdit} onClearAthleteToEdit={() => setAthleteToEdit(null)} onOpenProfile={setProfileId} />
+        )}
+        {pane('elenco/grupos', <GroupManagement />)}
+        {pane('elenco/adversarios', <AdversaryManagement />)}
+        {isAdmin && pane('config/treinadores', <TeamManagement currentUserId={session.user.id} club={coach!.club} onClubChanged={reloadProfile} />)}
+        {isAdmin && pane('config/cores', <ThemeSettings />)}
       </div>
-      {profileId && <AthleteProfile athleteId={profileId} onClose={() => setProfileId(null)} />}
+      {profileId && (
+        <Suspense fallback={null}>
+          <AthleteProfile athleteId={profileId} onClose={() => setProfileId(null)} />
+        </Suspense>
+      )}
     </div>
   );
 };

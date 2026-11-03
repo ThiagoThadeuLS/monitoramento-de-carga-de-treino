@@ -17,6 +17,10 @@ export interface AthleteSession {
     categoria?: string | null;
   };
   club: ClubInfo | null;
+  /** Termo de uso aceito (vem junto com a sessão; ausente em bancos antigos) */
+  terms?: { accepted_at: string | null; version: string | null };
+  /** Ainda não viu o tutorial (ausente em bancos antigos) */
+  tutorialPending?: boolean;
 }
 
 const TOKEN_KEY = 'athlete_session_token';
@@ -42,7 +46,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   peso_ja_enviado: 'Você já registrou o peso hoje. Para corrigir, apague o registro de hoje no Histórico e envie de novo.',
   pr_invalido: 'Informe uma carga maior que zero e de até 500 kg.',
   exercicio_invalido: 'Esse exercício não está no catálogo do clube (ou não pede PR).',
-  'duplicate key': 'Já existe um adversário cadastrado com este nome.',
+  'duplicate key': 'Esse registro já existe.',
 };
 
 export class AthleteAuthError extends Error {
@@ -76,6 +80,8 @@ function parseSession(data: any): AthleteSession {
     mustChangePassword: Boolean(data.must_change_password),
     athlete: data.athlete,
     club: data.club ?? null,
+    terms: data.terms ?? undefined,
+    tutorialPending: typeof data.tutorial_pending === 'boolean' ? data.tutorial_pending : undefined,
   };
 }
 
@@ -261,6 +267,9 @@ export async function saveAthleteAdversary(token: string, a: AdversaryInput): Pr
     p_tipo_origem: a.tipo_origem,
     p_origem_valor: a.origem_valor,
   });
+  if (error?.message?.includes('duplicate key')) {
+    throw new AthleteAuthError('adversario_repetido', 'Já existe um adversário cadastrado com este nome.');
+  }
   if (error) throw toAuthError(error);
 }
 
@@ -326,6 +335,8 @@ export interface WorkoutPrescription {
   usa_pr: boolean;
   porcentagem_pr?: number | null;
   observacoes_tecnico?: string | null;
+  /** Exercício com barra de 20 kg (mostra as anilhas). Padrão: sim. */
+  usa_barra?: boolean;
 }
 
 export interface AthleteWorkout {
@@ -366,4 +377,40 @@ export async function completeAthleteWorkout(token: string, sessionId: string, d
     p_duration_minutes: durationMinutes,
   });
   if (error) throw toAuthError(error);
+}
+
+// ---------- Tela "Hoje" ----------
+export interface HomeSession extends TrainingSession {
+  /** Ficha do treino físico já concluída */
+  completed?: boolean;
+}
+
+export interface AthleteHome {
+  today: string;
+  psr: { id: string; created_at: string } | null;
+  weight: { id: string; weight: number; created_at: string } | null;
+  lastWeight: { weight: number; date: string } | null;
+  pse: { id: string; training_type: string | null; rpe_score: number | null; did_not_train: boolean; duration_minutes: number | null; created_at: string }[];
+  /** Hoje é dia de pesagem do clube */
+  weighDay: boolean;
+  /** O clube tem exercícios com PR (mostra a aba de PRs) */
+  prCatalog: boolean;
+  sessions: HomeSession[];
+}
+
+/** Tudo o que a tela "Hoje" precisa numa consulta só (respostas de hoje, treinos do dia, último peso). */
+export async function getAthleteHome(token: string): Promise<AthleteHome> {
+  const { data, error } = await client().rpc('athlete_home', { p_token: token });
+  if (error) throw toAuthError(error);
+  const d = (data ?? {}) as any;
+  return {
+    today: d.today,
+    psr: d.psr ?? null,
+    weight: d.weight ? { ...d.weight, weight: Number(d.weight.weight) } : null,
+    lastWeight: d.last_weight ? { weight: Number(d.last_weight.weight), date: d.last_weight.date } : null,
+    pse: d.pse ?? [],
+    weighDay: Boolean(d.weigh_day),
+    prCatalog: Boolean(d.pr_catalog),
+    sessions: (d.sessions ?? []) as HomeSession[],
+  };
 }

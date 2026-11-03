@@ -1,10 +1,12 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle, CalendarDays, CheckCircle2, ChevronRight, Clock, Loader2,
   MapPin, Pencil, Plus, Scale, Search, ShieldCheck, Trash2, Trophy, UsersRound, X,
 } from 'lucide-react';
 import { Competition } from '../../types';
-import { AthleteGroup, AthleteRef, listActiveAthletes, listGroups } from '../../lib/groups';
+import { AthleteGroup, AthleteRef, listGroupsCached } from '../../lib/groups';
+import { fetchClubAthletes } from '../../lib/athletes';
+import { useClub } from '../../lib/club';
 import {
   CompetitionSummaryRow, competitionAppliesTo, competitionAudienceLabel, deleteCompetition,
   getCompetitionSummary, listCompetitions, saveCompetition,
@@ -42,6 +44,7 @@ const STATUS_CLASS: Record<WeightPlanStatus, string> = {
   sem_dados: 'bg-slate-500/15 text-slate-300 border-slate-500/40',
   sem_categoria: 'bg-violet-500/15 text-violet-300 border-violet-500/40',
   sem_limite: 'bg-sky-500/15 text-sky-300 border-sky-500/40',
+  pesagem_passou: 'bg-slate-500/15 text-slate-300 border-slate-500/40',
 };
 
 const STATUS_ORDER: Record<WeightPlanStatus, number> = {
@@ -52,6 +55,7 @@ const STATUS_ORDER: Record<WeightPlanStatus, number> = {
   seguro: 4,
   no_alvo: 5,
   sem_limite: 6,
+  pesagem_passou: 7,
 };
 
 const kg = (value: number | null | undefined) =>
@@ -83,6 +87,8 @@ const emptyForm = (today: string): CompetitionForm => ({
 export const CompetitionManagement: React.FC = () => {
   const today = todayISO();
   const { confirm } = useDialogs();
+  const { club } = useClub();
+  const clubId = club?.id ?? null;
   const [competitions, setCompetitions] = useState<Competition[]>([]);
   const [groups, setGroups] = useState<AthleteGroup[]>([]);
   const [athletes, setAthletes] = useState<AthleteRef[]>([]);
@@ -98,24 +104,36 @@ export const CompetitionManagement: React.FC = () => {
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState('');
 
-  const load = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const [c, g, a] = await Promise.all([listCompetitions(), listGroups(), listActiveAthletes()]);
-      setCompetitions(c);
-      setGroups(g);
-      setAthletes(a);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Só a busca mais recente atualiza a tela (salvar/excluir também recarrega)
+  const loadReq = useRef(0);
+  const load = useCallback(
+    async (force = false) => {
+      const req = ++loadReq.current;
+      setLoading(true);
+      setError('');
+      try {
+        const [c, g, a] = await Promise.all([listCompetitions(), listGroupsCached(clubId, force), fetchClubAthletes(clubId)]);
+        if (req !== loadReq.current) return;
+        setCompetitions(c);
+        setGroups(g);
+        setAthletes(a.filter((x) => x.active).map(({ id, nome }) => ({ id, nome })));
+      } catch (err: any) {
+        if (req === loadReq.current) setError(err.message);
+      } finally {
+        if (req === loadReq.current) setLoading(false);
+      }
+    },
+    [clubId]
+  );
 
   useEffect(() => {
     load();
-  }, []);
+    // Ao sair da tela (ou trocar de clube), a resposta que ainda vier é ignorada
+    const req = loadReq;
+    return () => {
+      req.current++;
+    };
+  }, [load]);
 
   const viewingId = viewing?.id;
   useEffect(() => {
@@ -136,9 +154,12 @@ export const CompetitionManagement: React.FC = () => {
     };
   }, [viewingId]);
 
+  const flashTimer = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => () => clearTimeout(flashTimer.current), []);
   const flash = (text: string) => {
     setFeedback(text);
-    setTimeout(() => setFeedback(''), 4000);
+    clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setFeedback(''), 4000);
   };
 
   const nameOf = useMemo(() => new Map(athletes.map((a) => [a.id, a.nome])), [athletes]);
@@ -481,16 +502,19 @@ export const CompetitionManagement: React.FC = () => {
                             <p className="font-bold text-sky-300">{kg(plan.target)}</p>
                           </div>
                           <div>
-                            <p className="text-[10px] uppercase font-bold text-slate-500">Falta</p>
-                            <p className={`font-bold ${plan.gap !== null && plan.gap > 0 ? 'text-amber-300' : plan.gap !== null ? 'text-emerald-300' : 'text-slate-400'}`}>
-                              {plan.gap !== null ? (plan.gap > 0.05 ? kg(plan.gap) : 'No alvo') : '—'}
+                            <p className="text-[10px] uppercase font-bold text-slate-500">Acima</p>
+                            <p className={`font-bold ${plan.needsToLose ? 'text-amber-300' : plan.gap !== null ? 'text-emerald-300' : 'text-slate-400'}`}>
+                              {plan.gap !== null ? (plan.needsToLose ? kg(plan.gap) : 'No peso') : '—'}
                             </p>
                           </div>
                         </div>
                         <p className="text-[11px] text-slate-400">
-                          {plan.current
-                            ? `Faixa segura na pesagem: ${kg(plan.safeMin)} a ${kg(plan.safeMax)}`
-                            : 'Sem pesagem registrada.'}
+                          {!plan.current
+                            ? 'Sem pesagem registrada.'
+                            : plan.showLimit && plan.limit
+                            ? `Limite agora: até ${kg(plan.limit.weight)} (${plan.limit.percent}% acima)` +
+                              (plan.nextLimit ? ` • a partir de ${shortDate(plan.nextLimit.from)}: até ${kg(plan.nextLimit.weight)}` : '')
+                            : plan.title}
                         </p>
                         <p className="text-[11px] text-slate-400 flex items-center gap-1">
                           <Clock className="w-3 h-3" />
@@ -508,8 +532,8 @@ export const CompetitionManagement: React.FC = () => {
                           <th className="text-left px-3 py-2.5">Atleta</th>
                           <th className="text-right px-3 py-2.5">Atual</th>
                           <th className="text-right px-3 py-2.5">Meta</th>
-                          <th className="text-right px-3 py-2.5">Falta</th>
-                          <th className="text-left px-3 py-2.5">Faixa segura</th>
+                          <th className="text-right px-3 py-2.5">Acima</th>
+                          <th className="text-left px-3 py-2.5">Limite agora</th>
                           <th className="text-left px-3 py-2.5">Última pesagem</th>
                           <th className="text-right px-3 py-2.5">Status</th>
                         </tr>
@@ -525,11 +549,11 @@ export const CompetitionManagement: React.FC = () => {
                             </td>
                             <td className="px-3 py-2.5 text-right font-semibold text-white">{kg(plan.current)}</td>
                             <td className="px-3 py-2.5 text-right text-sky-300 font-semibold">{kg(plan.target)}</td>
-                            <td className={`px-3 py-2.5 text-right font-semibold ${plan.gap !== null && plan.gap > 0 ? 'text-amber-300' : plan.gap !== null ? 'text-emerald-300' : 'text-slate-400'}`}>
-                              {plan.gap !== null ? (plan.gap > 0.05 ? kg(plan.gap) : 'No alvo') : '—'}
+                            <td className={`px-3 py-2.5 text-right font-semibold ${plan.needsToLose ? 'text-amber-300' : plan.gap !== null ? 'text-emerald-300' : 'text-slate-400'}`}>
+                              {plan.gap !== null ? (plan.needsToLose ? kg(plan.gap) : 'No peso') : '—'}
                             </td>
                             <td className="px-3 py-2.5 text-slate-300">
-                              {plan.current ? `${kg(plan.safeMin)} a ${kg(plan.safeMax)}` : '—'}
+                              {plan.showLimit && plan.limit ? `até ${kg(plan.limit.weight)} (${plan.limit.percent}%)` : '—'}
                             </td>
                             <td className="px-3 py-2.5 text-slate-400">{row.peso_data ? shortDate(row.peso_data) : 'nunca'}</td>
                             <td className="px-3 py-2.5 text-right">
@@ -546,8 +570,10 @@ export const CompetitionManagement: React.FC = () => {
                   <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 flex items-start gap-2 text-[11px] text-slate-400">
                     <ShieldCheck className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
                     <p>
-                      A faixa segura considera uma perda de 0,5% a 1% do peso corporal por semana. Em <strong className="text-slate-300">risco</strong>,
-                      converse com o atleta sobre categoria, prazo e acompanhamento com nutricionista ou médico.
+                      Limite acima da categoria: até 8% longe da competição (14 dias ou mais antes da pesagem), 5% na semana anterior e 3% na
+                      semana da competição; no dia da pesagem, dentro da categoria. <strong className="text-slate-300">Atenção</strong>: o limite
+                      vai baixar em até 7 dias e o atleta ainda está acima dele. <strong className="text-slate-300">Acima do limite</strong>: converse
+                      com o atleta sobre categoria, prazo e acompanhamento com nutricionista ou médico.
                     </p>
                   </div>
                 </>

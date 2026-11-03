@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronLeft, ChevronRight, HelpCircle, X, Compass } from 'lucide-react';
+import { ChevronLeft, ChevronRight, X, Compass } from 'lucide-react';
 
 /**
  * Tour guiado pelas telas de verdade: destaca uma parte da tela de cada vez
@@ -52,11 +52,16 @@ const MIN_SPOT_H = 56; // destaque muito alto: mostra pelo menos o começo dele 
 const BODY_VH = 0.38; // texto do cartão: no máximo 38% da altura da tela
 const TIGHT_VH = 500; // tela baixa (celular deitado): cartão compacto
 
-const findTarget = (name?: string) => (name ? document.querySelector<HTMLElement>(`[data-tour="${name}"]`) : null);
-
 const isShown = (el: HTMLElement) => {
   const r = el.getBoundingClientRect();
   return r.width > 0 && r.height > 0;
+};
+
+// As abas já abertas ficam montadas (escondidas): o alvo é o que está visível
+const findTarget = (name?: string) => {
+  if (!name) return null;
+  const all = [...document.querySelectorAll<HTMLElement>(`[data-tour="${name}"]`)];
+  return all.find(isShown) ?? all[0] ?? null;
 };
 
 const sameBox = (a: Box | null, b: Box | null) =>
@@ -379,17 +384,4 @@ export const Tour: React.FC<{ steps: TourStep[]; onClose: () => void }> = ({ ste
   );
 };
 
-/** Botão discreto para rever o tour. */
-export const HelpButton: React.FC<{ onClick: () => void }> = ({ onClick }) => (
-  <button
-    type="button"
-    onClick={onClick}
-    data-tour="help"
-    title="Ver o tour pela plataforma"
-    aria-label="Ver o tour pela plataforma"
-    className="fixed z-40 right-3 w-9 h-9 rounded-full bg-slate-800/70 border border-slate-700/70 text-slate-400 hover:text-white hover:bg-slate-700 flex items-center justify-center opacity-60 hover:opacity-100 transition-all"
-    style={{ bottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
-  >
-    <HelpCircle className="w-4 h-4" />
-  </button>
-);
+export { HelpButton } from './HelpButton';

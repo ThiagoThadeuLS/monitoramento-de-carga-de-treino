@@ -70,3 +70,14 @@ export function scheduleWeekBounds(today = todayISO()) {
     maxDate: addDaysISO(current, 13),
   };
 }
+
+/** Data DD/MM/AAAA de um instante (ex.: created_at), no horário de Brasília. */
+export function brDateOfStamp(iso?: string | null): string {
+  const [d] = stampInAppZone(iso);
+  return d ? `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}` : '';
+}
+
+/** Hora HH:MM de um instante, no horário de Brasília. */
+export function timeOfStamp(iso?: string | null): string {
+  return stampInAppZone(iso)[1];
+}

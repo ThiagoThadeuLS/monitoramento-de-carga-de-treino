@@ -6,6 +6,8 @@ import { Athlete, PseRecord, PsrRecord, TrainingSession } from '../../types';
 import { ExpectedSwatch, LineSwatch } from './DailyStatsChart';
 import { TRAINING_TYPES } from '../../data/constants';
 import { sessionAppliesTo, useClubGroups } from '../../lib/groups';
+import { fetchClubAthletes } from '../../lib/athletes';
+import { useClub } from '../../lib/club';
 import { MissingResponses } from './MissingResponses';
 import { AthleteSelection, EMPTY_SELECTION, GroupFilter, resolveSelection, selectionLabel } from './GroupFilter';
 import { MAX_DAYS, PRESETS, PseStat, TYPE_STYLES, daysBetween, fetchRange } from './period/shared';
@@ -41,6 +43,8 @@ export const PeriodAnalysis: React.FC = () => {
   const [reloadKey, setReloadKey] = useState(0);
   // Filtro por grupos e/ou atletas específicos (vazio = todos os atletas)
   const { groups } = useClubGroups();
+  const { club } = useClub();
+  const clubId = club?.id ?? null;
   const [selection, setSelection] = useState<AthleteSelection>(EMPTY_SELECTION);
   // Gráfico de PSE: tipos de treino incluídos, forma de exibir e estatística (média/moda)
   const [selectedTypes, setSelectedTypes] = useState<string[]>(TRAINING_TYPES);
@@ -66,16 +70,16 @@ export const PeriodAnalysis: React.FC = () => {
     setError('');
     (async () => {
       try {
-        const [athleteRes, pseRows, psrRows] = await Promise.all([
-          db.from('athletes').select('id, nome, classe, categoria, active'),
+        // Cronograma (PSE esperada): se a tabela ainda não existir, o gráfico segue sem a marcação
+        const [athleteRows, pseRows, psrRows, sessionRes] = await Promise.all([
+          fetchClubAthletes(clubId, reloadKey > 0),
           fetchRange<PseRecord>('pse_records', from, to),
           fetchRange<PsrRecord>('psr_records', from, to),
+          db.from('training_sessions').select('*').gte('date', from).lte('date', to),
         ]);
-        if (athleteRes.error) throw athleteRes.error;
-        // Cronograma (PSE esperada). Se a tabela ainda não existir, o gráfico segue sem a marcação.
-        const { data: sessionRows } = await db.from('training_sessions').select('*').gte('date', from).lte('date', to);
+        const sessionRows = sessionRes.data;
         if (cancelled) return;
-        setAthletes(new Map((athleteRes.data ?? []).map((a) => [a.id, a as Athlete])));
+        setAthletes(new Map(athleteRows.map((a) => [a.id, a as Athlete])));
         setPse(pseRows);
         setPsr(psrRows);
         setSessions((sessionRows ?? []) as TrainingSession[]);
@@ -89,7 +93,7 @@ export const PeriodAnalysis: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [from, to, rangeError, reloadKey]);
+  }, [from, to, rangeError, reloadKey, clubId]);
 
   const reload = () => setReloadKey((k) => k + 1);
 

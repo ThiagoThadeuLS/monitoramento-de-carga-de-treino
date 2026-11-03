@@ -5,6 +5,7 @@ import { deleteById, supabase } from '../../lib/supabase';
 import { useDialogs } from '../ui/Dialogs';
 import { formatCpf, isValidCpf, onlyCpfDigits } from '../../lib/cpf';
 import { resetAthletePassword } from '../../lib/athleteAuth';
+import { invalidateClubAthletes } from '../../lib/athletes';
 
 interface AthleteManagementProps {
   athleteToEdit?: Athlete | null;
@@ -102,11 +103,21 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
   }, []);
 
   // Pedido de edição vindo de outra aba (só reage quando muda o atleta pedido)
+  // As outras abas não carregam CPF/celular: busca o cadastro completo antes de abrir o formulário
+  // (senão salvar a edição apagaria esses campos)
   useEffect(() => {
-    if (athleteToEdit) {
-      handleOpenEditModal(athleteToEdit);
-      onClearAthleteToEdit?.();
-    }
+    if (!athleteToEdit || !supabase) return;
+    const id = athleteToEdit.id;
+    supabase
+      .from('athletes')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (data) handleOpenEditModal(data as Athlete);
+        else setFeedbackMsg({ type: 'error', text: `Não foi possível abrir o cadastro: ${error?.message ?? 'atleta não encontrado'}` });
+        onClearAthleteToEdit?.();
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- handleOpenEditModal só usa setters; o callback do pai é recriado a cada render
   }, [athleteToEdit]);
 
@@ -189,6 +200,7 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
       }
 
       setIsModalOpen(false);
+      invalidateClubAthletes();
       await loadAthletes();
       setTimeout(() => setFeedbackMsg(null), 6000);
     } catch (err: any) {
@@ -243,7 +255,8 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
         ? `"${athlete.nome}" reativado: volta a entrar no app e a receber lembretes.`
         : `"${athlete.nome}" inativado: não entra mais no app nem recebe lembretes. O histórico foi mantido.`,
     });
-    await loadAthletes();
+    invalidateClubAthletes();
+      await loadAthletes();
     setTimeout(() => setFeedbackMsg(null), 5000);
   };
 
@@ -258,6 +271,7 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
     try {
       await deleteById('athletes', id);
       setFeedbackMsg({ type: 'success', text: `Atleta "${athleteName}" removido com sucesso.` });
+      invalidateClubAthletes();
       await loadAthletes();
       setTimeout(() => setFeedbackMsg(null), 4000);
     } catch (err: any) {

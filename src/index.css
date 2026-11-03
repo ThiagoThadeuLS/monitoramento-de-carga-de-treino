@@ -63,3 +63,13 @@ header {
 main {
   padding-bottom: env(safe-area-inset-bottom);
 }
+
+/* Celular: o zoom fica liberado (acessibilidade). Para o iPhone não ampliar a tela sozinho
+   ao tocar num campo, os campos de texto pequeno usam no mínimo 16px. */
+@media (pointer: coarse) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([class*='text-lg']):not([class*='text-xl']):not([class*='text-2xl']):not([class*='text-3xl']):not([class*='text-4xl']):not([class*='text-5xl']):not([class*='text-6xl']),
+  select:not([class*='text-lg']):not([class*='text-xl']),
+  textarea:not([class*='text-lg']):not([class*='text-xl']) {
+    font-size: 16px;
+  }
+}

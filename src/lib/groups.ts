@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { deleteById, supabase } from './supabase';
 import { TrainingSession } from '../types';
+import { useClub } from './club';
 
 export interface AthleteGroup {
   id: string;
@@ -62,12 +63,14 @@ export async function saveGroup(group: { id?: string; nome: string; members: str
     p_members: group.members,
   });
   if (error) throw new Error(groupError(error));
+  invalidateGroups();
   return data as string;
 }
 
 export async function deleteGroup(id: string) {
   try {
     await deleteById('athlete_groups', id);
+    invalidateGroups();
   } catch (err) {
     throw new Error(groupError(err));
   }
@@ -94,13 +97,43 @@ export function audienceLabel(session: TrainingSession, groups: AthleteGroup[], 
   return audience === 'incluir' ? names.join(', ') : `Todos, exceto: ${names.join(', ')}`;
 }
 
+// Grupos guardados por 2 minutos (por clube): trocar de aba não busca de novo
+const GROUPS_TTL_MS = 2 * 60 * 1000;
+let groupsCache: { club: string; at: number; promise: Promise<AthleteGroup[]> } | null = null;
+
+/** Grupos do clube com cache curto. `force` busca de novo. */
+export function listGroupsCached(club: string | null | undefined, force = false): Promise<AthleteGroup[]> {
+  const key = club ?? '';
+  if (!force && groupsCache && groupsCache.club === key && Date.now() - groupsCache.at < GROUPS_TTL_MS) {
+    return groupsCache.promise;
+  }
+  const promise = listGroups();
+  groupsCache = { club: key, at: Date.now(), promise };
+  promise.catch(() => {
+    if (groupsCache?.promise === promise) groupsCache = null;
+  });
+  return promise;
+}
+
+export function invalidateGroups() {
+  groupsCache = null;
+}
+
 /** Grupos do clube (com participantes), para filtros e formulários. */
 export function useClubGroups(enabled = true) {
+  const { club } = useClub();
+  const clubId = club?.id ?? null;
   const [groups, setGroups] = useState<AthleteGroup[]>([]);
   const [version, setVersion] = useState(0);
   useEffect(() => {
     if (!enabled) return;
-    listGroups().then(setGroups).catch(() => setGroups([]));
-  }, [enabled, version]);
+    let cancelled = false;
+    listGroupsCached(clubId, version > 0)
+      .then((g) => !cancelled && setGroups(g))
+      .catch(() => !cancelled && setGroups([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled, version, clubId]);
   return { groups, reload: () => setVersion((v) => v + 1) };
 }

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ShieldCheck, Loader2, LogOut, X } from 'lucide-react';
 import { acceptTerms } from '../lib/athleteAuth';
+import { brDateOfStamp } from '../lib/date';
 
 /** Versão do termo: ao mudar o texto, troque a versão e todos aceitam de novo. */
 export const TERMS_VERSION = '2026-11';
@@ -125,7 +126,7 @@ export const TermsModal: React.FC<{ clubName: string; acceptedAt?: string | null
         <ShieldCheck className="w-5 h-5 text-sky-300" />
         <div className="min-w-0 flex-1">
           <h2 className="font-bold text-white">Termo de uso dos dados</h2>
-          {acceptedAt && <p className="text-xs text-slate-400">Aceito em {new Date(acceptedAt).toLocaleDateString('pt-BR')}</p>}
+          {acceptedAt && <p className="text-xs text-slate-400">Aceito em {brDateOfStamp(acceptedAt)}</p>}
         </div>
         <button type="button" onClick={onClose} className="p-1.5 rounded-xl hover:bg-slate-800 text-slate-400 hover:text-white" title="Fechar">
           <X className="w-5 h-5" />

@@ -55,18 +55,24 @@ Deno.serve(async () => {
   if (items.length === 0) return Response.json({ ok: true, due: 0, sent: 0 });
 
   const athleteIds = [...new Set(items.map((d) => d.athlete_id))];
-  const { data: subsData, error: subsError } = await supabase
-    .from('push_subscriptions')
-    .select('id, athlete_id, endpoint, p256dh, auth')
-    .in('athlete_id', athleteIds);
-  if (subsError) return Response.json({ ok: false, step: 'push_subscriptions', error: subsError.message }, { status: 500 });
-  const subs = (subsData ?? []) as Subscription[];
+  // Em grupos de 100 ids: uma lista enorme no endereço da consulta faria ela falhar
+  const subs: Subscription[] = [];
+  for (let i = 0; i < athleteIds.length; i += 100) {
+    const { data: subsData, error: subsError } = await supabase
+      .from('push_subscriptions')
+      .select('id, athlete_id, endpoint, p256dh, auth')
+      .in('athlete_id', athleteIds.slice(i, i + 100));
+    if (subsError) return Response.json({ ok: false, step: 'push_subscriptions', error: subsError.message }, { status: 500 });
+    subs.push(...((subsData ?? []) as Subscription[]));
+  }
 
   let sent = 0;
   let failed = 0;
   const expired: string[] = [];
+  const deliveredTo = new Set<string>();
 
-  for (const item of items) {
+  // Envia um lembrete para todos os aparelhos do atleta
+  async function sendItem(item: Due) {
     const targets = subs.filter((s) => s.athlete_id === item.athlete_id);
     const payload = JSON.stringify({
       title: item.title,
@@ -75,7 +81,6 @@ Deno.serve(async () => {
       tag: `${item.kind}-${item.ref}`, // o aviso repetido substitui o anterior em vez de acumular
     });
 
-    let delivered = false;
     await Promise.all(
       targets.map(async (s) => {
         try {
@@ -84,7 +89,7 @@ Deno.serve(async () => {
             payload,
             { TTL: 60 * 60, urgency: 'high' },
           );
-          delivered = true;
+          deliveredTo.add(item.athlete_id);
           sent++;
         } catch (err) {
           const status = (err as { statusCode?: number }).statusCode;
@@ -99,12 +104,21 @@ Deno.serve(async () => {
     // Registra o envio (controla a repetição de 30 em 30 min), mesmo se nenhum aparelho aceitou,
     // para não tentar de novo a cada 5 minutos.
     await supabase.rpc('push_mark_sent', { p_athlete: item.athlete_id, p_kind: item.kind, p_ref: item.ref });
-    if (delivered) {
-      await supabase
-        .from('push_subscriptions')
-        .update({ last_sent_at: new Date().toISOString() })
-        .eq('athlete_id', item.athlete_id);
-    }
+  }
+
+  // Vários atletas ao mesmo tempo (em lotes, para não sobrecarregar), em vez de um por vez
+  const BATCH = 20;
+  for (let i = 0; i < items.length; i += BATCH) {
+    await Promise.all(items.slice(i, i + BATCH).map(sendItem));
+  }
+
+  const delivered = [...deliveredTo];
+  const sentAt = new Date().toISOString();
+  for (let i = 0; i < delivered.length; i += 100) {
+    await supabase
+      .from('push_subscriptions')
+      .update({ last_sent_at: sentAt })
+      .in('athlete_id', delivered.slice(i, i + 100));
   }
 
   if (expired.length) await supabase.from('push_subscriptions').delete().in('id', expired);

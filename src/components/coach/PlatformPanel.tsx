@@ -8,13 +8,14 @@ import {
   AccessLogEntry, ClubInvite, PlatformClub, cancelClubInvite, clubInviteLink, createClubInvite, enterSupport,
   listAccessLog, listClubInvites, listClubs, setClubStatus,
 } from '../../lib/platform';
+import { brDateOfStamp } from '../../lib/date';
 
 interface PlatformPanelProps {
   /** Depois de entrar em modo suporte, o painel do treinador recarrega o perfil */
   onSupportChanged: () => void;
 }
 
-const fmtDate = (iso: string) => new Date(iso).toLocaleDateString('pt-BR');
+const fmtDate = (iso: string) => brDateOfStamp(iso);
 const fmtDateTime = (iso: string) =>
   new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
 

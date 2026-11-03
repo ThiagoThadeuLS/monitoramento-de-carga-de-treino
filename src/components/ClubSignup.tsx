@@ -3,6 +3,7 @@ import { Building2, ImagePlus, Lock, Mail, User, AlertCircle, Loader2, CheckCirc
 import { supabase } from '../lib/supabase';
 import { ClubCrest } from '../lib/club';
 import { acceptClubInvite, checkEscudoFile, clubInviteInfo, platformError, uploadEscudo } from '../lib/platform';
+import { brDateOfStamp } from '../lib/date';
 
 interface ClubSignupProps {
   token: string;
@@ -209,7 +210,7 @@ export const ClubSignup: React.FC<ClubSignupProps> = ({ token, onDone }) => {
             {saving ? <><Loader2 className="w-4 h-4 animate-spin" /> Criando clube...</> : 'Criar clube e entrar'}
           </button>
           <p className="text-[11px] text-slate-500 text-center">
-            Convite válido até {new Date(invite.expires_at).toLocaleDateString('pt-BR')}.
+            Convite válido até {brDateOfStamp(invite.expires_at)}.
           </p>
         </form>
       </div>

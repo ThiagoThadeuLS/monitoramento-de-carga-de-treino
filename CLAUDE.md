@@ -25,6 +25,7 @@ Antes de terminar uma mudança: `npm run typecheck && npm run lint && npm test`.
 
 - **Todo o banco está em [supabase_completo.sql](supabase_completo.sql)**, dividido em partes numeradas. Ele roda inteiro de novo a cada mudança (SQL Editor do Supabase ou `npm run db:migrate`), então tudo precisa ser **idempotente**: `create ... if not exists`, `create or replace function`, `drop policy if exists` antes de `create policy`, colunas novas com `add column if not exists`.
 - Uma função redefinida mais adiante no arquivo substitui a anterior, mas **o arquivo roda em ordem**: se uma parte chama a função logo depois de criá-la, a versão daquela parte é a que executa. Mude a função em todas as partes onde ela aparece.
+- Nas políticas (RLS), chame as funções dentro de `(select ...)`: `club_id = (select public.current_club_id())`. Assim o banco calcula uma vez por consulta, e não linha por linha.
 - Funções `security definer` sempre com `set search_path = ''` e nomes qualificados (`public.`, `extensions.`). Depois de criar, `revoke ... from public, anon` e `grant` só para quem precisa.
 - **O script não apaga dados**: nada de `delete`/`truncate` soltos no arquivo nem limpeza automática (o cronograma guarda todos os treinos). Para criar uma regra nova (ex.: índice único), confira antes se os dados antigos já cumprem a regra e, se não cumprirem, só avise (`raise notice`).
 - `supabase_dados_ficticios.sql` = dados de teste; `supabase_zerar_banco.sql` apaga tudo (só antes do piloto).
@@ -50,7 +51,12 @@ Antes de terminar uma mudança: `npm run typecheck && npm run lint && npm test`.
 ## Mapa do código
 
 - `src/App.tsx` escolhe entre área do atleta, do treinador, convite de clube e Área Restrita.
-- `src/components/AthleteArea.tsx` (atleta) e `src/components/CoachArea.tsx` (treinador) montam as abas.
+- **Atleta** ([AthleteArea.tsx](src/components/AthleteArea.tsx)): 5 abas fixas embaixo — Hoje, Agenda, Histórico, PRs, Rivais. O peso só entra na lista de Hoje nos dias de pesagem do clube. Formulários (PSE, PSR, peso) e a ficha do treino físico abrem por cima ("tela aberta"). A tela Hoje vem de uma consulta só (`athlete_home` / `getAthleteHome`). Telas do atleta ficam em `src/components/athlete/`.
+- **Treinador** ([CoachArea.tsx](src/components/CoachArea.tsx)): 4 áreas (Hoje, Análises, Planejamento, Elenco) com seções; treinadores e cores na engrenagem (só admin). Para uma tela nova, acrescente em `AREAS` em vez de criar aba nova.
+- Navegação no histórico do navegador (`useHistoryState` em [navigation.ts](src/lib/navigation.ts)): o "voltar" do celular volta de tela. Telas já abertas ficam montadas (escondidas).
+- Telas carregadas sob demanda com `lazyNamed` ([lazy.ts](src/lib/lazy.ts)): o atleta não baixa o código do treinador.
+- Lista de atletas e grupos com cache de 2 min por clube (`fetchClubAthletes` em [athletes.ts](src/lib/athletes.ts), `listGroupsCached`/`useClubGroups`). Depois de alterar atleta ou grupo, chame `invalidateClubAthletes()` / `invalidateGroups()`. Essa lista não traz CPF nem celular.
+- "Hoje" que vira sozinho à meia-noite: `useTodayISO()` ([useToday.ts](src/lib/useToday.ts)).
 - `src/components/coach/`: telas do treinador. Telas grandes ficam divididas em subpastas (`adversaries/`, `period/`).
-- `src/lib/`: acesso ao banco e cálculos puros (`load.ts` = carga interna/ACWR/monotonia, `stats.ts`, `barbellCalculator.ts` = montagem da barra, arredonda a carga **para baixo**, `cpf.ts`, `export.ts` = CSV para Excel com proteção contra fórmulas).
+- `src/lib/`: acesso ao banco e cálculos puros (`load.ts` = carga interna/ACWR/monotonia, `stats.ts`, `barbellCalculator.ts` = montagem da barra, arredonda a carga **para baixo**, `weightPlan.ts` = limite acima da categoria até a pesagem: 8% com 14+ dias, 5% de 7 a 13, 3% de 1 a 6, categoria no dia, `cpf.ts`, `export.ts` = CSV para Excel com proteção contra fórmulas).
 - `supabase/functions/enviar-lembretes`: chamada pelo pg_cron a cada 5 min; quem recebe lembrete é decidido em `public.push_due_reminders`.

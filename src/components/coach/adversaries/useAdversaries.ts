@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { deleteById, supabase } from '../../../lib/supabase';
 import {
   addAthleteObservation,
@@ -9,6 +9,22 @@ import {
   setAthleteAdversaryHidden,
 } from '../../../lib/athleteAuth';
 import { Adversario, Draft, Observacao, groupObservacoes } from './types';
+
+/** Todas as observações que o treinador pode ver (em páginas de 1000). */
+async function fetchAllObservations(): Promise<Observacao[]> {
+  const rows: Observacao[] = [];
+  for (let page = 0; ; page++) {
+    const { data, error } = await supabase!
+      .from('adversario_observacoes')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .order('id')
+      .range(page * 1000, page * 1000 + 999);
+    if (error) throw error;
+    rows.push(...((data ?? []) as Observacao[]));
+    if (!data || data.length < 1000) return rows;
+  }
+}
 
 /**
  * Dados da tela de adversários.
@@ -26,9 +42,13 @@ export function useAdversaries(athleteToken?: string) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
 
+  // Só a busca mais recente atualiza a tela (as ações também chamam reload)
+  const reqRef = useRef(0);
+
   const reload = useCallback(async () => {
     if (!supabase) return setLoading(false);
     const db = supabase;
+    const req = ++reqRef.current;
     setLoading(true);
     setLoadError('');
 
@@ -36,6 +56,7 @@ export function useAdversaries(athleteToken?: string) {
     if (athleteToken) {
       try {
         const d = await listAthleteAdversaries<Adversario, Observacao>(athleteToken);
+        if (req !== reqRef.current) return;
         setIsCoach(false);
         setCurrentUserId(d.me);
         setAdversarios(d.adversarios);
@@ -48,54 +69,44 @@ export function useAdversaries(athleteToken?: string) {
       return;
     }
 
-    // Treinador (Supabase Auth)
-    const {
-      data: { session },
-    } = await db.auth.getSession();
-    const userId = session?.user.id ?? null;
-    let clubId: string | null = null;
-    if (userId) {
-      const { data: coachData } = await db.from('coaches').select('club_id').eq('user_id', userId).maybeSingle();
-      clubId = coachData?.club_id ?? null;
-    }
-    setIsCoach(Boolean(clubId));
-    setUserClubId(clubId);
-    setCurrentUserId(userId);
+    // Treinador (Supabase Auth). O banco já só devolve as fichas e observações do clube
+    // em uso (o do treinador ou, no modo suporte, o visitado): nada de lista de ids na consulta.
+    try {
+      const {
+        data: { session },
+      } = await db.auth.getSession();
+      const userId = session?.user.id ?? null;
+      const [coachRes, clubRes] = await Promise.all([
+        userId ? db.from('coaches').select('club_id').eq('user_id', userId).maybeSingle() : Promise.resolve({ data: null }),
+        db.rpc('current_club_id'),
+      ]);
+      if (req !== reqRef.current) return;
+      const clubId = (coachRes.data as { club_id?: string } | null)?.club_id ?? null;
+      setIsCoach(Boolean(clubId));
+      setUserClubId(clubId);
+      setCurrentUserId(userId);
 
-    // Clube em uso: o do treinador ou, no modo suporte, o clube visitado.
-    // O banco já só devolve as fichas desse clube; o filtro aqui é uma segunda trava.
-    const { data: clubAtual } = await db.rpc('current_club_id');
-    if (!clubAtual) {
-      setAdversarios([]);
-      setObservacoes({});
-      setLoading(false);
-      return;
-    }
+      if (!clubRes.data) {
+        setAdversarios([]);
+        setObservacoes({});
+        setLoading(false);
+        return;
+      }
 
-    const { data, error } = await db.from('adversarios').select('*').eq('club_id', clubAtual as string).order('nome');
-    if (error) {
-      setLoadError('Não foi possível carregar os adversários.');
-      setLoading(false);
-      return;
+      const [advRes, hidRes, obs] = await Promise.all([
+        db.from('adversarios').select('*').eq('club_id', clubRes.data as string).order('nome'),
+        userId ? db.from('adversario_ocultos').select('adversario_id').eq('coach_id', userId) : Promise.resolve({ data: [] }),
+        fetchAllObservations(),
+      ]);
+      if (req !== reqRef.current) return;
+      if (advRes.error) throw advRes.error;
+      setAdversarios((advRes.data ?? []) as Adversario[]);
+      setOcultos(new Set(((hidRes.data ?? []) as { adversario_id: string }[]).map((h) => h.adversario_id)));
+      setObservacoes(groupObservacoes(obs));
+    } catch {
+      if (req === reqRef.current) setLoadError('Não foi possível carregar os adversários.');
     }
-    const advs = (data ?? []) as Adversario[];
-    setAdversarios(advs);
-    if (userId) {
-      const { data: hid } = await db.from('adversario_ocultos').select('adversario_id').eq('coach_id', userId);
-      setOcultos(new Set(((hid ?? []) as { adversario_id: string }[]).map((h) => h.adversario_id)));
-    }
-    // Treinador vê todas as observações das fichas do clube (inclusive as dos atletas)
-    if (advs.length > 0) {
-      const { data: obs, error: obsError } = await db
-        .from('adversario_observacoes')
-        .select('*')
-        .in('adversario_id', advs.map((a) => a.id))
-        .order('created_at', { ascending: false });
-      if (!obsError && obs) setObservacoes(groupObservacoes(obs as Observacao[]));
-    } else {
-      setObservacoes({});
-    }
-    setLoading(false);
+    if (req === reqRef.current) setLoading(false);
   }, [athleteToken]);
 
   useEffect(() => {

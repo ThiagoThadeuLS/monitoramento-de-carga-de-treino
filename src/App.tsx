@@ -1,12 +1,25 @@
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
+import { Loader2 } from 'lucide-react';
 import { Header } from './components/Header';
 import { AthleteArea } from './components/AthleteArea';
-import { CoachArea } from './components/CoachArea';
 import { ClubProvider } from './lib/club';
-import { ClubSignup } from './components/ClubSignup';
-import { RESTRICTED_PATH, RestrictedArea } from './components/RestrictedArea';
 import { InstallGate } from './components/InstallGate';
 import { isMobileDevice, isStandalone } from './lib/push';
+import { lazyNamed } from './lib/lazy';
+
+// Áreas que o atleta não usa: baixadas só quando abertas
+const CoachArea = lazyNamed(() => import('./components/CoachArea'), (m) => m.CoachArea);
+const ClubSignup = lazyNamed(() => import('./components/ClubSignup'), (m) => m.ClubSignup);
+const RestrictedArea = lazyNamed(() => import('./components/RestrictedArea'), (m) => m.RestrictedArea);
+
+/** Endereço da Área Restrita dos donos da plataforma (igual ao de RestrictedArea) */
+const RESTRICTED_PATH = '/restrito';
+
+const Loading = () => (
+  <div className="py-24 flex justify-center">
+    <Loader2 className="w-8 h-8 animate-spin text-sky-400" />
+  </div>
+);
 
 // Celular: só o app instalado (no computador, navegador normal)
 const MOBILE_BROWSER = isMobileDevice() && !isStandalone();
@@ -30,7 +43,9 @@ export function App() {
   if (window.location.pathname.replace(/\/+$/, '') === RESTRICTED_PATH) {
     return (
       <ClubProvider>
-        <RestrictedArea />
+        <Suspense fallback={<Loading />}>
+          <RestrictedArea />
+        </Suspense>
       </ClubProvider>
     );
   }
@@ -44,6 +59,7 @@ export function App() {
       <Header currentView={currentView} onViewChange={(v) => (clubInviteToken ? leaveInvite(v) : setCurrentView(v))} />
       
       <main className="flex-1 pb-12">
+        <Suspense fallback={<Loading />}>
         {clubInviteToken ? (
           <ClubSignup token={clubInviteToken} onDone={() => leaveInvite('coach')} />
         ) : currentView === 'athlete' ? (
@@ -51,9 +67,10 @@ export function App() {
         ) : (
           <CoachArea recovery={PASSWORD_RECOVERY} />
         )}
+        </Suspense>
       </main>
 
-      <footer className="border-t border-slate-900 py-6 px-4 text-center text-xs text-slate-600">
+      <footer className={`border-t border-slate-900 pt-6 px-4 text-center text-xs text-slate-600 ${currentView === 'athlete' && !clubInviteToken ? 'pb-24' : 'pb-6'}`}>
         Monitoramento de Carga de Treino • Fisiologia & Preparação Física
       </footer>
     </div>

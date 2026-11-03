@@ -10,6 +10,7 @@ import { PeriodAnalysis } from './coach/PeriodAnalysis';
 import { TrainingSchedule } from './coach/TrainingSchedule';
 import { AthleteManagement } from './coach/AthleteManagement';
 import { AdversaryManagement } from './coach/AdversaryManagement';
+import { timeOfStamp } from '../lib/date';
 
 /** Endereço da Área Restrita (não aparece em nenhum menu do app) */
 export const RESTRICTED_PATH = '/restrito';
@@ -177,7 +178,7 @@ export const RestrictedArea: React.FC = () => {
               </p>
               <p className="text-xs text-amber-200">
                 Modo suporte • somente leitura • registrado no histórico • expira às{' '}
-                {new Date(support.expires_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                {timeOfStamp(support.expires_at)}
               </p>
             </div>
           </div>

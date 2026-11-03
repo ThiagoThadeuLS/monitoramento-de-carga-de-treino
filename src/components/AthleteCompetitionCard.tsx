@@ -15,6 +15,12 @@ interface AthleteCompetitionCardProps {
   token: string | null;
   /** Muda quando o atleta registra um novo peso, para recalcular os alertas. */
   refreshKey?: number;
+  /** Abre o registro de peso (sem isso, rola até o formulário da página) */
+  onRegisterWeight?: () => void;
+  /** Peso já registrado hoje: o botão de registrar some */
+  weighedToday?: boolean;
+  /** Hoje é dia de pesagem definido pelo treinador (fora desses dias, sem botão de registrar) */
+  canRegisterWeight?: boolean;
 }
 
 const STATUS_STYLE: Record<WeightPlanStatus, { box: string; icon: typeof CheckCircle2; iconColor: string }> = {
@@ -25,6 +31,7 @@ const STATUS_STYLE: Record<WeightPlanStatus, { box: string; icon: typeof CheckCi
   sem_dados: { box: 'bg-slate-800/60 border-slate-600/60 text-slate-300', icon: Scale, iconColor: 'text-slate-400' },
   sem_categoria: { box: 'bg-slate-800/60 border-slate-600/60 text-slate-300', icon: Target, iconColor: 'text-slate-400' },
   sem_limite: { box: 'bg-sky-500/10 border-sky-500/40 text-sky-200', icon: ShieldCheck, iconColor: 'text-sky-400' },
+  pesagem_passou: { box: 'bg-slate-800/60 border-slate-600/60 text-slate-300', icon: CheckCircle2, iconColor: 'text-slate-400' },
 };
 
 const kg = (value: number | null | undefined) =>
@@ -38,7 +45,7 @@ const longDate = (iso: string) =>
 const hhmm = (time?: string | null) => (time ? time.slice(0, 5) : '');
 
 /** Cartão da próxima competição na aba Peso do atleta. */
-export const AthleteCompetitionCard: React.FC<AthleteCompetitionCardProps> = ({ token, refreshKey = 0 }) => {
+export const AthleteCompetitionCard: React.FC<AthleteCompetitionCardProps> = ({ token, refreshKey = 0, onRegisterWeight, weighedToday, canRegisterWeight = true }) => {
   const today = todayISO();
   const [competitions, setCompetitions] = useState<AthleteCompetition[]>([]);
   const [weights, setWeights] = useState<WeightPoint[]>([]);
@@ -87,7 +94,7 @@ export const AthleteCompetitionCard: React.FC<AthleteCompetitionCardProps> = ({ 
   }, [token, refreshKey, today]);
 
   const upcoming = useMemo(
-    () => competitions.filter((c) => c.data >= today).sort((a, b) => a.data_pesagem.localeCompare(b.data_pesagem)),
+    () => competitions.filter((c) => c.data_pesagem >= today).sort((a, b) => a.data_pesagem.localeCompare(b.data_pesagem)),
     [competitions, today]
   );
   const next = upcoming[0] ?? null;
@@ -126,10 +133,11 @@ export const AthleteCompetitionCard: React.FC<AthleteCompetitionCardProps> = ({ 
   const style = STATUS_STYLE[plan.status];
   const StatusIcon = style.icon;
   const category = next.categoria?.trim() || '';
-  const needsToLose = plan.gap !== null && plan.gap > 0.05;
+  const needsToLose = plan.needsToLose;
 
   const focusWeightForm = () => {
-    document.getElementById('weight-entry')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (onRegisterWeight) onRegisterWeight();
+    else document.getElementById('weight-entry')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   return (
@@ -198,9 +206,9 @@ export const AthleteCompetitionCard: React.FC<AthleteCompetitionCardProps> = ({ 
             <p className="text-lg font-black text-sky-300 leading-tight">{kg(plan.target)}</p>
           </div>
           <div className="rounded-2xl bg-slate-950/70 border border-slate-800 p-3">
-            <p className="text-[10px] uppercase font-bold text-slate-500">Falta</p>
+            <p className="text-[10px] uppercase font-bold text-slate-500">Acima</p>
             <p className={`text-lg font-black leading-tight ${needsToLose ? 'text-amber-300' : plan.gap !== null ? 'text-emerald-300' : 'text-slate-400'}`}>
-              {plan.gap !== null ? (needsToLose ? kg(plan.gap) : 'No alvo') : '—'}
+              {plan.gap !== null ? (needsToLose ? kg(plan.gap) : 'No peso') : '—'}
             </p>
           </div>
         </div>
@@ -216,10 +224,22 @@ export const AthleteCompetitionCard: React.FC<AthleteCompetitionCardProps> = ({ 
               </span>
             </div>
             <p className="text-xs mt-0.5 opacity-90 break-words">{plan.message}</p>
-            {plan.current && plan.status !== 'sem_dados' && (
+            {plan.showLimit && plan.limit && (
               <p className="text-[11px] mt-1.5 flex items-center gap-1 opacity-80">
-                <Target className="w-3.5 h-3.5" />
-                Faixa segura na pesagem: <strong>{kg(plan.safeMin)} a {kg(plan.safeMax)}</strong>
+                <Target className="w-3.5 h-3.5 flex-shrink-0" />
+                {plan.phase === 'pesagem' ? (
+                  <>Hoje: <strong>até {kg(plan.limit.weight)}</strong> (peso da categoria)</>
+                ) : (
+                  <>
+                    Limite agora: <strong>até {kg(plan.limit.weight)}</strong> ({plan.limit.percent}% acima)
+                  </>
+                )}
+              </p>
+            )}
+            {plan.showLimit && plan.nextLimit && (
+              <p className="text-[11px] mt-1 flex items-center gap-1 opacity-80">
+                <CalendarDays className="w-3.5 h-3.5 flex-shrink-0" />A partir de {shortDate(plan.nextLimit.from)}: até {kg(plan.nextLimit.weight)} (
+                {plan.nextLimit.percent}% acima)
               </p>
             )}
             {plan.trendWeeklyRate !== null && plan.status !== 'sem_dados' && (
@@ -233,6 +253,7 @@ export const AthleteCompetitionCard: React.FC<AthleteCompetitionCardProps> = ({ 
         </div>
 
         <div className="flex flex-col sm:flex-row gap-2">
+          {!weighedToday && canRegisterWeight && (
           <button
             type="button"
             onClick={focusWeightForm}
@@ -240,6 +261,7 @@ export const AthleteCompetitionCard: React.FC<AthleteCompetitionCardProps> = ({ 
           >
             <Scale className="w-4 h-4" /> Registrar peso de hoje
           </button>
+          )}
           {chart.values.some((v) => v !== null) && (
             <button
               type="button"
@@ -288,7 +310,8 @@ export const AthleteCompetitionCard: React.FC<AthleteCompetitionCardProps> = ({ 
         )}
 
         <p className="text-[10px] text-slate-500 leading-relaxed">
-          Pese-se sempre no mesmo horário, em jejum e após ir ao banheiro. Perder peso rápido demais prejudica a força e a recuperação.
+          Limite do clube: até 8% acima da categoria longe da competição, 5% na semana anterior e 3% na semana da competição. Pese-se
+          sempre no mesmo horário, em jejum e após ir ao banheiro.
         </p>
       </div>
     </section>

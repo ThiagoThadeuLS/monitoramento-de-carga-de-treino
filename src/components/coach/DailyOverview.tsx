@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { Athlete, PseRecord, PsrRecord, WeightRecord } from '../../types';
 import { stampInAppZone, todayISO } from '../../lib/date';
 import { useClub } from '../../lib/club';
+import { fetchClubAthletes } from '../../lib/athletes';
 import { useClubGroups } from '../../lib/groups';
 import { AthleteSelection, EMPTY_SELECTION, GroupFilter, resolveSelection } from './GroupFilter';
 
@@ -25,6 +26,7 @@ const loadText = (p: PseRecord) =>
 
 export const DailyOverview: React.FC<DailyOverviewProps> = ({ onEditAthlete, onOpenProfile }) => {
   const { club } = useClub();
+  const clubId = club?.id ?? null;
   const [selectedDate, setSelectedDate] = useState(todayISO);
   const { groups } = useClubGroups();
   const [selection, setSelection] = useState<AthleteSelection>(EMPTY_SELECTION);
@@ -45,17 +47,17 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({ onEditAthlete, onO
 
     (async () => {
       try {
-        const [athletesRes, pseRes, psrRes, weightRes] = await Promise.all([
-          db.from('athletes').select('*').eq('active', true).order('nome'),
+        const [allAthletes, pseRes, psrRes, weightRes] = await Promise.all([
+          fetchClubAthletes(clubId, reloadKey > 0),
           db.from('pse_records').select('*').eq('date', selectedDate),
           db.from('psr_records').select('*').eq('date', selectedDate),
           db.from('weight_records').select('*').eq('date', selectedDate),
         ]);
-        const failed = [athletesRes, pseRes, psrRes, weightRes].find((r) => r.error);
+        const failed = [pseRes, psrRes, weightRes].find((r) => r.error);
         if (failed?.error) throw failed.error;
         if (cancelled) return;
 
-        const athletes: Athlete[] = athletesRes.data ?? [];
+        const athletes = allAthletes.filter((a) => a.active) as Athlete[];
         const pseData: PseRecord[] = pseRes.data ?? [];
         const psrData: PsrRecord[] = psrRes.data ?? [];
         const weightData: WeightRecord[] = weightRes.data ?? [];
@@ -85,7 +87,7 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({ onEditAthlete, onO
     return () => {
       cancelled = true;
     };
-  }, [selectedDate, reloadKey]);
+  }, [selectedDate, reloadKey, clubId]);
 
   // Filtro por grupos e/ou atletas específicos (vazio = todos)
   const selected = resolveSelection(selection, groups);
