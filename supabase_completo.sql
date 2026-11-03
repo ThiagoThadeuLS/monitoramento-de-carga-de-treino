@@ -23,6 +23,7 @@
   --  12. Preparação física (catálogo, fichas, PRs, treinos concluídos), uma PSR/peso
   --      por dia e grupos salvos de uma vez
   --  13. Desempenho: índices e a tela "Hoje" do atleta numa consulta só
+  --  14. Situação das notificações de cada atleta (para o treinador)
   --
   -- Datas das respostas dos atletas: sempre o dia de hoje no horário de Brasília
   -- (o banco decide; o app usa o mesmo fuso). O cronograma guarda todos os treinos.
@@ -2050,6 +2051,13 @@
 
   create index if not exists push_subscriptions_athlete_idx on public.push_subscriptions (athlete_id);
 
+  -- Aparelho que parou de aceitar (expirou ou falhou várias vezes): fica marcado, não é apagado.
+  -- O app do atleta é avisado e pede para ativar de novo (gera uma assinatura nova).
+  alter table public.push_subscriptions add column if not exists expired_at timestamp with time zone;
+  alter table public.push_subscriptions add column if not exists failures integer not null default 0;
+  alter table public.push_subscriptions add column if not exists last_error text;
+  alter table public.push_subscriptions add column if not exists last_error_at timestamp with time zone;
+
   -- Controle de envios (para repetir de 30 em 30 minutos)
   create table if not exists public.reminder_log (
     athlete_id uuid not null references public.athletes(id) on delete cascade,
@@ -2120,6 +2128,10 @@
     if coalesce(p_endpoint, '') !~ '^https://' or coalesce(p_p256dh, '') = '' or coalesce(p_auth, '') = '' then
       raise exception 'assinatura_invalida';
     end if;
+    -- Assinatura que o serviço de notificações já recusou: o app precisa criar outra
+    if exists (select 1 from public.push_subscriptions s where s.endpoint = p_endpoint and s.expired_at is not null) then
+      raise exception 'push_expirado';
+    end if;
     -- o mesmo aparelho passa a ser do atleta logado nele
     insert into public.push_subscriptions (athlete_id, endpoint, p256dh, auth, user_agent)
     values (v_athlete, p_endpoint, p_p256dh, p_auth, left(p_user_agent, 300))
@@ -2182,7 +2194,7 @@
         and v_time >= coalesce(w.notify_from, time '06:00')
         and v_time < coalesce(w.notify_until, time '22:00')
         and exists (select 1 from public.athlete_credentials c where c.athlete_id = a.id)
-        and exists (select 1 from public.push_subscriptions ps where ps.athlete_id = a.id)
+        and exists (select 1 from public.push_subscriptions ps where ps.athlete_id = a.id and ps.expired_at is null)
     ),
     treinos as (
       select e.id as athlete_id, s.*
@@ -2200,7 +2212,8 @@
         and not exists (
           select 1 from public.pse_records p
           where p.athlete_id = t.athlete_id and p.date = v_today
-            and (p.did_not_train
+            -- "Não treinei" sem treino vale para o dia todo; com treino, só para aquele tipo
+            and ((p.did_not_train and (p.training_type is null or p.training_type = t.training_type))
                 or (p.training_type = t.training_type
                     and p.created_at >= ((v_today + t.start_time) at time zone 'America/Sao_Paulo')))
         )
@@ -3740,5 +3753,52 @@
 
   revoke execute on function public.athlete_home(uuid) from public;
   grant execute on function public.athlete_home(uuid) to anon, authenticated;
+
+  notify pgrst, 'reload schema';
+
+
+  -- ############################################################
+  -- PARTE 14. SITUAÇÃO DAS NOTIFICAÇÕES (PARA O TREINADOR)
+  -- Quem recebe os lembretes, quem nunca ativou e quem teve o aparelho expirado.
+  -- ############################################################
+  create or replace function public.coach_push_status()
+  returns table (
+    athlete_id uuid,
+    nome text,
+    has_password boolean,
+    active_devices integer,
+    expired_devices integer,
+    last_sent_at timestamp with time zone,
+    last_error text,
+    last_error_at timestamp with time zone
+  )
+  language sql
+  stable
+  security definer
+  set search_path = ''
+  as $$
+    select a.id, a.nome,
+           exists (select 1 from public.athlete_credentials c where c.athlete_id = a.id),
+           (select count(*)::integer from public.push_subscriptions s where s.athlete_id = a.id and s.expired_at is null),
+           (select count(*)::integer from public.push_subscriptions s where s.athlete_id = a.id and s.expired_at is not null),
+           (select max(s.last_sent_at) from public.push_subscriptions s where s.athlete_id = a.id),
+           (select s.last_error from public.push_subscriptions s where s.athlete_id = a.id and s.last_error is not null
+             order by s.last_error_at desc nulls last limit 1),
+           (select max(s.last_error_at) from public.push_subscriptions s where s.athlete_id = a.id)
+    from public.athletes a
+    where a.club_id = (select public.current_club_id()) and a.active
+    order by a.nome;
+  $$;
+
+  revoke execute on function public.coach_push_status() from public, anon;
+  grant execute on function public.coach_push_status() to authenticated;
+
+  -- A função de envio grava o resultado de cada aparelho
+  do $$
+  begin
+    if exists (select 1 from pg_roles where rolname = 'service_role') then
+      execute 'grant all on public.push_subscriptions to service_role';
+    end if;
+  end $$;
 
   notify pgrst, 'reload schema';

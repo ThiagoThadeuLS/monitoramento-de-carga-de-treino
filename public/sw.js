@@ -47,6 +47,18 @@ self.addEventListener('push', (event) => {
   );
 });
 
+// O navegador trocou a assinatura (renovação do serviço de notificações): cria a nova na hora.
+// O app salva a nova no servidor quando o atleta abrir (relinkPush).
+self.addEventListener('pushsubscriptionchange', (event) => {
+  const options = event.oldSubscription && event.oldSubscription.options;
+  if (!options || !options.applicationServerKey) return;
+  event.waitUntil(
+    self.registration.pushManager
+      .subscribe({ userVisibleOnly: true, applicationServerKey: options.applicationServerKey })
+      .catch(() => undefined)
+  );
+});
+
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const url = new URL(event.notification.data?.url || '/', self.location.origin).href;

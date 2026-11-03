@@ -226,7 +226,8 @@ export const AthleteArea: React.FC = () => {
       .then((st) => {
         if (cancelled) return;
         setPushState(st);
-        if (st === 'on') relinkPush(readyToken);
+        // Assinatura recusada pelo serviço de notificações: volta a pedir para ativar
+        if (st === 'on') relinkPush(readyToken).then((r) => !cancelled && r === 'expired' && setPushState('off'));
       })
       .catch(() => !cancelled && setPushState('unsupported'));
     return () => {
@@ -426,6 +427,7 @@ export const AthleteArea: React.FC = () => {
               onSubmit={handlePseSubmit}
               scheduledDurations={scheduledDurations}
               suggestedType={overlay.trainingType ?? autoType}
+              skipTrainingType={overlay.trainingType}
               initialDuration={overlay.duration}
             />
           )}

@@ -16,6 +16,11 @@ interface PseFormProps {
   initialDuration?: number;
   /** Feedback ou observações iniciais vindas da execução do treino */
   initialObservations?: string;
+  /**
+   * PSE aberta a partir de um treino do dia: "Não treinei" vale só para esse treino
+   * (grava o tipo dele). Sem isso, "Não treinei" vale para o dia todo.
+   */
+  skipTrainingType?: string;
 }
 
 const TRAINING_TYPES = [
@@ -45,6 +50,7 @@ export const PseForm: React.FC<PseFormProps> = ({
   suggestedType,
   initialDuration,
   initialObservations,
+  skipTrainingType,
 }) => {
   const [trainingType, setTrainingType] = useState<string>(
     suggestedType ?? (initialDuration ? 'Treino Físico' : 'Treino Técnico')
@@ -111,7 +117,7 @@ export const PseForm: React.FC<PseFormProps> = ({
     const error = await onSubmit({
       athlete_id: athleteId,
       date: todayStr,
-      training_type: didNotTrain ? undefined : trainingType,
+      training_type: didNotTrain ? skipTrainingType : trainingType,
       did_not_train: didNotTrain,
       rpe_score: didNotTrain ? null : rpeScore,
       observations: observations.trim() || undefined,
@@ -148,9 +154,13 @@ export const PseForm: React.FC<PseFormProps> = ({
       {/* Toggle: Não Treinou */}
       <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 flex items-center justify-between transition-all">
         <div className="pr-4">
-          <p className="text-sm font-semibold text-white">Não treinou hoje?</p>
+          <p className="text-sm font-semibold text-white">{skipTrainingType ? 'Não fez este treino?' : 'Não treinou hoje?'}</p>
           <p className="text-xs text-slate-400">
-            Ative esta opção em caso de folga, lesão, dispensa ou viagem.
+            {didNotTrain
+              ? skipTrainingType
+                ? `Vale só para este treino (${skipTrainingType}).`
+                : 'Vale para todos os treinos de hoje.'
+              : 'Ative esta opção em caso de folga, lesão, dispensa ou viagem.'}
           </p>
         </div>
         <label className="relative inline-flex items-center cursor-pointer">

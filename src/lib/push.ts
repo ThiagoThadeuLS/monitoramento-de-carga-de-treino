@@ -72,6 +72,15 @@ async function currentSubscription(): Promise<PushSubscription | null> {
   return reg ? reg.pushManager.getSubscription() : null;
 }
 
+/** A assinatura foi criada com a chave VAPID atual? (chave trocada = nenhum aviso chega) */
+function sameServerKey(sub: PushSubscription): boolean {
+  const key = sub.options?.applicationServerKey;
+  if (!key || !VAPID_PUBLIC_KEY) return true; // navegador não informa: considera ok
+  const a = new Uint8Array(key);
+  const b = base64UrlToUint8Array(VAPID_PUBLIC_KEY);
+  return a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
 export async function getPushState(): Promise<PushState> {
   // No celular, só funciona como app instalado: a notificação aparece com o nome e o ícone do app
   // (e não como "Chrome"), e o Android não a trata como possível spam de site.
@@ -80,7 +89,11 @@ export async function getPushState(): Promise<PushState> {
     return 'unsupported';
   }
   if (Notification.permission === 'denied') return 'denied';
-  return (await currentSubscription()) ? 'on' : 'off';
+  // Permissão retirada pelo celular (ex.: app sem uso por um tempo) ou assinatura com chave antiga:
+  // a assinatura pode até existir, mas nenhum aviso aparece. Pede para ativar de novo.
+  if (Notification.permission !== 'granted') return 'off';
+  const sub = await currentSubscription();
+  return sub && sameServerKey(sub) ? 'on' : 'off';
 }
 
 async function saveSubscription(token: string, sub: PushSubscription) {
@@ -97,11 +110,19 @@ async function saveSubscription(token: string, sub: PushSubscription) {
 /**
  * Aparelho que já aceitou as notificações: liga de novo ao atleta que entrou,
  * sem perguntar outra vez (a permissão fica permanente no aparelho).
+ * Devolve 'expired' quando o serviço de notificações já recusou esta assinatura:
+ * ela é descartada e o app pede para o atleta ativar de novo (gera uma nova).
  */
-export async function relinkPush(token: string): Promise<void> {
-  if (!('serviceWorker' in navigator) || !supabase) return;
+export async function relinkPush(token: string): Promise<'ok' | 'expired'> {
+  if (!('serviceWorker' in navigator) || !supabase) return 'ok';
   const sub = await currentSubscription().catch(() => null);
-  if (sub) await saveSubscription(token, sub).catch(() => undefined);
+  if (!sub) return 'ok';
+  const error = await saveSubscription(token, sub).catch(() => null);
+  if (error && /push_expirado/.test(error.message ?? '')) {
+    await sub.unsubscribe().catch(() => undefined);
+    return 'expired';
+  }
+  return 'ok';
 }
 
 /** Pede permissão, cria a assinatura neste aparelho e salva para o atleta logado. */
@@ -119,11 +140,24 @@ export async function enablePush(token: string): Promise<PushState> {
     ]);
   const reg = (await navigator.serviceWorker.getRegistration('/')) ?? (await navigator.serviceWorker.register('/sw.js'));
   await withTimeout(navigator.serviceWorker.ready);
-  const sub =
-    (await reg.pushManager.getSubscription()) ??
-    (await withTimeout(reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: base64UrlToUint8Array(VAPID_PUBLIC_KEY) })));
+  const subscribe = () =>
+    withTimeout(reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: base64UrlToUint8Array(VAPID_PUBLIC_KEY) }));
 
-  const error = await saveSubscription(token, sub);
+  // Assinatura antiga com outra chave não recebe nada: troca por uma nova
+  let sub = await reg.pushManager.getSubscription();
+  if (sub && !sameServerKey(sub)) {
+    await sub.unsubscribe().catch(() => undefined);
+    sub = null;
+  }
+  sub = sub ?? (await subscribe());
+
+  let error = await saveSubscription(token, sub);
+  // O servidor já recusou esta assinatura: cria outra e salva de novo
+  if (error && /push_expirado/.test(error.message ?? '')) {
+    await sub.unsubscribe().catch(() => undefined);
+    sub = await subscribe();
+    error = await saveSubscription(token, sub);
+  }
   if (error) {
     await sub.unsubscribe().catch(() => undefined);
     if (/Could not find the function/.test(error.message)) {

@@ -10,6 +10,7 @@ import { WeightReminderSettings } from './WeightReminderSettings';
 import { TrainingSession } from '../../types';
 import { AthleteGroup, AthleteRef, audienceLabel, groupError, listActiveAthletes, listGroups } from '../../lib/groups';
 import { Users as UsersIcon, Search } from 'lucide-react';
+import { PushStatusCard } from './PushStatusCard';
 
 // Mesma escala de Foster da PSE do atleta
 const FOSTER: Record<number, string> = {
@@ -291,6 +292,7 @@ export const TrainingSchedule: React.FC<TrainingScheduleProps> = ({ readOnly = f
     <div className="space-y-4">
       {/* Lembrete de pesagem (só o treinador do clube) */}
       {!readOnly && !fetchSessions && <WeightReminderSettings />}
+      {!readOnly && !fetchSessions && <PushStatusCard />}
 
       {/* Navegação da semana */}
       <div data-tour="schedule-week" className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl flex flex-col md:flex-row md:items-center gap-3">

@@ -3,6 +3,7 @@ import { CheckCircle2, ChevronRight, Clock, Dumbbell, Flame, HeartPulse, Loader2
 import { AthleteHome, HomeSession } from '../../lib/athleteAuth';
 import { isPhysicalTraining } from '../../data/constants';
 import { timeOfStamp } from '../../lib/date';
+import { matchPseToSessions } from '../../lib/pseMatch';
 
 export type TodayAction =
   | { kind: 'psr' }
@@ -32,25 +33,9 @@ export function sessionMinutes(s: { start_time: string; end_time?: string | null
   return min > 0 ? min : undefined;
 }
 
-/**
- * Quais treinos do dia já têm PSE: as respostas de cada tipo vão marcando os treinos
- * daquele tipo na ordem do horário (dois técnicos + uma PSE técnica = o 1º respondido).
- */
+/** Quais treinos do dia já têm PSE (mesma regra do relatório do treinador). */
 function answeredSessions(home: AthleteHome): Set<string> {
-  const left = new Map<string, number>();
-  for (const p of home.pse) {
-    const t = p.training_type ?? '';
-    left.set(t, (left.get(t) ?? 0) + 1);
-  }
-  const done = new Set<string>();
-  for (const s of home.sessions) {
-    const n = left.get(s.training_type) ?? 0;
-    if (n > 0) {
-      done.add(s.id);
-      left.set(s.training_type, n - 1);
-    }
-  }
-  return done;
+  return new Set(matchPseToSessions(home.sessions, home.pse).keys());
 }
 
 const Row: React.FC<{
