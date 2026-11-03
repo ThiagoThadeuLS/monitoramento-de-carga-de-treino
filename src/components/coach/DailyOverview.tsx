@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, Flame, HeartPulse, Scale, AlertTriangle, RefreshCw, Loader2, CheckCircle2, Edit3 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Athlete, PseRecord, PsrRecord, WeightRecord } from '../../types';
-import { todayLocalISO } from '../../lib/date';
+import { stampInAppZone, todayISO } from '../../lib/date';
 import { useClub } from '../../lib/club';
 import { useClubGroups } from '../../lib/groups';
 import { AthleteSelection, EMPTY_SELECTION, GroupFilter, resolveSelection } from './GroupFilter';
@@ -25,65 +25,67 @@ const loadText = (p: PseRecord) =>
 
 export const DailyOverview: React.FC<DailyOverviewProps> = ({ onEditAthlete, onOpenProfile }) => {
   const { club } = useClub();
-  const [selectedDate, setSelectedDate] = useState(todayLocalISO);
+  const [selectedDate, setSelectedDate] = useState(todayISO);
   const { groups } = useClubGroups();
   const [selection, setSelection] = useState<AthleteSelection>(EMPTY_SELECTION);
   const [statuses, setStatuses] = useState<AthleteDailyStatus[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const loadDailyData = async () => {
-    if (!supabase) return;
-    setLoading(true);
-
-    try {
-      // 1. Busca todos os atletas ativos
-      const { data: athletesData } = await supabase
-        .from('athletes')
-        .select('*')
-        .eq('active', true)
-        .order('nome');
-
-      const athletes: Athlete[] = athletesData || [];
-
-      // 2. Busca registros de PSE na data
-      const { data: pseData } = await supabase
-        .from('pse_records')
-        .select('*')
-        .eq('date', selectedDate);
-
-      // 3. Busca registros de PSR na data
-      const { data: psrData } = await supabase
-        .from('psr_records')
-        .select('*')
-        .eq('date', selectedDate);
-
-      // 4. Busca registros de Peso na data
-      const { data: weightData } = await supabase
-        .from('weight_records')
-        .select('*')
-        .eq('date', selectedDate);
-
-      // Agrupa os dados por atleta
-      const combined: AthleteDailyStatus[] = athletes.map((a) => ({
-        athlete: a,
-        pses: (pseData ?? [])
-          .filter((p) => p.athlete_id === a.id)
-          .sort((x, y) => (x.created_at ?? '').localeCompare(y.created_at ?? '')),
-        psr: psrData?.find((r) => r.athlete_id === a.id),
-        weight: weightData?.find((w) => w.athlete_id === a.id),
-      }));
-
-      setStatuses(combined);
-    } catch (err) {
-      console.error('Erro ao carregar dados do dia:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [loadError, setLoadError] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
+  const loadDailyData = () => setReloadKey((k) => k + 1);
 
   useEffect(() => {
-    loadDailyData();
-  }, [selectedDate]);
+    if (!supabase) return;
+    const db = supabase;
+    // Trocar a data rápido: só a última busca pode atualizar a tela
+    let cancelled = false;
+    setLoading(true);
+    setLoadError('');
+
+    (async () => {
+      try {
+        const [athletesRes, pseRes, psrRes, weightRes] = await Promise.all([
+          db.from('athletes').select('*').eq('active', true).order('nome'),
+          db.from('pse_records').select('*').eq('date', selectedDate),
+          db.from('psr_records').select('*').eq('date', selectedDate),
+          db.from('weight_records').select('*').eq('date', selectedDate),
+        ]);
+        const failed = [athletesRes, pseRes, psrRes, weightRes].find((r) => r.error);
+        if (failed?.error) throw failed.error;
+        if (cancelled) return;
+
+        const athletes: Athlete[] = athletesRes.data ?? [];
+        const pseData: PseRecord[] = pseRes.data ?? [];
+        const psrData: PsrRecord[] = psrRes.data ?? [];
+        const weightData: WeightRecord[] = weightRes.data ?? [];
+
+        setStatuses(
+          athletes.map((a) => ({
+            athlete: a,
+            pses: pseData
+              .filter((p) => p.athlete_id === a.id)
+              .sort((x, y) => (x.created_at ?? '').localeCompare(y.created_at ?? '')),
+            psr: psrData.find((r) => r.athlete_id === a.id),
+            weight: weightData.find((w) => w.athlete_id === a.id),
+          }))
+        );
+      } catch (err) {
+        console.error('Erro ao carregar dados do dia:', err);
+        if (!cancelled) {
+          // Sem dados não dá para dizer quem respondeu: não mostra a lista como "não respondeu"
+          setStatuses([]);
+          setLoadError(`Não foi possível carregar os dados do dia. ${(err as Error)?.message ?? ''}`.trim());
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedDate, reloadKey]);
 
   // Filtro por grupos e/ou atletas específicos (vazio = todos)
   const selected = resolveSelection(selection, groups);
@@ -212,6 +214,18 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({ onEditAthlete, onO
           <div className="py-12 flex flex-col items-center justify-center gap-3 text-slate-400">
             <Loader2 className="w-6 h-6 animate-spin text-sky-400" />
             <p className="text-sm">Carregando dados do dia...</p>
+          </div>
+        ) : loadError ? (
+          <div className="py-12 px-4 flex flex-col items-center justify-center gap-3 text-center">
+            <AlertTriangle className="w-6 h-6 text-red-400" />
+            <p className="text-sm text-red-300">{loadError}</p>
+            <button
+              type="button"
+              onClick={loadDailyData}
+              className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold"
+            >
+              Tentar de novo
+            </button>
           </div>
         ) : (
           <>
@@ -383,7 +397,7 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({ onEditAthlete, onO
                                 {loadText(p) && <span className="text-[10px] text-sky-300/80">{loadText(p)}</span>}
                                 {p.created_at && (
                                   <span className="text-[10px] text-slate-500">
-                                    {new Date(p.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                                    {stampInAppZone(p.created_at)[1]}
                                   </span>
                                 )}
                               </li>

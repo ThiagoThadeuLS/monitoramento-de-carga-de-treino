@@ -114,7 +114,8 @@ export const DailyStatsChart: React.FC<DailyStatsChartProps> = ({ title, subtitl
   const [hoverRaw, setHover] = useState<number | null>(null);
   // Se o período encolher (ex.: "Hoje"), um índice antigo não pode apontar para um dia que não existe mais
   const hover = hoverRaw !== null && hoverRaw < dates.length ? hoverRaw : null;
-  useEffect(() => setHover(null), [dates.length, dates[0]]);
+  const firstDate = dates[0];
+  useEffect(() => setHover(null), [dates.length, firstDate]);
 
   useEffect(() => {
     const el = wrapRef.current;

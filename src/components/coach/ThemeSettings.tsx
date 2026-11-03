@@ -17,21 +17,22 @@ export const ThemeSettings: React.FC = () => {
   const [error, setError] = useState('');
   const [ok, setOk] = useState(false);
 
+  const clubId = club?.id;
   useEffect(() => {
-    if (!club) return;
-    fetchClubTheme(club.id).then((t) => {
+    if (!clubId) return;
+    fetchClubTheme(clubId).then((t) => {
       const theme = t ?? DEFAULT_THEME;
       setSaved(theme);
       pick(theme, false);
       setLoading(false);
     });
-  }, [club?.id]);
+  }, [clubId]);
 
   // Pré-visualização ao vivo; ao sair sem salvar, volta à paleta salva
   useEffect(() => {
     if (!loading) applyTheme(draft);
   }, [draft, loading]);
-  useEffect(() => () => reloadTheme(), []);
+  useEffect(() => () => reloadTheme(), [reloadTheme]);
 
   function pick(theme: ClubTheme, preview = true) {
     setDraft(theme);

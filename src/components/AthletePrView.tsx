@@ -1,114 +1,79 @@
-import React, { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
-import { Trophy, Plus, Trash2, Loader2, Dumbbell } from 'lucide-react';
-
-interface ClubExercise {
-  id: string;
-  nome: string;
-  exige_pr: boolean;
-}
-
-interface AthletePr {
-  id: string;
-  athlete_id: string;
-  exercicio: string;
-  peso_pr: number;
-}
+import React, { useCallback, useEffect, useState } from 'react';
+import { Trophy, Plus, Trash2, Loader2, Dumbbell, AlertCircle } from 'lucide-react';
+import { AthletePr, CatalogExercise, deleteAthletePr, listAthletePrs, saveAthletePr } from '../lib/athleteAuth';
+import { useDialogs } from './ui/Dialogs';
 
 interface AthletePrViewProps {
-  athleteId: string; // ID do atleta logado
+  /** Token da sessão do atleta: o banco descobre quem ele é */
+  token: string;
 }
 
-export function AthletePrView({ athleteId }: AthletePrViewProps) {
-  const [catalog, setCatalog] = useState<ClubExercise[]>([]);
-  const [loadingCatalog, setLoadingCatalog] = useState(true);
+const fmtKg = (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
 
+export function AthletePrView({ token }: AthletePrViewProps) {
+  const { confirm, notify } = useDialogs();
+  const [catalog, setCatalog] = useState<CatalogExercise[]>([]);
   const [prs, setPrs] = useState<AthletePr[]>([]);
-  const [loadingPrs, setLoadingPrs] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
-  // Formulário de PR do atleta
   const [exercicioSelecionado, setExercicioSelecionado] = useState('');
-  const [pesoPr, setPesoPr] = useState<number | string>(100);
+  const [pesoPr, setPesoPr] = useState('');
   const [saving, setSaving] = useState(false);
 
-  // Carregar apenas os exercícios do catálogo oficial que exigem PR
-  useEffect(() => {
-    async function loadCatalog() {
-      if (!supabase) return;
-      setLoadingCatalog(true);
-      const { data, error } = await supabase
-        .from('club_exercises')
-        .select('*')
-        .eq('exige_pr', true)
-        .order('nome');
-
-      if (!error && data) {
-        setCatalog(data);
-        if (data.length > 0) {
-          setExercicioSelecionado(data[0].nome);
-        }
-      }
-      setLoadingCatalog(false);
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError('');
+    try {
+      const data = await listAthletePrs(token);
+      setCatalog(data.catalog);
+      setPrs(data.prs);
+      setExercicioSelecionado((atual) => (data.catalog.some((c) => c.nome === atual) ? atual : data.catalog[0]?.nome ?? ''));
+    } catch (err) {
+      setLoadError((err as Error).message);
+    } finally {
+      setLoading(false);
     }
-    loadCatalog();
-  }, []);
+  }, [token]);
 
-  // Carregar os PRs já cadastrados deste atleta
   useEffect(() => {
-    if (!athleteId || !supabase) return;
-    const client = supabase;
-    async function loadAthletePrs() {
-      setLoadingPrs(true);
-      const { data, error } = await client
-        .from('athlete_prs')
-        .select('*')
-        .eq('athlete_id', athleteId)
-        .order('exercicio');
+    load();
+  }, [load]);
 
-      if (!error && data) {
-        setPrs(data);
-      }
-      setLoadingPrs(false);
-    }
-    loadAthletePrs();
-  }, [athleteId]);
+  // Ao trocar de exercício, mostra o PR atual dele (se houver)
+  useEffect(() => {
+    const atual = prs.find((p) => p.exercicio.toLowerCase() === exercicioSelecionado.toLowerCase());
+    setPesoPr(atual ? String(atual.peso_pr) : '');
+  }, [exercicioSelecionado, prs]);
 
-  // Salvar ou atualizar PR
   async function handleSavePr(e: React.FormEvent) {
     e.preventDefault();
-    if (!athleteId || !exercicioSelecionado || !supabase) return;
-
+    const peso = Number(pesoPr.replace(',', '.'));
+    if (!exercicioSelecionado || !Number.isFinite(peso) || peso <= 0 || peso > 500) {
+      notify('Informe uma carga maior que zero e de até 500 kg.', 'error');
+      return;
+    }
     setSaving(true);
-    const payload = {
-      athlete_id: athleteId,
-      exercicio: exercicioSelecionado,
-      peso_pr: Number(pesoPr) || 0,
-    };
-
-    // Upsert garantindo unicidade por (athlete_id, exercicio)
-    const { data, error } = await supabase
-      .from('athlete_prs')
-      .upsert([payload], { onConflict: 'athlete_id,exercicio' })
-      .select()
-      .single();
-
-    setSaving(false);
-    if (!error && data) {
-      const filtered = prs.filter(p => p.exercicio.toLowerCase() !== payload.exercicio.toLowerCase());
-      setPrs([...filtered, data]);
-      setPesoPr(100);
-    } else {
-      alert(`Erro ao salvar PR: ${error?.message}`);
+    try {
+      await saveAthletePr(token, exercicioSelecionado, peso);
+      notify(`PR de ${exercicioSelecionado} salvo: ${fmtKg(peso)} kg.`, 'success');
+      await load();
+    } catch (err) {
+      notify((err as Error).message, 'error');
+    } finally {
+      setSaving(false);
     }
   }
 
-  // Deletar PR
-  async function handleDelete(id: string) {
-    if (!supabase) return;
-    if (!confirm('Deseja remover este recorde pessoal?')) return;
-    const { error } = await supabase.from('athlete_prs').delete().eq('id', id);
-    if (!error) {
-      setPrs(prs.filter(p => p.id !== id));
+  async function handleDelete(pr: AthletePr) {
+    const ok = await confirm({ message: `Remover o seu PR de ${pr.exercicio}?`, danger: true, confirmLabel: 'Remover' });
+    if (!ok) return;
+    try {
+      await deleteAthletePr(token, pr.id);
+      setPrs((list) => list.filter((p) => p.id !== pr.id));
+      notify('PR removido.', 'success');
+    } catch (err) {
+      notify((err as Error).message, 'error');
     }
   }
 
@@ -125,21 +90,28 @@ export function AthletePrView({ athleteId }: AthletePrViewProps) {
         </div>
       </div>
 
+      {loadError && (
+        <div className="p-3.5 rounded-xl border bg-red-950/60 border-red-600 text-red-300 flex items-center gap-2.5 text-sm">
+          <AlertCircle className="w-4 h-4 flex-shrink-0" />
+          <span>{loadError}</span>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Formulário de Atualização */}
+        {/* Formulário de atualização */}
         <div className="md:col-span-1 bg-slate-900/80 border border-slate-800 rounded-2xl p-4 space-y-4">
           <h3 className="text-sm font-bold text-white flex items-center gap-2">
-            <Plus className="w-4 h-4 text-emerald-400" /> Registar / Atualizar PR
+            <Plus className="w-4 h-4 text-emerald-400" /> Registrar / atualizar PR
           </h3>
 
-          {loadingCatalog ? (
+          {loading ? (
             <div className="py-8 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-emerald-400" /></div>
           ) : catalog.length === 0 ? (
-            <p className="text-xs text-amber-400">Nenhum exercício com PR configurado pelo treinador no catálogo oficial.</p>
+            <p className="text-xs text-amber-400">O treinador ainda não cadastrou exercícios com PR no catálogo do clube.</p>
           ) : (
             <form onSubmit={handleSavePr} className="space-y-3">
-              <div>
-                <span className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Exercício (Catálogo Oficial)</span>
+              <label className="block">
+                <span className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Exercício (catálogo do clube)</span>
                 <select
                   value={exercicioSelecionado}
                   onChange={(e) => setExercicioSelecionado(e.target.value)}
@@ -151,21 +123,24 @@ export function AthletePrView({ athleteId }: AthletePrViewProps) {
                     </option>
                   ))}
                 </select>
-              </div>
+              </label>
 
-              <div>
-                <span className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Carga Máxima (100% PR em kg)</span>
+              <label className="block">
+                <span className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Carga máxima (100% do PR, em kg)</span>
                 <input
                   type="number"
+                  inputMode="decimal"
                   step="0.5"
-                  min="1"
+                  min="0.5"
+                  max="500"
                   value={pesoPr}
-                  onChange={(e) => setPesoPr(e.target.value === '' ? '' : Number(e.target.value))}
+                  onChange={(e) => setPesoPr(e.target.value)}
+                  placeholder="Ex.: 100"
                   required
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
                 />
-                <span className="text-[10px] text-slate-500 mt-1 block">Insira o peso total máximo para 1 repetição (incluindo a barra).</span>
-              </div>
+                <span className="text-[10px] text-slate-500 mt-1 block">Peso total para 1 repetição (incluindo a barra).</span>
+              </label>
 
               <button
                 type="submit"
@@ -178,18 +153,20 @@ export function AthletePrView({ athleteId }: AthletePrViewProps) {
           )}
         </div>
 
-        {/* Lista de PRs Cadastrados pelo Atleta */}
+        {/* Lista de PRs do atleta */}
         <div className="md:col-span-2 bg-slate-900/80 border border-slate-800 rounded-2xl p-4 space-y-3">
           <h3 className="text-sm font-bold text-white flex items-center justify-between">
-            <span>Meus Recordes Atuais</span>
-            <span className="text-xs bg-slate-800 text-emerald-400 px-2 py-0.5 rounded-md">{prs.length} registados</span>
+            <span>Meus recordes atuais</span>
+            <span className="text-xs bg-slate-800 text-emerald-400 px-2 py-0.5 rounded-md">
+              {prs.length} {prs.length === 1 ? 'registrado' : 'registrados'}
+            </span>
           </h3>
 
-          {loadingPrs ? (
+          {loading ? (
             <div className="py-12 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-emerald-400" /></div>
           ) : prs.length === 0 ? (
             <div className="py-12 text-center text-xs text-slate-500 border border-dashed border-slate-800 rounded-xl">
-              Ainda não registaste nenhum PR. Seleciona um exercício ao lado e guarda a tua carga máxima!
+              Você ainda não registrou nenhum PR. Escolha um exercício ao lado e salve sua carga máxima!
             </div>
           ) : (
             <div className="space-y-2 max-h-[350px] overflow-y-auto pr-1">
@@ -201,14 +178,17 @@ export function AthletePrView({ athleteId }: AthletePrViewProps) {
                     </div>
                     <div>
                       <span className="font-bold text-white block">{p.exercicio}</span>
-                      <span className="text-emerald-400 font-semibold text-[11px]">{p.peso_pr} kg <span className="text-slate-500 font-normal">(100% PR)</span></span>
+                      <span className="text-emerald-400 font-semibold text-[11px]">
+                        {fmtKg(p.peso_pr)} kg <span className="text-slate-500 font-normal">(100% PR)</span>
+                      </span>
                     </div>
                   </div>
                   <button
                     type="button"
-                    onClick={() => handleDelete(p.id)}
+                    onClick={() => handleDelete(p)}
                     className="p-2 text-slate-500 hover:text-red-400 transition-colors"
                     title="Excluir PR"
+                    aria-label={`Excluir PR de ${p.exercicio}`}
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>

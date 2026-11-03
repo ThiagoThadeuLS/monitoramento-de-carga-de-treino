@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useDialogs } from '../ui/Dialogs';
 import {
   Send, Copy, MessageCircle, Loader2, AlertCircle, CheckCircle2, Ban, PlayCircle, Eye, X, History, Building2, Users, User,
 } from 'lucide-react';
@@ -34,6 +35,7 @@ const INVITE_BADGE: Record<ClubInvite['status'], string> = {
 
 /** Painel dos donos da plataforma: convites de clube, clubes, modo suporte e registro. */
 export const PlatformPanel: React.FC<PlatformPanelProps> = ({ onSupportChanged }) => {
+  const { confirm } = useDialogs();
   const [clubs, setClubs] = useState<PlatformClub[]>([]);
   const [invites, setInvites] = useState<ClubInvite[]>([]);
   const [log, setLog] = useState<AccessLogEntry[]>([]);
@@ -111,14 +113,27 @@ export const PlatformPanel: React.FC<PlatformPanelProps> = ({ onSupportChanged }
     }
   };
 
-  const toggleStatus = (c: PlatformClub) => {
+  const toggleStatus = async (c: PlatformClub) => {
     const next = c.status === 'ativo' ? 'suspenso' : 'ativo';
-    if (next === 'suspenso' && !window.confirm(`Suspender ${c.nome}? Treinadores e atletas do clube perdem o acesso (os dados ficam guardados).`)) return;
+    if (
+      next === 'suspenso' &&
+      !(await confirm({
+        message: `Suspender ${c.nome}? Treinadores e atletas do clube perdem o acesso (os dados ficam guardados).`,
+        danger: true,
+        confirmLabel: 'Suspender',
+      }))
+    )
+      return;
     run(`status-${c.id}`, () => setClubStatus(c.id, next), next === 'suspenso' ? `${c.nome} foi suspenso.` : `${c.nome} foi reativado.`);
   };
 
-  const support = (c: PlatformClub) => {
-    if (!window.confirm(`Entrar em ${c.nome} em modo suporte?\n\nVocê verá os dados do clube somente para leitura, por até 2 horas. O acesso fica registrado.`)) return;
+  const support = async (c: PlatformClub) => {
+    const ok = await confirm({
+      title: 'Modo suporte',
+      message: `Entrar em ${c.nome} em modo suporte?\n\nVocê verá os dados do clube somente para leitura, por até 2 horas. O acesso fica registrado.`,
+      confirmLabel: 'Entrar',
+    });
+    if (!ok) return;
     run(`support-${c.id}`, async () => {
       await enterSupport(c.id);
       onSupportChanged();

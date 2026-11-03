@@ -150,8 +150,8 @@ export const ClubSignup: React.FC<ClubSignupProps> = ({ token, onDone }) => {
                 <span className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold cursor-pointer">
                   <ImagePlus className="w-4 h-4" /> {escudo ? 'Trocar escudo' : 'Enviar escudo'}
                 </span>
-                <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="sr-only" onChange={(e) => pickEscudo(e.target.files?.[0])} />
-                <span className="block text-[11px] text-slate-500 mt-1">Opcional. PNG, JPG, WEBP ou SVG, até 1 MB.</span>
+                <input type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={(e) => pickEscudo(e.target.files?.[0])} />
+                <span className="block text-[11px] text-slate-500 mt-1">Opcional. PNG, JPG ou WEBP, até 1 MB.</span>
               </label>
             </div>
           </fieldset>

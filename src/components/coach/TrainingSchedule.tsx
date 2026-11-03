@@ -1,10 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useDialogs } from '../ui/Dialogs';
 import {
   ChevronLeft, ChevronRight, Plus, Clock, Loader2, AlertCircle, X, Trash2, CalendarDays, StickyNote, CheckCircle2, ChevronRight as Chevron, Flame, Pencil, Dumbbell,
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
-import { addDaysISO, scheduleWeekBounds, startOfWeekISO, todayLocalISO } from '../../lib/date';
-import { TRAINING_TYPES } from '../../data/constants';
+import { deleteById, supabase } from '../../lib/supabase';
+import { addDaysISO, scheduleWeekBounds, startOfWeekISO, todayISO } from '../../lib/date';
+import { TRAINING_TYPES, isPhysicalTraining } from '../../data/constants';
 import { WeightReminderSettings } from './WeightReminderSettings';
 import { TrainingSession } from '../../types';
 import { AthleteGroup, AthleteRef, audienceLabel, groupError, listActiveAthletes, listGroups } from '../../lib/groups';
@@ -64,8 +65,19 @@ interface TrainingScheduleProps {
   onSelectSession?: (session: TrainingSession) => void;
 }
 
+function friendlyError(err: any) {
+  const msg = String(err?.message ?? err);
+  if (/publico_vazio|de_outro_clube/.test(msg)) return groupError(err);
+  if (msg.includes('fora_da_janela')) return 'Só é possível programar a semana atual e a próxima (a semana passada fica só para consulta).';
+  if (err?.code === 'PGRST205' || msg.includes('athlete_get_schedule') || err?.code === 'migracao_pendente' ||
+      (msg.includes('training_sessions') && /does not exist|Could not find|schema cache/.test(msg)))
+    return 'O cronograma ainda não foi ativado no banco. Rode o arquivo supabase_completo.sql no Supabase.';
+  return err?.code === 'sessao_invalida' ? msg : `Erro: ${msg}`;
+}
+
 export const TrainingSchedule: React.FC<TrainingScheduleProps> = ({ readOnly = false, fetchSessions, listOnly = false, onSelectSession }) => {
-  const [weekStart, setWeekStart] = useState(() => startOfWeekISO(todayLocalISO()));
+  const { confirm } = useDialogs();
+  const [weekStart, setWeekStart] = useState(() => startOfWeekISO(todayISO()));
   const [sessions, setSessions] = useState<TrainingSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -80,13 +92,14 @@ export const TrainingSchedule: React.FC<TrainingScheduleProps> = ({ readOnly = f
   const [athleteRefs, setAthleteRefs] = useState<AthleteRef[]>([]);
   const [athleteSearch, setAthleteSearch] = useState('');
 
+  const athleteMode = Boolean(fetchSessions);
   useEffect(() => {
-    if (readOnly || fetchSessions) return;
+    if (readOnly || athleteMode) return;
     listGroups().then(setGroups).catch(() => setGroups([]));
     listActiveAthletes().then(setAthleteRefs).catch(() => setAthleteRefs([]));
-  }, [readOnly]);
+  }, [readOnly, athleteMode]);
 
-  const today = todayLocalISO();
+  const today = todayISO();
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDaysISO(weekStart, i)), [weekStart]);
   const weekEnd = days[6];
   const isCurrentWeek = weekStart === startOfWeekISO(today);
@@ -94,27 +107,19 @@ export const TrainingSchedule: React.FC<TrainingScheduleProps> = ({ readOnly = f
   const canGoBack = weekStart > bounds.minWeek;
   const canGoForward = weekStart < bounds.maxWeek;
 
-  const friendlyError = (err: any) => {
-    const msg = String(err?.message ?? err);
-    if (/publico_vazio|de_outro_clube/.test(msg)) return groupError(err);
-    if (msg.includes('fora_da_janela')) return 'Só é possível programar a semana atual e a próxima (a semana passada fica só para consulta).';
-    if (err?.code === 'PGRST205' || msg.includes('training_sessions') || msg.includes('athlete_get_schedule') || err?.code === 'migracao_pendente')
-      return 'O cronograma ainda não foi ativado no banco. Rode o arquivo supabase_completo.sql no Supabase.';
-    return err?.code === 'sessao_invalida' ? msg : `Erro: ${msg}`;
-  };
+  // A tela do atleta passa uma função nova a cada render: lê sempre a mais recente
+  const fetchRef = useRef(fetchSessions);
+  fetchRef.current = fetchSessions;
 
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!supabase) return;
     setLoading(true);
     setError('');
     try {
-      if (fetchSessions) {
-        setSessions(await fetchSessions(weekStart, weekEnd));
+      if (fetchRef.current) {
+        setSessions(await fetchRef.current(weekStart, weekEnd));
         return;
       }
-      // Apaga treinos mais antigos que a semana passada (reforço caso o pg_cron não esteja ativo).
-      // Em modo só leitura (suporte) não altera nada.
-      if (!readOnly) await supabase.rpc('purge_old_training_sessions');
       const { data, error } = await supabase
         .from('training_sessions')
         .select('*')
@@ -130,11 +135,11 @@ export const TrainingSchedule: React.FC<TrainingScheduleProps> = ({ readOnly = f
     } finally {
       setLoading(false);
     }
-  };
+  }, [weekStart, weekEnd]);
 
   useEffect(() => {
     load();
-  }, [weekStart]);
+  }, [load]);
 
   const byDay = useMemo(() => {
     const map = new Map<string, TrainingSession[]>(days.map((d) => [d, []]));
@@ -221,11 +226,14 @@ export const TrainingSchedule: React.FC<TrainingScheduleProps> = ({ readOnly = f
 
   const handleDelete = async () => {
     if (!form?.id || !supabase) return;
-    if (!window.confirm(`Excluir o treino "${form.name}" de ${dayMonth(form.date)}?`)) return;
+    const ok = await confirm({
+      message: `Excluir o treino "${form.name}" de ${dayMonth(form.date)}? A ficha de preparação física dele também é apagada.`,
+      danger: true,
+    });
+    if (!ok) return;
     setSaving(true);
     try {
-      const { error } = await supabase.from('training_sessions').delete().eq('id', form.id);
-      if (error) throw error;
+      await deleteById('training_sessions', form.id);
       setForm(null);
       showFeedback('Treino excluído.');
       await load();
@@ -290,7 +298,7 @@ export const TrainingSchedule: React.FC<TrainingScheduleProps> = ({ readOnly = f
             onClick={() => setWeekStart(addDaysISO(weekStart, -7))}
             disabled={!canGoBack}
             className="p-2 rounded-lg bg-slate-950 border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed"
-            title={canGoBack ? 'Semana anterior' : 'Só a semana passada fica guardada'}
+            title={canGoBack ? 'Semana anterior' : 'A agenda mostra até a semana passada (os treinos antigos ficam guardados para a análise)'}
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
@@ -519,8 +527,7 @@ export const TrainingSchedule: React.FC<TrainingScheduleProps> = ({ readOnly = f
                 >
                   Fechar
                 </button>
-                {((viewing.training_type || '').toLowerCase().includes('fisico') ||
-                  (viewing.training_type || '').toLowerCase().includes('físico')) && (
+                {isPhysicalTraining(viewing.training_type) && (
                   <button
                     type="button"
                     onClick={() => {

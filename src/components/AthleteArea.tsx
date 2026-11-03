@@ -2,7 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Flame, HeartPulse, Scale, ShieldAlert, LogOut, Loader2, User, CalendarDays, History, Shield, ChevronLeft, ChevronRight, Trophy, Dumbbell } from 'lucide-react';
 import { TERMS_VERSION, TermsGate } from './TermsGate';
 import { AthleteHistory } from './AthleteHistory';
-import { todayLocalISO } from '../lib/date';
+import { addDaysISO, nowTimeHM, todayISO } from '../lib/date';
+import { isPhysicalTraining } from '../data/constants';
+import { useDialogs } from './ui/Dialogs';
 import { TrainingSchedule } from './coach/TrainingSchedule';
 import { AdversaryManagement } from './coach/AdversaryManagement';
 import { RemindersCard } from './RemindersCard';
@@ -24,6 +26,7 @@ import { PseRecord, PsrRecord, WeightRecord } from '../types';
 import { isSupabaseConfigured } from '../lib/supabase';
 import {
   AthleteSession,
+  getAthleteHistory,
   getAthleteSchedule,
   getTermsStatus,
   logoutAthlete,
@@ -56,6 +59,7 @@ const MOBILE = isMobileDevice();
 export const AthleteArea: React.FC = () => {
   const [session, setSession] = useState<AthleteSession | null>(null);
   const { setClub } = useClub();
+  const { notify } = useDialogs();
 
   const [activePhysicalWorkout, setActivePhysicalWorkout] = useState<{ id: string; name: string } | null>(null);
   const tabsScrollRef = useRef<HTMLDivElement>(null);
@@ -93,10 +97,10 @@ export const AthleteArea: React.FC = () => {
 
   useEffect(() => {
     if (!readyToken) return;
-    const today = todayLocalISO();
+    const today = todayISO();
     getAthleteSchedule(readyToken, today, today)
       .then((list) => {
-        const now = new Date().toTimeString().slice(0, 5);
+        const now = nowTimeHM();
         const map: Record<string, number> = {};
         const sorted = [...list].sort((a, b) => a.start_time.localeCompare(b.start_time));
         for (const t of sorted) {
@@ -111,6 +115,25 @@ export const AthleteArea: React.FC = () => {
       })
       .catch(() => undefined);
   }, [readyToken]);
+
+  // Último peso registrado: sugestão no formulário (o campo começa vazio para não enviar sem querer)
+  const [lastWeight, setLastWeight] = useState<number | null>(null);
+  const [weightVersion, setWeightVersion] = useState(0);
+  useEffect(() => {
+    if (!readyToken) return;
+    let cancelled = false;
+    const today = todayISO();
+    getAthleteHistory(readyToken, addDaysISO(today, -90), today)
+      .then((h) => {
+        if (cancelled) return;
+        const last = [...h.weight].sort((a, b) => a.date.localeCompare(b.date)).pop();
+        setLastWeight(last ? last.weight : null);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [readyToken, weightVersion]);
 
   const [tutorial, setTutorial] = useState(false);
   const readyAthleteId = readyToken ? session!.athlete.id : null;
@@ -141,9 +164,10 @@ export const AthleteArea: React.FC = () => {
     };
   }, [readyToken]);
 
+  const sessionClub = session?.club ?? null;
   useEffect(() => {
-    setClub(session?.club ?? null);
-  }, [session?.club?.id]);
+    setClub(sessionClub);
+  }, [sessionClub, setClub]);
   const [checkingSession, setCheckingSession] = useState(isSupabaseConfigured);
   const [notice, setNotice] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<AthleteTab>(INITIAL_TAB ?? 'treinos');
@@ -165,14 +189,15 @@ export const AthleteArea: React.FC = () => {
     setActiveTab('treinos');
   };
 
+  /** Envia a resposta. Devolve null se deu certo, ou a mensagem de erro para o formulário. */
   const submitWith = async <T,>(
     send: (token: string, record: T) => Promise<void>,
     { athlete_id: _ignored, ...record }: T & { athlete_id: string }
-  ): Promise<boolean> => {
-    if (!session) return false;
+  ): Promise<string | null> => {
+    if (!session) return 'Sua sessão expirou. Entre novamente.';
     try {
       await send(session.token, record as unknown as T);
-      return true;
+      return null;
     } catch (err: any) {
       console.error('Erro ao salvar no Supabase:', err);
       if (err.code === 'sessao_invalida' || err.code === 'troca_de_senha_pendente') {
@@ -181,13 +206,17 @@ export const AthleteArea: React.FC = () => {
       } else if (err.code === 'termo_pendente') {
         setTerms({ accepted_at: null, version: null });
       }
-      return false;
+      return err?.message || 'Erro ao registrar resposta. Tente novamente.';
     }
   };
 
   const handlePseSubmit = (record: Omit<PseRecord, 'id' | 'created_at'>) => submitWith(submitPse, record);
   const handlePsrSubmit = (record: Omit<PsrRecord, 'id' | 'created_at'>) => submitWith(submitPsr, record);
-  const handleWeightSubmit = (record: Omit<WeightRecord, 'id' | 'created_at'>) => submitWith(submitWeight, record);
+  const handleWeightSubmit = async (record: Omit<WeightRecord, 'id' | 'created_at'>) => {
+    const error = await submitWith(submitWeight, record);
+    if (!error) setWeightVersion((v) => v + 1);
+    return error;
+  };
 
   if (!isSupabaseConfigured) {
     return (
@@ -388,15 +417,11 @@ export const AthleteArea: React.FC = () => {
             readOnly
             listOnly
             fetchSessions={(from, to) => getAthleteSchedule(session.token, from, to)}
-            onSelectSession={(sessionItem: any) => {
-              const tipoTreino = (sessionItem.training_type || sessionItem.tipo || '').toLowerCase();
-              if (tipoTreino.includes('fisico') || tipoTreino.includes('físico')) {
-                setActivePhysicalWorkout({
-                  id: sessionItem.id,
-                  name: sessionItem.name || sessionItem.titulo || 'Treino Físico',
-                });
+            onSelectSession={(sessionItem) => {
+              if (isPhysicalTraining(sessionItem.training_type)) {
+                setActivePhysicalWorkout({ id: sessionItem.id, name: sessionItem.name || 'Treino Físico' });
               } else {
-                alert('Apenas treinos físicos possuem ficha de execução interativa.');
+                notify('Só os treinos físicos têm ficha de execução.', 'info');
               }
             }}
           />
@@ -407,7 +432,7 @@ export const AthleteArea: React.FC = () => {
         </div>
       ) : activeTab === 'prs' ? (
         <div data-tour="athlete-prs">
-          <AthletePrView athleteId={athlete.id} />
+          <AthletePrView token={session.token} />
         </div>
       ) : (
       <div data-tour="athlete-form" className="bg-slate-900/50 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-2xl backdrop-blur">
@@ -416,12 +441,12 @@ export const AthleteArea: React.FC = () => {
             athleteId={athlete.id}
             athleteName={athlete.nome}
             onSubmit={async (record) => {
-              const ok = await handlePseSubmit(record);
-              if (ok) {
+              const error = await handlePseSubmit(record);
+              if (!error) {
                 setOverrideDuration(undefined);
                 setOverrideType(undefined);
               }
-              return ok;
+              return error;
             }}
             scheduledDurations={scheduledDurations}
             suggestedType={overrideType ?? suggestedType}
@@ -432,7 +457,7 @@ export const AthleteArea: React.FC = () => {
           <PsrForm athleteId={athlete.id} athleteName={athlete.nome} onSubmit={handlePsrSubmit} />
         )}
         {activeTab === 'weight' && (
-          <WeightForm athleteId={athlete.id} athleteName={athlete.nome} onSubmit={handleWeightSubmit} />
+          <WeightForm athleteId={athlete.id} athleteName={athlete.nome} lastWeight={lastWeight} onSubmit={handleWeightSubmit} />
         )}
       </div>
       )}

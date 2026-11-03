@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useDialogs } from '../ui/Dialogs';
 import {
   UserPlus, Loader2, AlertCircle, CheckCircle2, X, Copy, MessageCircle, ShieldCheck, UserX, UserCheck, KeyRound, Mail,
 } from 'lucide-react';
@@ -22,6 +23,7 @@ interface CreatedCoach {
 }
 
 export const TeamManagement: React.FC<TeamManagementProps> = ({ currentUserId, club, onClubChanged }) => {
+  const { confirm } = useDialogs();
   const clubName = club.nome;
   const [uploading, setUploading] = useState(false);
 
@@ -133,14 +135,16 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({ currentUserId, c
     }
   };
 
-  const toggleRole = (m: TeamMember) => {
+  const toggleRole = async (m: TeamMember) => {
     const next = m.role === 'admin' ? 'treinador' : 'admin';
-    if (!window.confirm(next === 'admin' ? `Tornar ${m.nome} administrador do clube?` : `Tirar ${m.nome} da administração do clube?`)) return;
+    const ok = await confirm(next === 'admin' ? `Tornar ${m.nome} administrador do clube?` : `Tirar ${m.nome} da administração do clube?`);
+    if (!ok) return;
     runAction(m, () => setCoachRole(m.user_id, next), next === 'admin' ? `${m.nome} agora é administrador.` : `${m.nome} agora é treinador.`);
   };
 
-  const toggleActive = (m: TeamMember) => {
-    if (m.active && !window.confirm(`Desativar ${m.nome}? O acesso ao clube é bloqueado na hora.`)) return;
+  const toggleActive = async (m: TeamMember) => {
+    if (m.active && !(await confirm({ message: `Desativar ${m.nome}? O acesso ao clube é bloqueado na hora.`, danger: true, confirmLabel: 'Desativar' })))
+      return;
     runAction(m, () => setCoachActive(m.user_id, !m.active), m.active ? `${m.nome} foi desativado.` : `${m.nome} foi reativado.`);
   };
 
@@ -206,7 +210,7 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({ currentUserId, c
           </span>
           <input
             type="file"
-            accept="image/png,image/jpeg,image/webp,image/svg+xml"
+            accept="image/png,image/jpeg,image/webp"
             className="sr-only"
             disabled={uploading}
             onChange={(e) => {

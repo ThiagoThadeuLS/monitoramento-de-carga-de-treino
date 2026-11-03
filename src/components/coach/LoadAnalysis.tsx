@@ -1,7 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Gauge, RefreshCw, Loader2, AlertCircle, Download, Info, ChevronRight, ChevronDown, TriangleAlert, Timer } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { addDaysISO, todayLocalISO } from '../../lib/date';
+import { addDaysISO, todayISO } from '../../lib/date';
 import { PseRecord } from '../../types';
 import { useClubGroups } from '../../lib/groups';
 import { AthleteSelection, EMPTY_SELECTION, GroupFilter, resolveSelection, selectionLabel } from './GroupFilter';
@@ -37,7 +37,7 @@ type SortKey = 'acwr' | 'acute' | 'monotony' | 'nome';
 
 /** Aba Carga: carga interna (PSE x minutos), ACWR, monotonia e strain por atleta e do grupo. */
 export const LoadAnalysis: React.FC<{ onOpenProfile?: (athleteId: string) => void }> = ({ onOpenProfile }) => {
-  const [ref, setRef] = useState(todayLocalISO);
+  const [ref, setRef] = useState(todayISO);
   const [athletes, setAthletes] = useState<AthleteRow[]>([]);
   const [pse, setPse] = useState<PseRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,7 +49,7 @@ export const LoadAnalysis: React.FC<{ onOpenProfile?: (athleteId: string) => voi
 
   const from = addDaysISO(ref, -55); // 28 dias de gráfico + 28 de histórico para a carga crônica
 
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!supabase) return;
     setLoading(true);
     setError('');
@@ -70,11 +70,11 @@ export const LoadAnalysis: React.FC<{ onOpenProfile?: (athleteId: string) => voi
     } finally {
       setLoading(false);
     }
-  };
+  }, [from, ref]);
 
   useEffect(() => {
     load();
-  }, [ref]);
+  }, [load]);
 
   const selected = useMemo(() => resolveSelection(selection, groups), [selection, groups]);
   const people = useMemo(
@@ -147,13 +147,13 @@ export const LoadAnalysis: React.FC<{ onOpenProfile?: (athleteId: string) => voi
               <input
                 type="date"
                 value={ref}
-                max={todayLocalISO()}
+                max={todayISO()}
                 onChange={(e) => e.target.value && setRef(e.target.value)}
                 className="flex-1 sm:flex-none bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
               />
               <button
                 type="button"
-                onClick={() => setRef(todayLocalISO())}
+                onClick={() => setRef(todayISO())}
                 className="px-3 py-2 rounded-lg text-xs font-bold border bg-slate-950 text-slate-300 border-slate-700 hover:bg-slate-800"
               >
                 Hoje

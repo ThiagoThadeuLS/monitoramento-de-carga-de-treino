@@ -75,7 +75,7 @@ export const RestrictedArea: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [userId, version]);
+  }, [userId, version, setClub]);
 
   const reload = () => setVersion((v) => v + 1);
 

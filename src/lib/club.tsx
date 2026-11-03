@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { applyTheme, fetchClubTheme } from './theme';
 import { Activity } from 'lucide-react';
 
@@ -32,7 +32,7 @@ export const ClubProvider: React.FC<{ children: React.ReactNode }> = ({ children
       cancelled = true;
     };
   }, [club?.id, themeVersion]);
-  const reloadTheme = () => setThemeVersion((v) => v + 1);
+  const reloadTheme = useCallback(() => setThemeVersion((v) => v + 1), []);
   return <ClubContext.Provider value={{ club, setClub, reloadTheme }}>{children}</ClubContext.Provider>;
 };
 

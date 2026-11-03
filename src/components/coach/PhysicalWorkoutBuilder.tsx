@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabase';
+import { deleteById, supabase } from '../../lib/supabase';
+import { useDialogs } from '../ui/Dialogs';
+import { addDaysISO, todayISO } from '../../lib/date';
+import { PHYSICAL_TRAINING } from '../../data/constants';
 import { Dumbbell, Plus, Trash2, Loader2, Pencil, X, BookOpen } from 'lucide-react';
 
 interface TrainingSessionItem {
@@ -27,6 +30,7 @@ interface Prescription {
 }
 
 export function PhysicalWorkoutBuilder() {
+  const { confirm, notify } = useDialogs();
   const [loadingSessions, setLoadingSessions] = useState(true);
   const [sessions, setSessions] = useState<TrainingSessionItem[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string>('');
@@ -59,17 +63,16 @@ export function PhysicalWorkoutBuilder() {
     async function loadPhysicalSessions() {
       if (!supabase) return;
       setLoadingSessions(true);
+      // Só os treinos físicos a partir de 2 meses atrás (para a lista não ficar enorme)
       const { data, error } = await supabase
         .from('training_sessions')
-        .select('*')
+        .select('id, name, date, training_type')
+        .eq('training_type', PHYSICAL_TRAINING)
+        .gte('date', addDaysISO(todayISO(), -60))
         .order('date', { ascending: false });
 
       if (!error && data) {
-        const fisicos = data.filter((s: any) => {
-          const tipoTreino = (s.training_type || s.tipo || '').toLowerCase();
-          return tipoTreino.includes('fisico') || tipoTreino.includes('físico');
-        });
-        
+        const fisicos = data as TrainingSessionItem[];
         setSessions(fisicos);
         if (fisicos.length > 0) {
           setSelectedSessionId(fisicos[0].id);
@@ -91,9 +94,13 @@ export function PhysicalWorkoutBuilder() {
 
       if (!error && data) {
         setCatalog(data);
-        if (data.length > 0 && !exercicio) {
-          setExercicio(data[0].nome);
-          setUsaPr(data[0].exige_pr);
+        // Sugere o primeiro exercício do catálogo se nenhum foi escolhido ainda
+        if (data.length > 0) {
+          setExercicio((atual) => {
+            if (atual) return atual;
+            setUsaPr(data[0].exige_pr);
+            return data[0].nome;
+          });
         }
       }
       setLoadingCatalog(false);
@@ -166,7 +173,7 @@ export function PhysicalWorkoutBuilder() {
         setCatalog(catalog.map(c => c.id === editingCatalogId ? { ...c, nome: payload.nome, exige_pr: payload.exige_pr } : c));
         resetCatalogForm();
       } else {
-        alert(`Erro ao atualizar catálogo: ${error.message}`);
+        notify(`Erro ao atualizar o catálogo: ${error.message}`, 'error');
       }
     } else {
       // Inserir novo exercício no catálogo
@@ -182,18 +189,25 @@ export function PhysicalWorkoutBuilder() {
         resetCatalogForm();
         handleSelectCatalogExercise(data.nome);
       } else {
-        alert(`Erro ao cadastrar no catálogo (pode já existir): ${error?.message}`);
+        notify(
+          /duplicate key|club_exercises_nome_unico/.test(error?.message ?? '')
+            ? 'Esse exercício já está no catálogo.'
+            : `Erro ao cadastrar no catálogo: ${error?.message}`,
+          'error'
+        );
       }
     }
   }
 
   async function handleDeleteCatalogExercise(id: string) {
     if (!supabase) return;
-    if (!confirm('Deseja remover este exercício do catálogo oficial?')) return;
-    const { error } = await supabase.from('club_exercises').delete().eq('id', id);
-    if (!error) {
+    if (!(await confirm({ message: 'Remover este exercício do catálogo do clube? As fichas que já usam ele não mudam.', danger: true, confirmLabel: 'Remover' }))) return;
+    try {
+      await deleteById('club_exercises', id);
       setCatalog(catalog.filter(c => c.id !== id));
       if (editingCatalogId === id) resetCatalogForm();
+    } catch (err) {
+      notify((err as Error).message, 'error');
     }
   }
 
@@ -248,7 +262,7 @@ export function PhysicalWorkoutBuilder() {
         setPrescriptions(prescriptions.map(p => p.id === editingId ? { ...p, ...payload } : p));
         resetForm();
       } else {
-        alert(`Erro ao atualizar: ${error.message}`);
+        notify(`Erro ao atualizar: ${error.message}`, 'error');
       }
     } else {
       const { data, error } = await supabase
@@ -262,18 +276,20 @@ export function PhysicalWorkoutBuilder() {
         setPrescriptions([...prescriptions, data]);
         resetForm();
       } else {
-        alert(`Erro ao salvar: ${error?.message}`);
+        notify(`Erro ao salvar: ${error?.message}`, 'error');
       }
     }
   }
 
   async function handleDelete(id: string) {
     if (!supabase) return;
-    if (!confirm('Deseja remover este exercício da ficha?')) return;
-    const { error } = await supabase.from('workout_prescriptions').delete().eq('id', id);
-    if (!error) {
+    if (!(await confirm({ message: 'Remover este exercício da ficha?', danger: true, confirmLabel: 'Remover' }))) return;
+    try {
+      await deleteById('workout_prescriptions', id);
       setPrescriptions(prescriptions.filter(p => p.id !== id));
       if (editingId === id) resetForm();
+    } catch (err) {
+      notify((err as Error).message, 'error');
     }
   }
 

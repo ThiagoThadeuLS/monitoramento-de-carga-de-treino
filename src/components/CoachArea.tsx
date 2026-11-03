@@ -136,7 +136,7 @@ export const CoachArea: React.FC<{ recovery?: boolean }> = ({ recovery = false }
     return () => {
       cancelled = true;
     };
-  }, [userId, profileVersion]);
+  }, [userId, profileVersion, setClub]);
 
   const handleLogout = async () => {
     if (!supabase) return;

@@ -1,3 +1,5 @@
+import { stampInAppZone } from './date';
+
 /**
  * Exportação em CSV pronta para o Excel em português:
  * separador ";", vírgula decimal e UTF-8 com BOM (acentos corretos ao abrir com dois cliques).
@@ -7,10 +9,19 @@ export interface CsvColumn<T> {
   value: (row: T) => string | number | null | undefined | boolean;
 }
 
-const cell = (v: string | number | null | undefined | boolean): string => {
+// Texto que começa com = + - @ (ou tab/enter) vira fórmula no Excel: um atleta poderia
+// escrever "=HYPERLINK(...)" na observação. Prefixar com ' faz o Excel tratar como texto.
+const FORMULA_START = /^[=+\-@\t\r]/;
+
+export const cell = (v: string | number | null | undefined | boolean): string => {
   if (v === null || v === undefined) return '';
   if (typeof v === 'boolean') return v ? 'sim' : 'não';
-  const s = typeof v === 'number' ? (Number.isInteger(v) ? String(v) : v.toFixed(2).replace('.', ',')) : v;
+  let s: string;
+  if (typeof v === 'number') {
+    s = Number.isInteger(v) ? String(v) : v.toFixed(2).replace('.', ',');
+  } else {
+    s = FORMULA_START.test(v) ? `'${v}` : v;
+  }
   return /[;"\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 
@@ -35,9 +46,8 @@ export function downloadCsv(filename: string, csv: string) {
 /** Data AAAA-MM-DD -> DD/MM/AAAA. */
 export const brDate = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 
-/** Hora local (HH:MM) de um envio. */
-export const localTime = (iso?: string) =>
-  iso ? new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+/** Hora (HH:MM) de um envio, no horário de Brasília. */
+export const localTime = (iso?: string) => stampInAppZone(iso)[1];
 
 /** Nome de arquivo seguro: "pse_2026-10-01_a_2026-10-31". */
 export const fileSlug = (...parts: string[]) =>

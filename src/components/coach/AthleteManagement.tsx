@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { UserPlus, Search, Edit3, Trash2, CheckCircle2, AlertCircle, X, Loader2, Phone, IdCard, KeyRound, LineChart, UserX, UserCheck, ShieldAlert } from 'lucide-react';
 import { Athlete } from '../../types';
-import { supabase } from '../../lib/supabase';
+import { deleteById, supabase } from '../../lib/supabase';
+import { useDialogs } from '../ui/Dialogs';
 import { formatCpf, isValidCpf, onlyCpfDigits } from '../../lib/cpf';
 import { resetAthletePassword } from '../../lib/athleteAuth';
 
@@ -52,6 +53,7 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
   readOnly = false,
   onOpenProfile,
 }) => {
+  const { confirm } = useDialogs();
   const [athletes, setAthletes] = useState<AthleteRow[]>([]);
   const [showInactive, setShowInactive] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -99,13 +101,13 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
     loadAthletes();
   }, []);
 
+  // Pedido de edição vindo de outra aba (só reage quando muda o atleta pedido)
   useEffect(() => {
     if (athleteToEdit) {
       handleOpenEditModal(athleteToEdit);
-      if (onClearAthleteToEdit) {
-        onClearAthleteToEdit();
-      }
+      onClearAthleteToEdit?.();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- handleOpenEditModal só usa setters; o callback do pai é recriado a cada render
   }, [athleteToEdit]);
 
   const handleOpenAddModal = () => {
@@ -204,12 +206,14 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
 
   const handleResetPassword = async () => {
     if (!editingAthlete) return;
-    if (!window.confirm(
-      `Voltar a senha de "${editingAthlete.nome}" para a senha inicial (nome completo junto e minúsculo)? ` +
-      'O atleta terá que criar uma nova senha no próximo acesso.'
-    )) {
-      return;
-    }
+    const ok = await confirm({
+      title: 'Redefinir senha',
+      message:
+        `Voltar a senha de "${editingAthlete.nome}" para a senha inicial (nome completo junto e minúsculo)? ` +
+        'O atleta terá que criar uma nova senha no próximo acesso.',
+      confirmLabel: 'Redefinir',
+    });
+    if (!ok) return;
 
     setResettingPassword(true);
     setModalError('');
@@ -244,18 +248,15 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
   };
 
   const handleDeleteAthlete = async (id: string, athleteName: string) => {
-    if (
-      !window.confirm(
-        `Excluir "${athleteName}" apaga TODO o histórico dele (PSE, PSR e peso) e não pode ser desfeito.\n\nPara só bloquear o acesso e manter o histórico, use "Inativar".\n\nExcluir mesmo assim?`
-      )
-    ) {
-      return;
-    }
+    const ok = await confirm({
+      message: `Excluir "${athleteName}" apaga TODO o histórico dele (PSE, PSR, peso e PRs) e não pode ser desfeito.\n\nPara só bloquear o acesso e manter o histórico, use "Inativar".`,
+      danger: true,
+      confirmLabel: 'Excluir mesmo assim',
+    });
+    if (!ok) return;
 
-    if (!supabase) return;
     try {
-      const { error } = await supabase.from('athletes').delete().eq('id', id);
-      if (error) throw error;
+      await deleteById('athletes', id);
       setFeedbackMsg({ type: 'success', text: `Atleta "${athleteName}" removido com sucesso.` });
       await loadAthletes();
       setTimeout(() => setFeedbackMsg(null), 4000);

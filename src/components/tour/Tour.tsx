@@ -126,10 +126,14 @@ export const Tour: React.FC<{ steps: TourStep[]; onClose: () => void }> = ({ ste
   const safeBottomRef = useRef<HTMLDivElement>(null);
   const step = steps[i];
   const last = i === steps.length - 1;
+  const stepsRef = useRef(steps);
+  stepsRef.current = steps;
+  const target = step.target;
 
   // Troca de passo: prepara a tela, espera o alvo aparecer, rola até ele
   // e só mostra o destaque quando a tela parar de se mexer.
   useEffect(() => {
+    const step = stepsRef.current[i];
     setReady(false);
     step.before?.();
     if (!step.target) {
@@ -180,15 +184,15 @@ export const Tour: React.FC<{ steps: TourStep[]; onClose: () => void }> = ({ ste
       const root = rootRef.current;
       if (root) {
         const rr = root.getBoundingClientRect();
-        const el = findTarget(step.target);
-        let target: Box | null = null;
+        const el = findTarget(target);
+        let box: Box | null = null;
         if (el && isShown(el)) {
           const r = el.getBoundingClientRect();
           if (el !== lastEl) {
             lastEl = el;
             radius = radiusOf(el, r);
           }
-          target = { top: r.top - rr.top, left: r.left - rr.left, width: r.width, height: r.height };
+          box = { top: r.top - rr.top, left: r.left - rr.left, width: r.width, height: r.height };
         }
         // altura natural do cartão: a de agora com o texto inteiro (até o limite de 38% da tela)
         const card = cardRef.current;
@@ -197,7 +201,7 @@ export const Tour: React.FC<{ steps: TourStep[]; onClose: () => void }> = ({ ste
         const next: Layout = {
           vw: root.clientWidth,
           vh: root.clientHeight,
-          target,
+          target: box,
           radius,
           cardH: card && body ? card.offsetHeight - body.offsetHeight + Math.min(body.scrollHeight, bodyMax) : 0,
           cardFixed: card && body ? card.offsetHeight - body.offsetHeight : 0,
@@ -211,7 +215,7 @@ export const Tour: React.FC<{ steps: TourStep[]; onClose: () => void }> = ({ ste
     };
     measure();
     return () => cancelAnimationFrame(raf);
-  }, [i]);
+  }, [target]);
 
   const next = useCallback(() => (last ? onClose() : setI((x) => x + 1)), [last, onClose]);
   const prev = useCallback(() => setI((x) => Math.max(0, x - 1)), []);

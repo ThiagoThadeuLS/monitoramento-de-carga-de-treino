@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { X, Loader2, AlertCircle, Download, Scale, Gauge, Activity, ShieldCheck, ShieldAlert, Ban, StickyNote } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { addDaysISO, todayLocalISO } from '../../lib/date';
+import { addDaysISO, todayISO } from '../../lib/date';
 import { Athlete, PseRecord, PsrRecord, WeightRecord } from '../../types';
 import { DailyStatsChart } from './DailyStatsChart';
 import { MONOTONY_LIMIT, ZONE_INFO, dailyLoads, format2, formatUA, groupSeries, loadMetrics, sessionLoad } from '../../lib/load';
@@ -31,7 +31,7 @@ export const AthleteProfile: React.FC<{ athleteId: string; onClose: () => void }
   const [weight, setWeight] = useState<WeightRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const today = todayLocalISO();
+  const today = todayISO();
   const from = addDaysISO(today, -(range - 1));
   const loadFrom = addDaysISO(from, -27); // histórico para a carga crônica do primeiro dia
 
@@ -58,7 +58,7 @@ export const AthleteProfile: React.FC<{ athleteId: string; onClose: () => void }
     return () => {
       cancelled = true;
     };
-  }, [athleteId, range]);
+  }, [athleteId, from, loadFrom, today]);
 
   // Fecha com Esc
   useEffect(() => {

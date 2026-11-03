@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from './supabase';
+import { deleteById, supabase } from './supabase';
 import { TrainingSession } from '../types';
 
 export interface AthleteGroup {
@@ -20,7 +20,11 @@ export function groupError(err: any): string {
   if (/de_outro_clube/.test(msg)) return 'Grupo ou atleta inválido para este clube.';
   if (/athlete_groups|athlete_group_members|audience/.test(msg) && /(does not exist|Could not find|schema cache)/.test(msg))
     return 'Os grupos ainda não foram ativados no banco. Rode o arquivo supabase_completo.sql no Supabase.';
-  if (/row-level security/.test(msg)) return 'Sem permissão para alterar (modo somente leitura?).';
+  if (/row-level security|nao_autorizado/.test(msg)) return 'Sem permissão para alterar (modo somente leitura?).';
+  if (/nome_obrigatorio/.test(msg)) return 'Informe o nome do grupo.';
+  if (/club_save_group/.test(msg) && /(Could not find|schema cache)/.test(msg))
+    return 'A gravação de grupos foi atualizada. Rode o arquivo supabase_completo.sql no Supabase.';
+  if (/Nada foi excluído/.test(msg)) return msg;
   return `Erro: ${msg}`;
 }
 
@@ -45,33 +49,28 @@ export async function listActiveAthletes(): Promise<AthleteRef[]> {
   return data ?? [];
 }
 
-/** Cria ou atualiza o grupo e deixa exatamente estes atletas como participantes. */
-export async function saveGroup(group: { id?: string; nome: string; members: string[] }, previous: string[] = []) {
+/**
+ * Cria ou atualiza o grupo e deixa exatamente estes atletas como participantes.
+ * Tudo numa função do banco (club_save_group): se algo falhar, nada é gravado.
+ * `previous` ficou só por compatibilidade (o banco calcula quem sai e quem entra).
+ */
+export async function saveGroup(group: { id?: string; nome: string; members: string[] }, _previous: string[] = []) {
   if (!supabase) throw new Error('Supabase não configurado.');
-  let groupId = group.id;
-  if (groupId) {
-    const { error } = await supabase.from('athlete_groups').update({ nome: group.nome.trim() }).eq('id', groupId);
-    if (error) throw new Error(groupError(error));
-  } else {
-    const { data, error } = await supabase.from('athlete_groups').insert([{ nome: group.nome.trim() }]).select('id').single();
-    if (error) throw new Error(groupError(error));
-    groupId = data.id;
-  }
-  const toRemove = previous.filter((a) => !group.members.includes(a));
-  const toAdd = group.members.filter((a) => !previous.includes(a));
-  if (toRemove.length) {
-    const { error } = await supabase.from('athlete_group_members').delete().eq('group_id', groupId).in('athlete_id', toRemove);
-    if (error) throw new Error(groupError(error));
-  }
-  if (toAdd.length) {
-    const { error } = await supabase.from('athlete_group_members').insert(toAdd.map((athlete_id) => ({ group_id: groupId, athlete_id })));
-    if (error) throw new Error(groupError(error));
-  }
+  const { data, error } = await supabase.rpc('club_save_group', {
+    p_id: group.id ?? null,
+    p_nome: group.nome.trim(),
+    p_members: group.members,
+  });
+  if (error) throw new Error(groupError(error));
+  return data as string;
 }
 
 export async function deleteGroup(id: string) {
-  const { error } = await supabase!.from('athlete_groups').delete().eq('id', id);
-  if (error) throw new Error(groupError(error));
+  try {
+    await deleteById('athlete_groups', id);
+  } catch (err) {
+    throw new Error(groupError(err));
+  }
 }
 
 /** Mesma regra do banco (session_applies_to): o treino é para este atleta? */

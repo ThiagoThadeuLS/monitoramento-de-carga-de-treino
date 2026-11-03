@@ -99,51 +99,30 @@ export function encontrarMontagemLado(pesoLado: number): PlateResult[] | null {
 }
 
 /**
- * Encontra o peso total montável mais próximo para uma barra de 20 kg
- * usando anilhas de 25, 20, 15, 10, 5, 2.5 e 1 kg.
+ * Maior peso total montável que NÃO passa do peso alvo (por segurança, a carga
+ * prescrita nunca é arredondada para cima), com a barra informada (padrão 20 kg)
+ * e anilhas de 25, 20, 15, 10, 5, 2.5 e 1 kg. Totais em kg inteiros.
  */
 export function ajustarCargaMontavel(pesoAlvo: number, pesoBarra: number = 20): {
   pesoAjustado: number;
   pesoLado: number;
   plates: PlateResult[];
 } {
-  if (pesoAlvo <= pesoBarra) {
+  if (!Number.isFinite(pesoAlvo) || pesoAlvo <= pesoBarra) {
     return { pesoAjustado: pesoBarra, pesoLado: 0, plates: [] };
   }
 
-  // Gera candidatos ordenados por proximidade do pesoAlvo
-  const base = Math.round(pesoAlvo);
-  const candidatos: number[] = [];
-  for (let offset = 0; offset <= 30; offset++) {
-    if (offset === 0) {
-      if (base >= pesoBarra) candidatos.push(base);
-    } else {
-      if (base + offset >= pesoBarra) candidatos.push(base + offset);
-      if (base - offset >= pesoBarra) candidatos.push(base - offset);
-    }
-  }
-
-  candidatos.sort((a, b) => Math.abs(a - pesoAlvo) - Math.abs(b - pesoAlvo));
-
-  for (const cand of candidatos) {
+  // Pequena folga para erros de arredondamento (ex.: 70% de 100 = 70.00000000001)
+  for (let cand = Math.floor(pesoAlvo + 1e-9); cand > pesoBarra; cand--) {
     const side = (cand - pesoBarra) / 2;
-    if (side < 0) continue;
     const plates = encontrarMontagemLado(side);
     if (plates !== null) {
-      return {
-        pesoAjustado: cand,
-        pesoLado: side,
-        plates,
-      };
+      return { pesoAjustado: cand, pesoLado: side, plates };
     }
   }
 
-  // Fallback seguro
-  return {
-    pesoAjustado: Math.round(pesoAlvo),
-    pesoLado: Math.max(0, (Math.round(pesoAlvo) - pesoBarra) / 2),
-    plates: [],
-  };
+  // Nada montável acima da barra (não acontece com a anilha de 1 kg): só a barra
+  return { pesoAjustado: pesoBarra, pesoLado: 0, plates: [] };
 }
 
 /** Montagem da barra para o componente visual e textual */
@@ -162,9 +141,10 @@ export function calcularMontagemBarra(pesoTotalAlvo: number, pesoBarra: number =
 }
 
 export function calcularAnilhasPorLado(pesoTotalAlvo: number, pesoBarra: number = 20): string {
-  if (pesoTotalAlvo <= pesoBarra) return 'Apenas a barra (20 kg)';
+  const soBarra = `Apenas a barra (${String(pesoBarra).replace('.', ',')} kg)`;
+  if (pesoTotalAlvo <= pesoBarra) return soBarra;
   const setup = calcularMontagemBarra(pesoTotalAlvo, pesoBarra);
-  if (setup.plates.length === 0) return 'Apenas a barra (20 kg)';
+  if (setup.plates.length === 0) return soBarra;
 
   const partes = setup.plates.map((p) => `${p.qty > 1 ? `${p.qty}× ` : ''}${p.plate} kg`);
   return `${partes.join(' + ')} de cada lado (${setup.totalWeight} kg total)`;

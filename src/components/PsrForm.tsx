@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { Activity, Battery, Moon, Zap, Smile, HeartPulse, Send, CheckCircle2, AlertCircle } from 'lucide-react';
 import { PsrRecord } from '../types';
-import { todayLocalISO } from '../lib/date';
+import { todayISO } from '../lib/date';
 
 interface PsrFormProps {
   athleteId: string;
   athleteName?: string;
-  onSubmit: (record: Omit<PsrRecord, 'id' | 'created_at'>) => Promise<boolean>;
+  /** Devolve null se salvou, ou a mensagem de erro */
+  onSubmit: (record: Omit<PsrRecord, 'id' | 'created_at'>) => Promise<string | null>;
 }
 
 interface MetricConfig {
@@ -129,16 +130,16 @@ export const PsrForm: React.FC<PsrFormProps> = ({ athleteId, athleteName, onSubm
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!athleteId) {
-      setErrorMsg('Por favor, selecione seu nome no topo antes de enviar.');
+      setErrorMsg('Sua sessão expirou. Entre novamente.');
       return;
     }
 
     setSubmitting(true);
     setErrorMsg('');
 
-    const todayStr = todayLocalISO();
+    const todayStr = todayISO();
 
-    const ok = await onSubmit({
+    const error = await onSubmit({
       athlete_id: athleteId,
       date: todayStr,
       ...values,
@@ -146,11 +147,11 @@ export const PsrForm: React.FC<PsrFormProps> = ({ athleteId, athleteName, onSubm
 
     setSubmitting(false);
 
-    if (ok) {
+    if (!error) {
       setSuccess(true);
       setTimeout(() => setSuccess(false), 4000);
     } else {
-      setErrorMsg('Erro ao registrar PSR. Tente novamente.');
+      setErrorMsg(error);
     }
   };
 

@@ -3,9 +3,8 @@
   -- Como aplicar: Supabase -> SQL Editor -> New query -> cole ESTE ARQUIVO INTEIRO -> Run.
   --
   -- * Serve para banco novo E para atualizar o banco atual.
-  -- * Pode ser executado quantas vezes quiser: NÃO apaga dados.
-  --   (única limpeza automática: treinos com mais de uma semana, regra do cronograma,
-  --    e registros de envio de lembretes com mais de 14 dias)
+  -- * Pode ser executado quantas vezes quiser: NÃO apaga dados (nenhuma limpeza
+  --   automática; o cronograma guarda todos os treinos).
   -- * Sempre que este arquivo mudar, rode ele inteiro de novo.
   --
   -- Partes:
@@ -20,6 +19,11 @@
   --   8. Tutorial e cores do clube
   --   9. Carga interna (duração da PSE), termo LGPD e histórico do atleta
   --  10. Adversários: sexo, autor da ficha, observações táticas e "apagar para mim"
+  --  11. Preparação física (catálogo, fichas, PRs, treinos concluídos), uma PSR/peso
+  --      por dia e grupos salvos de uma vez
+  --
+  -- Datas das respostas dos atletas: sempre o dia de hoje no horário de Brasília
+  -- (o banco decide; o app usa o mesmo fuso). O cronograma guarda todos os treinos.
   --
   -- Depois de rodar pela primeira vez: publicar a função "enviar-lembretes" e criar
   -- o agendamento (passo a passo no fim da parte 7).
@@ -369,6 +373,8 @@
   $$;
 
   -- Envio de PSE pelo atleta logado (duração em minutos: se vier vazia, usa a do treino programado).
+  -- A data é sempre o dia de hoje no horário de Brasília (p_date é ignorado: o atleta
+  -- não escolhe o dia). Pode haver mais de uma PSE por dia (mais de um treino).
   drop function if exists public.athlete_submit_pse(uuid, date, text, integer, boolean, text);
   create or replace function public.athlete_submit_pse(
     p_token uuid,
@@ -389,7 +395,7 @@
     insert into public.pse_records (athlete_id, date, training_type, rpe_score, did_not_train, observations, duration_minutes)
     values (
       public._athlete_ready(p_token),
-      coalesce(p_date, current_date),
+      public.training_today(),
       p_training_type,
       p_rpe_score,
       coalesce(p_did_not_train, false),
@@ -399,7 +405,8 @@
   end;
   $$;
 
-  -- Envio de PSR pelo atleta logado.
+  -- Envio de PSR pelo atleta logado: uma por dia (hoje, horário de Brasília; p_date é ignorado).
+  -- Para corrigir, o atleta apaga a resposta de hoje no Histórico e envia de novo.
   create or replace function public.athlete_submit_psr(
     p_token uuid,
     p_date date,
@@ -416,21 +423,29 @@
   security definer
   set search_path = ''
   as $$
+  declare
+    v_athlete uuid := public._athlete_ready(p_token);
+    v_today date := public.training_today();
   begin
+    if exists (select 1 from public.psr_records r where r.athlete_id = v_athlete and r.date = v_today) then
+      raise exception 'psr_ja_enviado';
+    end if;
     insert into public.psr_records (
       athlete_id, date, psr_score, fatigue_score, sleep_score,
       muscle_soreness_score, stress_score, mood_score
     )
     values (
-      public._athlete_ready(p_token),
-      coalesce(p_date, current_date),
+      v_athlete,
+      v_today,
       p_psr_score, p_fatigue_score, p_sleep_score,
       p_muscle_soreness_score, p_stress_score, p_mood_score
     );
+  exception when unique_violation then
+    raise exception 'psr_ja_enviado';
   end;
   $$;
 
-  -- Envio de peso pelo atleta logado.
+  -- Envio de peso pelo atleta logado: um por dia (hoje, horário de Brasília; p_date é ignorado).
   create or replace function public.athlete_submit_weight(p_token uuid, p_date date, p_weight numeric)
   returns void
   language plpgsql
@@ -438,9 +453,17 @@
   security definer
   set search_path = ''
   as $$
+  declare
+    v_athlete uuid := public._athlete_ready(p_token);
+    v_today date := public.training_today();
   begin
+    if exists (select 1 from public.weight_records w where w.athlete_id = v_athlete and w.date = v_today) then
+      raise exception 'peso_ja_enviado';
+    end if;
     insert into public.weight_records (athlete_id, date, weight)
-    values (public._athlete_ready(p_token), coalesce(p_date, current_date), p_weight);
+    values (v_athlete, v_today, p_weight);
+  exception when unique_violation then
+    raise exception 'peso_ja_enviado';
   end;
   $$;
 
@@ -534,7 +557,7 @@
   -- ------------------------------------------------------------
   -- Janela de programação (fuso de Brasília)
   --   permitido: semana anterior, semana atual e a próxima
-  --   mais antigo que a semana anterior: apagado
+  --   mais antigo que a semana anterior: fica guardado, só para consulta
   -- ------------------------------------------------------------
   create or replace function public.training_today()
   returns date
@@ -579,38 +602,29 @@
     before insert or update on public.training_sessions
     for each row execute function public.training_sessions_check_window();
 
-  -- Apaga o que for mais antigo que a semana anterior. Devolve quantos apagou.
+  -- Limpeza do cronograma DESLIGADA: nenhum treino é apagado (histórico completo para a
+  -- análise de períodos e as fichas de preparação física). A função continua existindo
+  -- porque versões antigas do app a chamam; ela não faz nada e devolve 0.
   create or replace function public.purge_old_training_sessions()
   returns integer
-  language plpgsql
-  volatile
-  security definer
+  language sql
+  stable
   set search_path = ''
   as $$
-  declare
-    v_count integer;
-  begin
-    delete from public.training_sessions
-    where date < public.training_week_start(public.training_today()) - 7;
-    get diagnostics v_count = row_count;
-    return v_count;
-  end;
+    select 0;
   $$;
 
   revoke execute on function public.purge_old_training_sessions() from public, anon;
   grant execute on function public.purge_old_training_sessions() to authenticated;
 
-  -- Limpeza já agora e, se o pg_cron estiver ativo no projeto, toda segunda às 03h (Brasília).
-  -- Sem pg_cron, o app faz a limpeza sempre que o cronograma é aberto.
-  select public.purge_old_training_sessions();
-
+  -- Remove o agendamento antigo de limpeza do cronograma (se existir)
   do $$
   begin
     if exists (select 1 from pg_extension where extname = 'pg_cron') then
-      perform cron.schedule('limpar-cronograma-antigo', '0 6 * * 1', 'select public.purge_old_training_sessions()');
+      perform cron.unschedule(jobid) from cron.job where jobname = 'limpar-cronograma-antigo';
     end if;
   exception when others then
-    raise notice 'pg_cron não agendado: %', sqlerrm;
+    raise notice 'pg_cron: %', sqlerrm;
   end $$;
 
   -- ------------------------------------------------------------
@@ -1046,25 +1060,14 @@
   end;
   $$;
 
-  -- Limpeza do cronograma: só treinador ativo pode disparar
+  -- Limpeza do cronograma DESLIGADA (ver parte 2): não apaga nada.
   create or replace function public.purge_old_training_sessions()
   returns integer
-  language plpgsql
-  volatile
-  security definer
+  language sql
+  stable
   set search_path = ''
   as $$
-  declare
-    v_count integer;
-  begin
-    if public.current_club_id() is null and auth.uid() is not null then
-      raise exception 'nao_autorizado';
-    end if;
-    delete from public.training_sessions
-    where date < public.training_week_start(public.training_today()) - 7;
-    get diagnostics v_count = row_count;
-    return v_count;
-  end;
+    select 0;
   $$;
 
   revoke execute on function public.records_set_club() from public, anon, authenticated;
@@ -1737,7 +1740,8 @@
   -- 5. Escudos (Supabase Storage)
   -- ------------------------------------------------------------
   insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-  values ('escudos', 'escudos', true, 1048576, array['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'])
+  -- SVG fica de fora: um SVG pode carregar script e o bucket é público
+  values ('escudos', 'escudos', true, 1048576, array['image/png', 'image/jpeg', 'image/webp'])
   on conflict (id) do update
     set public = true,
         file_size_limit = excluded.file_size_limit,
@@ -1764,7 +1768,8 @@
     for delete to authenticated
     using (bucket_id = 'escudos' and (storage.foldername(name))[1] = public.current_club_id()::text and public.is_club_admin());
 
-  -- Admin grava o endereço do escudo (só arquivos do próprio clube no bucket)
+  -- Admin grava o endereço do escudo. Só vale um endereço público do Storage do Supabase
+  -- apontando para um arquivo (PNG/JPG/WEBP) que já existe na pasta do próprio clube.
   create or replace function public.club_set_escudo(p_url text)
   returns void
   language plpgsql
@@ -1774,9 +1779,15 @@
   as $$
   declare
     v_club uuid := public.current_club_id();
+    v_prefix text := '^https://[a-z0-9-]+\.supabase\.co/storage/v1/object/public/escudos/';
+    v_file text;
   begin
     if not public.is_club_admin() then raise exception 'nao_autorizado'; end if;
-    if p_url is null or position('/storage/v1/object/public/escudos/' || v_club::text || '/' in p_url) = 0 then
+    if p_url is null or p_url !~ (v_prefix || v_club::text || '/[A-Za-z0-9._-]+\.(png|jpe?g|webp)$') then
+      raise exception 'escudo_invalido';
+    end if;
+    v_file := v_club::text || '/' || regexp_replace(p_url, '^.*/', '');
+    if not exists (select 1 from storage.objects o where o.bucket_id = 'escudos' and o.name = v_file) then
       raise exception 'escudo_invalido';
     end if;
     update public.clubs set escudo_url = p_url where id = v_club;
@@ -2260,8 +2271,6 @@
     end if;
   end $$;
 
-  -- Limpeza: registros de envio com mais de 14 dias
-  delete from public.reminder_log where last_sent_at < now() - interval '14 days';
 
 
   -- ============================================================
@@ -2953,5 +2962,429 @@
   grant execute on function public.athlete_delete_adversario(uuid, uuid) to anon, authenticated;
   grant execute on function public.athlete_add_observacao(uuid, uuid, text) to anon, authenticated;
   grant execute on function public.athlete_delete_observacao(uuid, uuid) to anon, authenticated;
+
+  notify pgrst, 'reload schema';
+
+
+  -- ############################################################
+  -- PARTE 11. PREPARAÇÃO FÍSICA, UMA PSR/PESO POR DIA E GRUPOS
+  -- * Catálogo de exercícios, fichas dos treinos físicos, PRs dos atletas e treinos
+  --   concluídos: tudo por clube, com as mesmas regras de acesso das outras tabelas.
+  -- * O atleta usa só as funções athlete_* (com o token da sessão): o banco descobre
+  --   quem ele é; athlete_id nunca vem do navegador.
+  -- * Tabelas criadas antes pelo painel são completadas (colunas, clube, regras).
+  -- ############################################################
+
+  -- ------------------------------------------------------------
+  -- 1. Uma PSR e um peso por atleta por dia (a PSE pode ter várias: vários treinos)
+  --    Nada é apagado: as funções de envio já recusam o segundo envio do dia. O índice
+  --    único (trava extra no banco) só é criado quando não há repetidos antigos.
+  -- ------------------------------------------------------------
+  do $$
+  begin
+    if not exists (select 1 from public.psr_records group by athlete_id, date having count(*) > 1) then
+      create unique index if not exists psr_records_um_por_dia on public.psr_records (athlete_id, date);
+    else
+      raise notice 'PSR repetidas no mesmo dia: índice único não criado (nada foi apagado).';
+    end if;
+    if not exists (select 1 from public.weight_records group by athlete_id, date having count(*) > 1) then
+      create unique index if not exists weight_records_um_por_dia on public.weight_records (athlete_id, date);
+    else
+      raise notice 'Pesos repetidos no mesmo dia: índice único não criado (nada foi apagado).';
+    end if;
+  end $$;
+
+  -- ------------------------------------------------------------
+  -- 2. Catálogo de exercícios do clube
+  -- ------------------------------------------------------------
+  create table if not exists public.club_exercises (
+    id uuid primary key default gen_random_uuid(),
+    club_id uuid default public.current_club_id() references public.clubs(id) on delete cascade,
+    nome text not null check (length(trim(nome)) between 1 and 80),
+    bloco text default 'Geral',
+    exige_pr boolean not null default true,
+    created_at timestamp with time zone default now() not null
+  );
+  alter table public.club_exercises add column if not exists club_id uuid references public.clubs(id) on delete cascade;
+  alter table public.club_exercises add column if not exists bloco text default 'Geral';
+  alter table public.club_exercises add column if not exists exige_pr boolean default true;
+  alter table public.club_exercises add column if not exists created_at timestamp with time zone default now();
+
+  -- Catálogo antigo, sem clube (nada é apagado): os exercícios ficam com o clube mais
+  -- antigo e os outros clubes recebem uma cópia
+  do $$
+  declare
+    v_first uuid := (select id from public.clubs order by created_at, id limit 1);
+  begin
+    if v_first is not null and exists (select 1 from public.club_exercises where club_id is null) then
+      insert into public.club_exercises (club_id, nome, bloco, exige_pr)
+        select k.id, e.nome, e.bloco, coalesce(e.exige_pr, true)
+        from public.club_exercises e cross join public.clubs k
+        where e.club_id is null and k.id <> v_first;
+      update public.club_exercises set club_id = v_first where club_id is null;
+    end if;
+  end $$;
+  alter table public.club_exercises alter column club_id set default public.current_club_id();
+  create index if not exists club_exercises_club_idx on public.club_exercises (club_id);
+  do $$
+  begin
+    create unique index if not exists club_exercises_nome_unico on public.club_exercises (club_id, lower(trim(nome)));
+  exception when unique_violation then
+    raise notice 'Catálogo com nomes repetidos no mesmo clube: índice único não criado. Remova os repetidos e rode de novo.';
+  end $$;
+
+  -- ------------------------------------------------------------
+  -- 3. Ficha (prescrição) de cada treino físico do cronograma
+  -- ------------------------------------------------------------
+  create table if not exists public.workout_prescriptions (
+    id uuid primary key default gen_random_uuid(),
+    club_id uuid references public.clubs(id) on delete cascade,
+    training_session_id uuid not null references public.training_sessions(id) on delete cascade,
+    bloco text not null default 'Principal',
+    exercicio text not null check (length(trim(exercicio)) between 1 and 80),
+    series integer not null default 1 check (series between 1 and 50),
+    repeticoes text not null default '',
+    usa_pr boolean not null default false,
+    porcentagem_pr numeric(5,2) check (porcentagem_pr is null or porcentagem_pr between 1 and 150),
+    observacoes_tecnico text,
+    created_at timestamp with time zone default now() not null
+  );
+  alter table public.workout_prescriptions add column if not exists club_id uuid references public.clubs(id) on delete cascade;
+  alter table public.workout_prescriptions add column if not exists observacoes_tecnico text;
+  alter table public.workout_prescriptions add column if not exists created_at timestamp with time zone default now();
+
+  -- Clube vem do treino. Ficha de um treino que já não existe fica guardada sem clube
+  -- (não aparece para ninguém, mas nada é apagado). Fichas novas sempre ganham clube (gatilho abaixo).
+  update public.workout_prescriptions w
+    set club_id = s.club_id
+  from public.training_sessions s
+  where w.club_id is null and s.id::text = w.training_session_id::text;
+  create index if not exists workout_prescriptions_session_idx on public.workout_prescriptions (training_session_id);
+
+  -- Apagar o treino apaga a ficha dele
+  do $$
+  declare
+    c record;
+  begin
+    if (select format_type(a.atttypid, a.atttypmod) from pg_attribute a
+        where a.attrelid = 'public.workout_prescriptions'::regclass and a.attname = 'training_session_id' and not a.attisdropped) = 'uuid' then
+      for c in
+        select conname from pg_constraint
+        where conrelid = 'public.workout_prescriptions'::regclass and contype = 'f'
+          and confrelid = 'public.training_sessions'::regclass and confdeltype <> 'c'
+      loop
+        execute format('alter table public.workout_prescriptions drop constraint %I', c.conname);
+      end loop;
+      if not exists (
+        select 1 from pg_constraint
+        where conrelid = 'public.workout_prescriptions'::regclass and contype = 'f' and confrelid = 'public.training_sessions'::regclass
+      ) then
+        alter table public.workout_prescriptions
+          add constraint workout_prescriptions_session_fk
+          foreign key (training_session_id) references public.training_sessions(id) on delete cascade not valid;
+      end if;
+    end if;
+  end $$;
+
+  -- O clube da ficha é sempre o do treino (o treino precisa existir)
+  create or replace function public.workout_prescriptions_set_club()
+  returns trigger
+  language plpgsql
+  security definer
+  set search_path = ''
+  as $$
+  begin
+    select s.club_id into new.club_id from public.training_sessions s where s.id = new.training_session_id;
+    if new.club_id is null then
+      raise exception 'treino_nao_encontrado';
+    end if;
+    return new;
+  end;
+  $$;
+  drop trigger if exists workout_prescriptions_set_club on public.workout_prescriptions;
+  create trigger workout_prescriptions_set_club before insert or update of training_session_id on public.workout_prescriptions
+    for each row execute function public.workout_prescriptions_set_club();
+
+  -- ------------------------------------------------------------
+  -- 4. PRs (carga máxima de 1 repetição) de cada atleta
+  -- ------------------------------------------------------------
+  create table if not exists public.athlete_prs (
+    id uuid primary key default gen_random_uuid(),
+    club_id uuid references public.clubs(id) on delete cascade,
+    athlete_id uuid not null references public.athletes(id) on delete cascade,
+    exercicio text not null,
+    peso_pr numeric(6,2) not null check (peso_pr > 0 and peso_pr <= 500),
+    created_at timestamp with time zone default now() not null,
+    updated_at timestamp with time zone default now() not null
+  );
+  alter table public.athlete_prs add column if not exists club_id uuid references public.clubs(id) on delete cascade;
+  alter table public.athlete_prs add column if not exists created_at timestamp with time zone default now();
+  alter table public.athlete_prs add column if not exists updated_at timestamp with time zone default now();
+
+  update public.athlete_prs p
+    set club_id = a.club_id
+  from public.athletes a
+  where p.club_id is null and a.id::text = p.athlete_id::text;
+  -- PR de atleta que já não existe fica guardado sem clube (não aparece para ninguém).
+  -- PRs novos sempre ganham o clube do atleta (gatilho abaixo).
+  create index if not exists athlete_prs_athlete_idx on public.athlete_prs (athlete_id);
+
+  -- Clube do PR = clube do atleta (mesma regra das respostas)
+  drop trigger if exists athlete_prs_set_club on public.athlete_prs;
+  create trigger athlete_prs_set_club before insert or update of athlete_id on public.athlete_prs
+    for each row execute function public.records_set_club();
+
+  -- ------------------------------------------------------------
+  -- 5. Treinos físicos concluídos (vale em qualquer aparelho)
+  -- ------------------------------------------------------------
+  create table if not exists public.workout_completions (
+    athlete_id uuid not null references public.athletes(id) on delete cascade,
+    training_session_id uuid not null references public.training_sessions(id) on delete cascade,
+    club_id uuid not null references public.clubs(id) on delete cascade,
+    duration_minutes integer not null check (duration_minutes between 1 and 600),
+    completed_at timestamp with time zone default now() not null,
+    primary key (athlete_id, training_session_id)
+  );
+
+  -- ------------------------------------------------------------
+  -- 6. Regras de acesso
+  --    Treinador: o próprio clube (modo suporte: só leitura), igual às outras tabelas.
+  --    Regras antigas criadas pelo painel são removidas (podiam liberar acesso anônimo).
+  -- ------------------------------------------------------------
+  do $$
+  declare
+    t text;
+    p record;
+  begin
+    foreach t in array array['club_exercises', 'workout_prescriptions', 'athlete_prs', 'workout_completions']
+    loop
+      execute format('alter table public.%I enable row level security', t);
+      execute format('revoke all on public.%I from anon', t);
+      for p in select policyname from pg_policies where schemaname = 'public' and tablename = t loop
+        execute format('drop policy %I on public.%I', p.policyname, t);
+      end loop;
+      execute format('create policy %I on public.%I for select to authenticated using (club_id = public.current_club_id())', 'Clube: leitura', t);
+      -- treino concluído só é gravado pelo atleta (função abaixo)
+      continue when t = 'workout_completions';
+      execute format('create policy %I on public.%I for insert to authenticated with check (club_id = public.current_club_id() and public.support_club_id() is null)', 'Clube: inclusão', t);
+      execute format('create policy %I on public.%I for update to authenticated using (club_id = public.current_club_id() and public.support_club_id() is null) with check (club_id = public.current_club_id())', 'Clube: alteração', t);
+      execute format('create policy %I on public.%I for delete to authenticated using (club_id = public.current_club_id() and public.support_club_id() is null)', 'Clube: exclusão', t);
+    end loop;
+  end $$;
+  revoke insert, update, delete on public.workout_completions from authenticated;
+
+  -- ------------------------------------------------------------
+  -- 7. Funções do atleta
+  -- ------------------------------------------------------------
+
+  -- Treino que o atleta pode abrir: do clube dele, destinado a ele, a partir da semana passada
+  create or replace function public._athlete_session(p_athlete uuid, p_session uuid)
+  returns public.training_sessions
+  language plpgsql
+  stable
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_session public.training_sessions;
+  begin
+    select s.* into v_session
+    from public.training_sessions s
+    join public.athletes a on a.id = p_athlete and a.club_id = s.club_id
+    where s.id = p_session
+      and s.date >= public.training_week_start(public.training_today()) - 7
+      and public.session_applies_to(s, p_athlete);
+    if not found then
+      raise exception 'registro_nao_encontrado';
+    end if;
+    return v_session;
+  end;
+  $$;
+
+  -- Exercícios do catálogo que pedem PR e os PRs do atleta
+  create or replace function public.athlete_list_prs(p_token uuid)
+  returns json
+  language plpgsql
+  stable
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_me uuid := public._athlete_ready(p_token);
+    v_club uuid := (select a.club_id from public.athletes a where a.id = v_me);
+  begin
+    return json_build_object(
+      'catalog', coalesce((
+        select json_agg(json_build_object('id', e.id, 'nome', e.nome) order by lower(e.nome))
+        from public.club_exercises e
+        where e.club_id = v_club and e.exige_pr
+      ), '[]'::json),
+      'prs', coalesce((
+        select json_agg(json_build_object('id', p.id, 'exercicio', p.exercicio, 'peso_pr', p.peso_pr, 'updated_at', p.updated_at) order by lower(p.exercicio))
+        from public.athlete_prs p
+        where p.athlete_id = v_me
+      ), '[]'::json)
+    );
+  end;
+  $$;
+
+  -- Grava (ou atualiza) o PR do atleta num exercício do catálogo do clube
+  create or replace function public.athlete_save_pr(p_token uuid, p_exercicio text, p_peso numeric)
+  returns void
+  language plpgsql
+  volatile
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_me uuid := public._athlete_ready(p_token);
+    v_nome text;
+  begin
+    if p_peso is null or p_peso <= 0 or p_peso > 500 then
+      raise exception 'pr_invalido';
+    end if;
+    select e.nome into v_nome
+    from public.club_exercises e
+    join public.athletes a on a.id = v_me and a.club_id = e.club_id
+    where e.exige_pr and lower(trim(e.nome)) = lower(trim(coalesce(p_exercicio, '')))
+    limit 1;
+    if v_nome is null then
+      raise exception 'exercicio_invalido';
+    end if;
+    update public.athlete_prs
+      set peso_pr = round(p_peso, 2), exercicio = v_nome, updated_at = now()
+    where athlete_id = v_me and lower(trim(exercicio)) = lower(trim(v_nome));
+    if not found then
+      insert into public.athlete_prs (athlete_id, exercicio, peso_pr) values (v_me, v_nome, round(p_peso, 2));
+    end if;
+  end;
+  $$;
+
+  create or replace function public.athlete_delete_pr(p_token uuid, p_id uuid)
+  returns void
+  language plpgsql
+  volatile
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_me uuid := public._athlete_ready(p_token);
+  begin
+    delete from public.athlete_prs where id = p_id and athlete_id = v_me;
+    if not found then
+      raise exception 'registro_nao_encontrado';
+    end if;
+  end;
+  $$;
+
+  -- Ficha do treino físico para o atleta: exercícios, PRs dele e se já concluiu
+  create or replace function public.athlete_get_workout(p_token uuid, p_session uuid)
+  returns json
+  language plpgsql
+  stable
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_me uuid := public._athlete_ready(p_token);
+    v_session public.training_sessions := public._athlete_session(v_me, p_session);
+  begin
+    return json_build_object(
+      'session', json_build_object('id', v_session.id, 'name', v_session.name, 'date', v_session.date,
+                                   'start_time', v_session.start_time, 'end_time', v_session.end_time, 'notes', v_session.notes),
+      'prescriptions', coalesce((
+        select json_agg(json_build_object(
+                 'id', w.id, 'bloco', w.bloco, 'exercicio', w.exercicio, 'series', w.series, 'repeticoes', w.repeticoes,
+                 'usa_pr', w.usa_pr, 'porcentagem_pr', w.porcentagem_pr, 'observacoes_tecnico', w.observacoes_tecnico
+               ) order by w.created_at, w.id)
+        from public.workout_prescriptions w
+        where w.training_session_id = v_session.id
+      ), '[]'::json),
+      'prs', coalesce((
+        select json_agg(json_build_object('exercicio', p.exercicio, 'peso_pr', p.peso_pr))
+        from public.athlete_prs p
+        where p.athlete_id = v_me
+      ), '[]'::json),
+      'completion', (
+        select json_build_object('duration_minutes', c.duration_minutes, 'completed_at', c.completed_at)
+        from public.workout_completions c
+        where c.athlete_id = v_me and c.training_session_id = v_session.id
+      )
+    );
+  end;
+  $$;
+
+  -- Atleta conclui o treino físico (a duração cronometrada vai para a PSE)
+  create or replace function public.athlete_complete_workout(p_token uuid, p_session uuid, p_duration_minutes integer)
+  returns void
+  language plpgsql
+  volatile
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_me uuid := public._athlete_ready(p_token);
+    v_session public.training_sessions := public._athlete_session(v_me, p_session);
+  begin
+    if p_duration_minutes is null or p_duration_minutes not between 1 and 600 then
+      raise exception 'pse_duracao_valida';
+    end if;
+    insert into public.workout_completions (athlete_id, training_session_id, club_id, duration_minutes)
+    values (v_me, v_session.id, v_session.club_id, p_duration_minutes)
+    on conflict (athlete_id, training_session_id) do nothing;
+  end;
+  $$;
+
+  -- ------------------------------------------------------------
+  -- 8. Grupo e participantes salvos de uma vez (tudo ou nada)
+  --    Roda com as regras de acesso de quem chama (security invoker).
+  -- ------------------------------------------------------------
+  create or replace function public.club_save_group(p_id uuid, p_nome text, p_members uuid[])
+  returns uuid
+  language plpgsql
+  volatile
+  set search_path = ''
+  as $$
+  declare
+    v_id uuid;
+    v_members uuid[] := coalesce(p_members, '{}');
+  begin
+    if length(trim(coalesce(p_nome, ''))) = 0 then
+      raise exception 'nome_obrigatorio';
+    end if;
+    if p_id is null then
+      insert into public.athlete_groups (nome) values (trim(p_nome)) returning id into v_id;
+    else
+      update public.athlete_groups set nome = trim(p_nome) where id = p_id returning id into v_id;
+      if v_id is null then
+        raise exception 'nao_autorizado';
+      end if;
+    end if;
+    delete from public.athlete_group_members m
+    where m.group_id = v_id and not (m.athlete_id = any(v_members));
+    insert into public.athlete_group_members (group_id, athlete_id)
+    select v_id, x from unnest(v_members) x
+    on conflict (group_id, athlete_id) do nothing;
+    return v_id;
+  end;
+  $$;
+
+  -- ------------------------------------------------------------
+  -- 9. Permissões
+  -- ------------------------------------------------------------
+  revoke execute on function public.workout_prescriptions_set_club() from public, anon, authenticated;
+  revoke execute on function public._athlete_session(uuid, uuid) from public, anon, authenticated;
+  revoke execute on function public.athlete_list_prs(uuid) from public;
+  revoke execute on function public.athlete_save_pr(uuid, text, numeric) from public;
+  revoke execute on function public.athlete_delete_pr(uuid, uuid) from public;
+  revoke execute on function public.athlete_get_workout(uuid, uuid) from public;
+  revoke execute on function public.athlete_complete_workout(uuid, uuid, integer) from public;
+  revoke execute on function public.club_save_group(uuid, text, uuid[]) from public, anon;
+  grant execute on function public.athlete_list_prs(uuid) to anon, authenticated;
+  grant execute on function public.athlete_save_pr(uuid, text, numeric) to anon, authenticated;
+  grant execute on function public.athlete_delete_pr(uuid, uuid) to anon, authenticated;
+  grant execute on function public.athlete_get_workout(uuid, uuid) to anon, authenticated;
+  grant execute on function public.athlete_complete_workout(uuid, uuid, integer) to anon, authenticated;
+  grant execute on function public.club_save_group(uuid, text, uuid[]) to authenticated;
 
   notify pgrst, 'reload schema';

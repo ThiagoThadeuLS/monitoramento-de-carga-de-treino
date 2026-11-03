@@ -38,6 +38,10 @@ const ERROR_MESSAGES: Record<string, string> = {
   adversario_invalido: 'Confira os dados do adversário (nome e origem com até 120 caracteres).',
   observacao_vazia: 'Escreva a observação antes de enviar.',
   observacao_longa: 'A observação pode ter até 2000 caracteres.',
+  psr_ja_enviado: 'Você já respondeu o bem-estar (PSR) hoje. Para corrigir, apague a resposta de hoje no Histórico e envie de novo.',
+  peso_ja_enviado: 'Você já registrou o peso hoje. Para corrigir, apague o registro de hoje no Histórico e envie de novo.',
+  pr_invalido: 'Informe uma carga maior que zero e de até 500 kg.',
+  exercicio_invalido: 'Esse exercício não está no catálogo do clube (ou não pede PR).',
   'duplicate key': 'Já existe um adversário cadastrado com este nome.',
 };
 
@@ -278,5 +282,88 @@ export async function deleteAthleteObservation(token: string, id: string): Promi
 /** "Apagar para mim": tira a ficha só da lista deste atleta (oculto = false mostra de novo). */
 export async function setAthleteAdversaryHidden(token: string, id: string, oculto: boolean): Promise<void> {
   const { error } = await client().rpc('athlete_set_adversario_oculto', { p_token: token, p_id: id, p_oculto: oculto });
+  if (error) throw toAuthError(error);
+}
+
+// ---------- Preparação física (PRs e treinos físicos) ----------
+export interface CatalogExercise {
+  id: string;
+  nome: string;
+}
+
+export interface AthletePr {
+  id: string;
+  exercicio: string;
+  peso_pr: number;
+  updated_at?: string;
+}
+
+/** Exercícios do catálogo do clube que pedem PR e os PRs do atleta logado. */
+export async function listAthletePrs(token: string): Promise<{ catalog: CatalogExercise[]; prs: AthletePr[] }> {
+  const { data, error } = await client().rpc('athlete_list_prs', { p_token: token });
+  if (error) throw toAuthError(error);
+  const d = (data ?? {}) as { catalog?: CatalogExercise[]; prs?: AthletePr[] };
+  return { catalog: d.catalog ?? [], prs: (d.prs ?? []).map((p) => ({ ...p, peso_pr: Number(p.peso_pr) })) };
+}
+
+/** Grava ou atualiza o PR (carga de 1 repetição, em kg) num exercício do catálogo. */
+export async function saveAthletePr(token: string, exercicio: string, peso: number): Promise<void> {
+  const { error } = await client().rpc('athlete_save_pr', { p_token: token, p_exercicio: exercicio, p_peso: peso });
+  if (error) throw toAuthError(error);
+}
+
+export async function deleteAthletePr(token: string, id: string): Promise<void> {
+  const { error } = await client().rpc('athlete_delete_pr', { p_token: token, p_id: id });
+  if (error) throw toAuthError(error);
+}
+
+export interface WorkoutPrescription {
+  id: string;
+  bloco: string;
+  exercicio: string;
+  series: number;
+  repeticoes: string;
+  usa_pr: boolean;
+  porcentagem_pr?: number | null;
+  observacoes_tecnico?: string | null;
+}
+
+export interface AthleteWorkout {
+  prescriptions: WorkoutPrescription[];
+  /** PR por exercício (nome em minúsculas, sem espaços nas pontas) */
+  prs: Record<string, number>;
+  /** Preenchido quando o atleta já concluiu este treino (em qualquer aparelho) */
+  completion: { duration_minutes: number; completed_at: string } | null;
+}
+
+/** Ficha do treino físico: exercícios, PRs do atleta e se ele já concluiu. */
+export async function getAthleteWorkout(token: string, sessionId: string): Promise<AthleteWorkout> {
+  const { data, error } = await client().rpc('athlete_get_workout', { p_token: token, p_session: sessionId });
+  if (error) throw toAuthError(error);
+  const d = (data ?? {}) as {
+    prescriptions?: WorkoutPrescription[];
+    prs?: { exercicio: string; peso_pr: number }[];
+    completion?: AthleteWorkout['completion'];
+  };
+  const prs: Record<string, number> = {};
+  for (const p of d.prs ?? []) prs[p.exercicio.toLowerCase().trim()] = Number(p.peso_pr);
+  return {
+    prescriptions: (d.prescriptions ?? []).map((p) => ({
+      ...p,
+      series: Number(p.series),
+      porcentagem_pr: p.porcentagem_pr === null || p.porcentagem_pr === undefined ? null : Number(p.porcentagem_pr),
+    })),
+    prs,
+    completion: d.completion ?? null,
+  };
+}
+
+/** Marca o treino físico como concluído (a duração vai junto para a PSE). */
+export async function completeAthleteWorkout(token: string, sessionId: string, durationMinutes: number): Promise<void> {
+  const { error } = await client().rpc('athlete_complete_workout', {
+    p_token: token,
+    p_session: sessionId,
+    p_duration_minutes: durationMinutes,
+  });
   if (error) throw toAuthError(error);
 }

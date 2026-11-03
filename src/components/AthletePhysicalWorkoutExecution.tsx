@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { completeAthleteWorkout, getAthleteWorkout, WorkoutPrescription } from '../lib/athleteAuth';
 import {
   Dumbbell, Play, Square, Loader2, Clock, ArrowRight,
   AlertCircle, CheckCircle2, Eye, ArrowLeft,
@@ -10,22 +10,6 @@ import {
   getPlateColor,
   PlateWeight,
 } from '../lib/barbellCalculator';
-
-interface Prescription {
-  id: string;
-  bloco: string;
-  exercicio: string;
-  series: number | string;
-  repeticoes: string;
-  usa_pr: boolean;
-  porcentagem_pr?: number | null;
-  observacoes_tecnico?: string | null;
-}
-
-interface AthletePr {
-  exercicio: string;
-  peso_pr: number;
-}
 
 interface AthletePhysicalWorkoutExecutionProps {
   token: string;
@@ -149,6 +133,7 @@ function PlateVisual({
 
 // ─── Main component ──────────────────────────────────────────────────────────
 export function AthletePhysicalWorkoutExecution({
+  token,
   athleteId,
   sessionId,
   sessionName,
@@ -156,12 +141,11 @@ export function AthletePhysicalWorkoutExecution({
   onBack,
 }: AthletePhysicalWorkoutExecutionProps) {
   const [loading, setLoading] = useState(true);
-  const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
+  const [prescriptions, setPrescriptions] = useState<WorkoutPrescription[]>([]);
   const [athletePrs, setAthletePrs] = useState<Record<string, number>>({});
 
-  // LocalStorage keys unique to this athlete+session
+  // Cronômetro em andamento fica neste aparelho; o treino concluído fica no banco
   const storageKey = `workout_timer_${athleteId}_${sessionId}`;
-  const completedKey = `workout_done_${athleteId}_${sessionId}`;
 
   // ── Timer state (persistent) ──
   const [startedAt, setStartedAt] = useState<number | null>(null);
@@ -175,28 +159,17 @@ export function AthletePhysicalWorkoutExecution({
   const [completedDuration, setCompletedDuration] = useState(0);
 
   const [generalError, setGeneralError] = useState('');
+  const [finishing, setFinishing] = useState(false);
 
   // ── Plate visualization: expand state per prescription ──
   const [expandedPlates, setExpandedPlates] = useState<Set<string>>(new Set());
   const togglePlates = (id: string) =>
     setExpandedPlates((prev) => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
-
-  // Load completed state
-  useEffect(() => {
-    if (!athleteId || !sessionId) return;
-    try {
-      const done = localStorage.getItem(completedKey);
-      if (done) {
-        const parsed = JSON.parse(done);
-        setIsCompleted(true);
-        setCompletedDuration(Number(parsed.durationMinutes) || 0);
-      }
-    } catch (_) {}
-  }, [completedKey, athleteId, sessionId]);
 
   // Load timer state
   useEffect(() => {
@@ -210,7 +183,9 @@ export function AthletePhysicalWorkoutExecution({
         setTimerActive(Boolean(parsed.timerActive));
         setHasStarted(Boolean(parsed.hasStarted));
       }
-    } catch (_) {}
+    } catch {
+      /* sem armazenamento */
+    }
   }, [storageKey, athleteId, sessionId]);
 
   const persistState = (overrides: Partial<{
@@ -221,7 +196,9 @@ export function AthletePhysicalWorkoutExecution({
       localStorage.setItem(storageKey, JSON.stringify({
         startedAt, accumulatedSeconds, timerActive, hasStarted, ...overrides,
       }));
-    } catch (_) {}
+    } catch {
+      /* sem armazenamento */
+    }
   };
 
   // Tick every second when running
@@ -238,35 +215,24 @@ export function AthletePhysicalWorkoutExecution({
     return () => window.removeEventListener('beforeunload', h);
   }, [timerActive]);
 
-  // Load prescriptions + PRs
+  // Ficha, PRs e se o treino já foi concluído (em qualquer aparelho)
   useEffect(() => {
-    async function loadData() {
-      if (!supabase || !sessionId || !athleteId) {
-        setLoading(false);
-        return;
-      }
-      setLoading(true);
-      try {
-        const { data: presData } = await supabase
-          .from('workout_prescriptions').select('*')
-          .eq('training_session_id', sessionId).order('created_at');
-        if (presData) setPrescriptions(presData);
-
-        const { data: prData } = await supabase
-          .from('athlete_prs').select('*').eq('athlete_id', athleteId);
-        if (prData) {
-          const map: Record<string, number> = {};
-          prData.forEach((p: AthletePr) => { map[p.exercicio.toLowerCase().trim()] = p.peso_pr; });
-          setAthletePrs(map);
-        }
-      } catch (err) {
-        console.error('Erro ao carregar prescrições:', err);
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadData();
-  }, [sessionId, athleteId]);
+    let cancelled = false;
+    setLoading(true);
+    getAthleteWorkout(token, sessionId)
+      .then((w) => {
+        if (cancelled) return;
+        setPrescriptions(w.prescriptions);
+        setAthletePrs(w.prs);
+        setIsCompleted(Boolean(w.completion));
+        setCompletedDuration(w.completion?.duration_minutes ?? 0);
+      })
+      .catch((err) => !cancelled && setGeneralError((err as Error).message))
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [token, sessionId]);
 
   const totalSeconds =
     accumulatedSeconds +
@@ -293,21 +259,29 @@ export function AthletePhysicalWorkoutExecution({
     onBack();
   };
 
-  const handleFinishWorkout = () => {
+  const handleFinishWorkout = async () => {
     setGeneralError('');
     if (!hasStarted) {
       setGeneralError('Você precisa iniciar o cronômetro antes de concluir.');
       return;
     }
 
-    const durationMinutes = Math.max(1, Math.round(totalSeconds / 60));
+    const durationMinutes = Math.min(600, Math.max(1, Math.round(totalSeconds / 60)));
 
-    // Mark as completed in localStorage
+    setFinishing(true);
     try {
-      localStorage.setItem(completedKey, JSON.stringify({ durationMinutes }));
+      await completeAthleteWorkout(token, sessionId, durationMinutes);
+    } catch (err) {
+      setGeneralError((err as Error).message);
+      setFinishing(false);
+      return;
+    }
+    try {
       localStorage.removeItem(storageKey);
-    } catch (_) {}
-
+    } catch {
+      /* sem armazenamento */
+    }
+    setFinishing(false);
     onFinishAndGoToPse(durationMinutes);
   };
 
@@ -430,9 +404,12 @@ export function AthletePhysicalWorkoutExecution({
             <AlertCircle className="w-7 h-7 text-amber-400" />
           </div>
           <div className="space-y-1">
-            <h3 className="text-base font-bold text-white">Nenhum exercício prescrito para este treino ainda</h3>
+            <h3 className="text-base font-bold text-white">
+              {generalError ? 'Não foi possível abrir este treino' : 'Nenhum exercício prescrito para este treino ainda'}
+            </h3>
             <p className="text-xs text-slate-400 max-w-md mx-auto">
-              Seu treinador ainda não cadastrou a lista de exercícios para esta sessão. Aguarde a publicação ou solicite a prescrição para iniciar a execução.
+              {generalError ||
+                'Seu treinador ainda não cadastrou a lista de exercícios para esta sessão. Aguarde a publicação ou peça a prescrição para iniciar a execução.'}
             </p>
           </div>
           <button
@@ -613,11 +590,11 @@ export function AthletePhysicalWorkoutExecution({
             <button
               type="button"
               onClick={handleFinishWorkout}
-              disabled={!hasStarted}
+              disabled={!hasStarted || finishing}
               className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs transition-all shadow-lg shadow-emerald-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <span>Concluir Treino e Avaliar Esforço (PSE)</span>
-              <ArrowRight className="w-4 h-4" />
+              {finishing ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
             </button>
           </div>
         </div>

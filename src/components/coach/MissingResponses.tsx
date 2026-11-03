@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { BellOff, Clock } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { todayLocalISO } from '../../lib/date';
+import { nowTimeHM, stampInAppZone, todayISO } from '../../lib/date';
 import { AthleteGroup, sessionAppliesTo } from '../../lib/groups';
 import { PseRecord, PsrRecord, TrainingSession } from '../../types';
 
@@ -30,13 +30,8 @@ interface Row {
 const brDate = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 const hhmm = (t: string) => t.slice(0, 5);
 
-/** Data e hora locais (AAAA-MM-DD, HH:MM) de um envio. */
-function localStamp(iso?: string): [string, string] {
-  if (!iso) return ['', ''];
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return [`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`, `${pad(d.getHours())}:${pad(d.getMinutes())}`];
-}
+/** Data e hora (AAAA-MM-DD, HH:MM) de um envio, no horário de Brasília. */
+const localStamp = (iso?: string) => stampInAppZone(iso);
 
 /**
  * Quem não respondeu PSR/PSE até o fim do horário das notificações do clube
@@ -55,8 +50,8 @@ export const MissingResponses: React.FC<Props> = ({ days, athletes, selected, gr
   }, []);
 
   const rows = useMemo(() => {
-    const today = todayLocalISO();
-    const now = localStamp(new Date().toISOString())[1];
+    const today = todayISO();
+    const now = nowTimeHM();
     const late = (date: string, created?: string) => {
       const [d, t] = localStamp(created);
       return d > date || (d === date && t > deadline);

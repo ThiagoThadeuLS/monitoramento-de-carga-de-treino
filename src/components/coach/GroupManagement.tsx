@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useDialogs } from '../ui/Dialogs';
 import { Plus, Loader2, AlertCircle, CheckCircle2, X, Search, Pencil, Trash2, UsersRound } from 'lucide-react';
 import { AthleteGroup, AthleteRef, deleteGroup, listActiveAthletes, listGroups, saveGroup } from '../../lib/groups';
 
@@ -11,6 +12,7 @@ interface EditingGroup {
 
 /** Gestão → Grupos: subgrupos de atletas do clube (um atleta pode estar em vários). */
 export const GroupManagement: React.FC = () => {
+  const { confirm } = useDialogs();
   const [groups, setGroups] = useState<AthleteGroup[]>([]);
   const [athletes, setAthletes] = useState<AthleteRef[]>([]);
   const [loading, setLoading] = useState(true);
@@ -84,7 +86,11 @@ export const GroupManagement: React.FC = () => {
   };
 
   const handleDelete = async (g: AthleteGroup) => {
-    if (!window.confirm(`Excluir o grupo "${g.nome}"? Os atletas continuam cadastrados; treinos destinados a este grupo deixam de considerá-lo.`)) return;
+    const ok = await confirm({
+      message: `Excluir o grupo "${g.nome}"? Os atletas continuam cadastrados; treinos destinados a este grupo deixam de considerá-lo.`,
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await deleteGroup(g.id);
       flash(`Grupo "${g.nome}" excluído.`);

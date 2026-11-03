@@ -1,57 +1,67 @@
 import React, { useState } from 'react';
 import { Scale, Send, CheckCircle2, AlertCircle, Plus, Minus } from 'lucide-react';
 import { WeightRecord } from '../types';
-import { todayLocalISO } from '../lib/date';
+import { todayISO } from '../lib/date';
+
+/** Mesmos limites do banco (weight_records: 30 a 250 kg). */
+export const MIN_WEIGHT = 30;
+export const MAX_WEIGHT = 250;
 
 interface WeightFormProps {
   athleteId: string;
   athleteName?: string;
-  onSubmit: (record: Omit<WeightRecord, 'id' | 'created_at'>) => Promise<boolean>;
+  /** Último peso registrado (só sugestão: o campo começa vazio) */
+  lastWeight?: number | null;
+  /** Devolve null se salvou, ou a mensagem de erro */
+  onSubmit: (record: Omit<WeightRecord, 'id' | 'created_at'>) => Promise<string | null>;
 }
 
-export const WeightForm: React.FC<WeightFormProps> = ({ athleteId, athleteName, onSubmit }) => {
-  const [weight, setWeight] = useState<string>('75.0');
+const fmt = (v: number) => v.toFixed(1).replace('.', ',');
+
+export const WeightForm: React.FC<WeightFormProps> = ({ athleteId, athleteName, lastWeight, onSubmit }) => {
+  // Começa vazio: um valor pronto facilita enviar sem querer
+  const [weight, setWeight] = useState<string>('');
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
+  const parsed = parseFloat(weight.replace(',', '.'));
+
+  // Os botões +/- partem do valor digitado ou, se vazio, do último peso
   const handleAdjust = (delta: number) => {
-    const current = parseFloat(weight) || 75.0;
-    const next = Math.max(30, Math.min(200, current + delta));
+    const current = Number.isFinite(parsed) ? parsed : lastWeight ?? 75;
+    const next = Math.max(MIN_WEIGHT, Math.min(MAX_WEIGHT, current + delta));
     setWeight(next.toFixed(1));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!athleteId) {
-      setErrorMsg('Por favor, selecione seu nome no topo antes de enviar.');
+      setErrorMsg('Sua sessão expirou. Entre novamente.');
       return;
     }
 
-    const numericWeight = parseFloat(weight.replace(',', '.'));
-    if (isNaN(numericWeight) || numericWeight <= 30 || numericWeight >= 250) {
-      setErrorMsg('Por favor, informe um peso válido entre 30 e 250 kg.');
+    if (!Number.isFinite(parsed) || parsed < MIN_WEIGHT || parsed > MAX_WEIGHT) {
+      setErrorMsg(`Informe um peso entre ${MIN_WEIGHT} e ${MAX_WEIGHT} kg.`);
       return;
     }
 
     setSubmitting(true);
     setErrorMsg('');
 
-    const todayStr = todayLocalISO();
-
-    const ok = await onSubmit({
+    const error = await onSubmit({
       athlete_id: athleteId,
-      date: todayStr,
-      weight: parseFloat(numericWeight.toFixed(2)),
+      date: todayISO(),
+      weight: Math.round(parsed * 100) / 100,
     });
 
     setSubmitting(false);
 
-    if (ok) {
+    if (!error) {
       setSuccess(true);
       setTimeout(() => setSuccess(false), 4000);
     } else {
-      setErrorMsg('Erro ao salvar peso. Tente novamente.');
+      setErrorMsg(error);
     }
   };
 
@@ -81,16 +91,19 @@ export const WeightForm: React.FC<WeightFormProps> = ({ athleteId, athleteName, 
           <input
             type="number"
             step="0.05"
-            min="30"
-            max="250"
+            min={MIN_WEIGHT}
+            max={MAX_WEIGHT}
             inputMode="decimal"
             value={weight}
             onChange={(e) => setWeight(e.target.value)}
             className="w-48 text-center font-black text-5xl sm:text-6xl text-white bg-slate-800/80 border-2 border-slate-700 rounded-2xl py-3 px-2 focus:outline-none focus:border-sky-500 focus:ring-4 focus:ring-sky-500/20 transition-all"
-            placeholder="75.0"
+            placeholder={lastWeight ? fmt(lastWeight) : '75,0'}
           />
           <span className="text-2xl font-bold text-slate-400">kg</span>
         </div>
+        {lastWeight ? (
+          <p className="text-xs text-slate-500">Último registro: {fmt(lastWeight)} kg</p>
+        ) : null}
 
         {/* Quick Steppers (+/-) for convenient mobile taps */}
         <div className="flex items-center justify-center gap-2 pt-2">
@@ -140,7 +153,7 @@ export const WeightForm: React.FC<WeightFormProps> = ({ athleteId, athleteName, 
           <CheckCircle2 className="w-6 h-6 flex-shrink-0 text-emerald-400" />
           <div>
             <p className="font-bold">Peso registrado com sucesso!</p>
-            <p className="text-xs text-emerald-300/80">Valor de {weight} kg computado para {athleteName || 'o atleta'}.</p>
+            <p className="text-xs text-emerald-300/80">Valor de {weight.replace('.', ',')} kg computado para {athleteName || 'o atleta'}.</p>
           </div>
         </div>
       )}
@@ -148,7 +161,7 @@ export const WeightForm: React.FC<WeightFormProps> = ({ athleteId, athleteName, 
       {/* Submit Button */}
       <button
         type="submit"
-        disabled={submitting || !athleteId}
+        disabled={submitting || !athleteId || !weight.trim()}
         className="w-full py-4 px-6 rounded-xl font-bold text-base bg-sky-500 hover:bg-sky-400 active:scale-[0.99] text-slate-950 shadow-lg shadow-sky-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
       >
         <Send className="w-5 h-5" />

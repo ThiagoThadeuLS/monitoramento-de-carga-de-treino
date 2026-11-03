@@ -1,7 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { History, Loader2, AlertCircle, Flame, HeartPulse, Scale, Pencil, Trash2, ShieldCheck, Ban } from 'lucide-react';
 import { AthleteHistory as HistoryData, deleteAthleteRecord, getAthleteHistory } from '../lib/athleteAuth';
-import { addDaysISO, todayLocalISO } from '../lib/date';
+import { addDaysISO, todayISO } from '../lib/date';
 import { DailyStatsChart } from './coach/DailyStatsChart';
 import { dailyLoads, formatUA, loadMetrics, sessionLoad } from '../lib/load';
 import { mean } from '../lib/stats';
@@ -37,10 +37,10 @@ export const AthleteHistory: React.FC<{
   const [confirm, setConfirm] = useState<{ entry: Entry; correct: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
-  const today = todayLocalISO();
+  const today = todayISO();
   const from = addDaysISO(today, -(range - 1));
 
-  const load = () => {
+  const load = useCallback(() => {
     setLoading(true);
     setError('');
     // 27 dias antes para calcular a carga crônica
@@ -48,8 +48,8 @@ export const AthleteHistory: React.FC<{
       .then(setData)
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
-  };
-  useEffect(load, [range]);
+  }, [token, from, today]);
+  useEffect(load, [load]);
 
   const days = useMemo(() => {
     const out: string[] = [];

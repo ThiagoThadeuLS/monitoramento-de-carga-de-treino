@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { Dumbbell, Calendar, Clock, Play, Loader2 } from 'lucide-react';
-import { todayLocalISO } from '../lib/date';
+import { todayISO } from '../lib/date';
 import { getAthleteSchedule } from '../lib/athleteAuth';
 import { TrainingSession } from '../types';
+import { isPhysicalTraining } from '../data/constants';
 
 interface AthleteWorkoutsTabProps {
   token: string;
@@ -13,7 +14,7 @@ interface AthleteWorkoutsTabProps {
 export function AthleteWorkoutsTab({ token, onStartWorkout }: AthleteWorkoutsTabProps) {
   const [loading, setLoading] = useState(true);
   const [sessions, setSessions] = useState<TrainingSession[]>([]);
-  const today = todayLocalISO();
+  const today = todayISO();
 
   useEffect(() => {
     async function loadTodayPhysicalWorkouts() {
@@ -22,14 +23,7 @@ export function AthleteWorkoutsTab({ token, onStartWorkout }: AthleteWorkoutsTab
 
       try {
         const data = await getAthleteSchedule(token, today, today);
-        console.log('[AthleteWorkoutsTab] Sessões retornadas pela RPC hoje:', data);
-        const fisicos = (data || []).filter((s) => {
-          const tipo = (s.training_type || '').toLowerCase();
-          console.log('[AthleteWorkoutsTab] Sessão:', s.name, '| tipo:', tipo);
-          return tipo.includes('fisico') || tipo.includes('físico');
-        });
-        console.log('[AthleteWorkoutsTab] Treinos físicos filtrados:', fisicos);
-        setSessions(fisicos);
+        setSessions((data || []).filter((s) => isPhysicalTraining(s.training_type)));
       } catch (err) {
         console.error('Erro ao carregar treinos físicos de hoje:', err);
       } finally {
@@ -57,7 +51,7 @@ export function AthleteWorkoutsTab({ token, onStartWorkout }: AthleteWorkoutsTab
         <div className="bg-slate-900/60 border border-slate-800 rounded-3xl p-12 text-center space-y-3">
           <Calendar className="w-10 h-10 text-slate-600 mx-auto" />
           <p className="text-sm font-bold text-white">Nenhum treino físico agendado para hoje.</p>
-          <p className="text-xs text-slate-400">Verifica o cronograma completo na aba "Agenda" se necessário.</p>
+          <p className="text-xs text-slate-400">Confira o cronograma completo na aba "Agenda", se precisar.</p>
         </div>
       ) : (
         <div className="space-y-3">

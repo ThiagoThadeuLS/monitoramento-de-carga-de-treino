@@ -69,7 +69,7 @@ export const CoachLogin: React.FC<CoachLoginProps> = ({
       if (data.session) {
         onLoginSuccess();
       }
-    } catch (err: any) {
+    } catch {
       setErrorMsg('Falha na comunicação com o servidor de autenticação.');
     } finally {
       setLoading(false);

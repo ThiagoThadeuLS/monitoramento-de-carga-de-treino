@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { Flame, CheckCircle2, AlertCircle, Send, Target, Swords, Dumbbell, Timer } from 'lucide-react';
 import { PseRecord } from '../types';
-import { todayLocalISO } from '../lib/date';
+import { todayISO } from '../lib/date';
 
 interface PseFormProps {
   athleteId: string;
   athleteName?: string;
-  onSubmit: (record: Omit<PseRecord, 'id' | 'created_at'>) => Promise<boolean>;
+  /** Devolve null se salvou, ou a mensagem de erro */
+  onSubmit: (record: Omit<PseRecord, 'id' | 'created_at'>) => Promise<string | null>;
   /** Duração (min) de cada tipo de treino programado para hoje, para sugerir no campo */
   scheduledDurations?: Record<string, number>;
   /** Tipo do treino de hoje (o último que já começou), pré-selecionado */
@@ -90,7 +91,7 @@ export const PseForm: React.FC<PseFormProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!athleteId) {
-      setErrorMsg('Por favor, selecione seu nome no topo antes de enviar.');
+      setErrorMsg('Sua sessão expirou. Entre novamente.');
       return;
     }
     if (didNotTrain && !observations.trim()) {
@@ -105,9 +106,9 @@ export const PseForm: React.FC<PseFormProps> = ({
     setSubmitting(true);
     setErrorMsg('');
 
-    const todayStr = todayLocalISO();
+    const todayStr = todayISO();
 
-    const ok = await onSubmit({
+    const error = await onSubmit({
       athlete_id: athleteId,
       date: todayStr,
       training_type: didNotTrain ? undefined : trainingType,
@@ -119,13 +120,13 @@ export const PseForm: React.FC<PseFormProps> = ({
 
     setSubmitting(false);
 
-    if (ok) {
+    if (!error) {
       setSuccess(true);
       setTimeout(() => setSuccess(false), 4000);
       setObservations('');
       setDurationTouched(false);
     } else {
-      setErrorMsg('Erro ao registrar resposta. Tente novamente.');
+      setErrorMsg(error);
     }
   };
 

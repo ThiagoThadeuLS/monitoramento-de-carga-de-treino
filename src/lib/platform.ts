@@ -50,7 +50,7 @@ export function platformError(err: any): string {
   if (/signups? (not allowed|are disabled)/i.test(msg)) return 'Cadastros estão desligados no Supabase. Ligue "Allow new users to sign up" em Authentication.';
   if (/password/i.test(msg) && /(at least|weak|short)/i.test(msg)) return 'Senha fraca: use pelo menos 8 caracteres, misturando letras e números.';
   if (/exceeded the maximum allowed size|too large/i.test(msg)) return 'A imagem do escudo precisa ter no máximo 1 MB.';
-  if (/mime type|invalid_mime/i.test(msg)) return 'Use uma imagem PNG, JPG, WEBP ou SVG para o escudo.';
+  if (/mime type|invalid_mime/i.test(msg)) return 'Use uma imagem PNG, JPG ou WEBP para o escudo.';
   return `Erro: ${msg}`;
 }
 
@@ -76,11 +76,13 @@ export const listAccessLog = () => rpc<AccessLogEntry[]>('owner_list_access_log'
 export const clubInviteInfo = (token: string) =>
   rpc<{ email: string; expires_at: string } | null>('club_invite_info', { p_token: token });
 
-export const ESCUDO_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'];
+// Sem SVG: um SVG pode carregar script e o bucket dos escudos é público
+const ESCUDO_EXT: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' };
+export const ESCUDO_TYPES = Object.keys(ESCUDO_EXT);
 export const ESCUDO_MAX_BYTES = 1024 * 1024;
 
 export function checkEscudoFile(file: File): string | null {
-  if (!ESCUDO_TYPES.includes(file.type)) return 'Use uma imagem PNG, JPG, WEBP ou SVG para o escudo.';
+  if (!ESCUDO_TYPES.includes(file.type)) return 'Use uma imagem PNG, JPG ou WEBP para o escudo.';
   if (file.size > ESCUDO_MAX_BYTES) return 'A imagem do escudo precisa ter no máximo 1 MB.';
   return null;
 }
@@ -90,7 +92,8 @@ export async function uploadEscudo(clubId: string, file: File): Promise<string> 
   if (!supabase) throw new Error('Supabase não configurado.');
   const problem = checkEscudoFile(file);
   if (problem) throw new Error(problem);
-  const ext = (file.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '') || 'png';
+  // Extensão pelo tipo do arquivo (o banco só aceita .png, .jpg e .webp na pasta do clube)
+  const ext = ESCUDO_EXT[file.type];
   const path = `${clubId}/escudo-${Date.now()}.${ext}`;
   const { error } = await supabase.storage.from('escudos').upload(path, file, { contentType: file.type, upsert: false });
   if (error) throw new Error(platformError(error));
