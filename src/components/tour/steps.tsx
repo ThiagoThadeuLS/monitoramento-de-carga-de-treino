@@ -168,7 +168,7 @@ export function coachTourSteps(nome: string, isAdmin: boolean, go: (area: CoachT
             <><B>Hoje</B>: respostas do dia e quem está em risco de peso na próxima competição</>,
             <><B>Análises</B>: período (gráficos, alertas, quem não respondeu) e carga interna</>,
             <><B>Planejamento</B>: agenda, fichas de preparação física e competições</>,
-            <><B>Elenco</B>: atletas, grupos, fisioterapia e adversários</>,
+            <><B>Elenco</B>: atletas, grupos e adversários</>,
           ]}
         />
       ),
@@ -363,17 +363,6 @@ export function coachTourSteps(nome: string, isAdmin: boolean, go: (area: CoachT
       before: to('elenco', 'grupos'),
       title: 'Elenco: grupos',
       body: <p>Crie grupos (ex.: Pesados, Sub-18). Um atleta pode estar em vários. Os grupos servem para programar treinos e filtrar as análises.</p>,
-    },
-    {
-      target: 'coach-content',
-      before: to('elenco', 'fisioterapia'),
-      title: 'Elenco: fisioterapia',
-      body: (
-        <p>
-          Acompanhe quem está em tratamento: <B>restrição</B> para o treino, <B>previsão de retorno</B>, dor e critérios de liberação. As notas clínicas
-          ficam só com a fisioterapia, que tem uma área própria do clube.
-        </p>
-      ),
     },
     isAdmin && {
       target: 'coach-content',

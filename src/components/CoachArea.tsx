@@ -30,7 +30,6 @@ const AdversaryManagement = lazyNamed(() => import('./coach/AdversaryManagement'
 const TeamManagement = lazyNamed(() => import('./coach/TeamManagement'), (m) => m.TeamManagement);
 const ThemeSettings = lazyNamed(() => import('./coach/ThemeSettings'), (m) => m.ThemeSettings);
 const AthleteProfile = lazyNamed(() => import('./coach/AthleteProfile'), (m) => m.AthleteProfile);
-const ReportBuilder = lazyNamed(() => import('./coach/report/ReportBuilder'), (m) => m.ReportBuilder);
 const Tour = lazyNamed(() => import('./tour/Tour'), (m) => m.Tour);
 
 type CoachAreaId = 'hoje' | 'analises' | 'planejamento' | 'elenco' | 'config';
@@ -52,7 +51,6 @@ const AREAS: {
     subs: [
       { id: 'periodo', label: 'Período', icon: LineChart },
       { id: 'carga', label: 'Carga interna', icon: Gauge },
-      { id: 'relatorio', label: 'Relatório', icon: BarChart3 },
     ],
   },
   {
@@ -102,7 +100,7 @@ export interface CoachProfile {
   coach: {
     nome: string;
     email: string;
-    role: 'admin' | 'treinador' | 'fisio';
+    role: 'admin' | 'treinador';
     active: boolean;
     must_change_password: boolean;
     club: ProfileClub;
@@ -459,7 +457,6 @@ export const CoachArea: React.FC<{ recovery?: boolean }> = ({ recovery = false }
         )}
         {pane('analises/periodo', <PeriodAnalysis />)}
         {pane('analises/carga', <LoadAnalysis onOpenProfile={setProfileId} />)}
-        {pane('analises/relatorio', <ReportBuilder coachName={coach!.nome} />)}
         {pane('planejamento/agenda', <TrainingSchedule onOpenWorkout={(id: string) => { setWorkoutSession(id); go('planejamento', 'fisica'); }} />)}
         {pane('planejamento/fisica', <PhysicalWorkoutBuilder sessionId={workoutSession} />)}
         {pane('planejamento/competicoes', <CompetitionManagement />)}

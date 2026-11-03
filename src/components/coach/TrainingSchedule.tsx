@@ -10,6 +10,7 @@ import { WeightReminderSettings } from './WeightReminderSettings';
 import { TrainingSession } from '../../types';
 import { AthleteGroup, AthleteRef, audienceLabel, groupError, listActiveAthletes, listGroups } from '../../lib/groups';
 import { Users as UsersIcon, Search } from 'lucide-react';
+import { PushStatusCard } from './PushStatusCard';
 
 // Mesma escala de Foster da PSE do atleta
 const FOSTER: Record<number, string> = {
@@ -65,8 +66,6 @@ interface TrainingScheduleProps {
   onSelectSession?: (session: TrainingSession) => void;
   /** Treinador: abre a ficha (exercícios) de um treino físico */
   onOpenWorkout?: (sessionId: string) => void;
-  renderExtra?: (sessions: TrainingSession[], dayISO: string) => TrainingSession[];
-  renderSession?: (s: TrainingSession) => React.ReactNode;
 }
 
 function friendlyError(err: any) {
@@ -79,7 +78,7 @@ function friendlyError(err: any) {
   return err?.code === 'sessao_invalida' ? msg : `Erro: ${msg}`;
 }
 
-export const TrainingSchedule: React.FC<TrainingScheduleProps> = ({ readOnly = false, fetchSessions, listOnly = false, onSelectSession, onOpenWorkout, renderExtra, renderSession }) => {
+export const TrainingSchedule: React.FC<TrainingScheduleProps> = ({ readOnly = false, fetchSessions, listOnly = false, onSelectSession, onOpenWorkout }) => {
   const { confirm } = useDialogs();
   const [weekStart, setWeekStart] = useState(() => startOfWeekISO(todayISO()));
   const [sessions, setSessions] = useState<TrainingSession[]>([]);
@@ -248,7 +247,7 @@ export const TrainingSchedule: React.FC<TrainingScheduleProps> = ({ readOnly = f
     }
   };
 
-  const sessionCard = (s: any, compact = false) => (
+  const sessionCard = (s: TrainingSession, compact = false) => (
     <button
       key={s.id}
       type="button"
@@ -293,6 +292,7 @@ export const TrainingSchedule: React.FC<TrainingScheduleProps> = ({ readOnly = f
     <div className="space-y-4">
       {/* Lembrete de pesagem (só o treinador do clube) */}
       {!readOnly && !fetchSessions && <WeightReminderSettings />}
+      {!readOnly && !fetchSessions && <PushStatusCard />}
 
       {/* Navegação da semana */}
       <div data-tour="schedule-week" className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl flex flex-col md:flex-row md:items-center gap-3">
@@ -378,8 +378,6 @@ export const TrainingSchedule: React.FC<TrainingScheduleProps> = ({ readOnly = f
           <div className={listOnly ? 'hidden' : 'hidden lg:grid grid-cols-7 gap-2'}>
             {days.map((d) => {
               const isToday = d === today;
-              const baseList = byDay.get(d)!;
-              const list = renderExtra ? renderExtra(baseList, d) : baseList;
               return (
                 <div
                   key={d}
@@ -394,7 +392,7 @@ export const TrainingSchedule: React.FC<TrainingScheduleProps> = ({ readOnly = f
                     <p className="text-[11px] text-slate-500">{dayMonth(d)}{isToday && ' • hoje'}</p>
                   </div>
                   <div className="space-y-2 flex-1">
-                    {list.map((s: any) => (renderSession && (s?.training_type === 'fisio' || s?.virtual) ? <div key={s.id}>{renderSession(s)}</div> : sessionCard(s, true)))}
+                    {byDay.get(d)!.map((s) => sessionCard(s, true))}
                   </div>
                   {!readOnly && (
                   <button
@@ -415,8 +413,7 @@ export const TrainingSchedule: React.FC<TrainingScheduleProps> = ({ readOnly = f
           <div className={listOnly ? 'space-y-3' : 'lg:hidden space-y-3'}>
             {days.map((d) => {
               const isToday = d === today;
-              const baseList = byDay.get(d)!;
-              const list = renderExtra ? renderExtra(baseList, d) : baseList;
+              const list = byDay.get(d)!;
               return (
                 <section
                   key={d}
@@ -445,7 +442,7 @@ export const TrainingSchedule: React.FC<TrainingScheduleProps> = ({ readOnly = f
                     <p className="text-xs text-slate-500 px-1">Sem treinos.</p>
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {list.map((s: any) => (renderSession && (s?.training_type === 'fisio' || s?.virtual) ? <div key={s.id}>{renderSession(s)}</div> : sessionCard(s)))}
+                      {list.map((s) => sessionCard(s))}
                     </div>
                   )}
                 </section>
