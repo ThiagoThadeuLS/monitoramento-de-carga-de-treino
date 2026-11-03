@@ -3010,8 +3010,13 @@
   alter table public.club_exercises add column if not exists exige_pr boolean default true;
   alter table public.club_exercises add column if not exists created_at timestamp with time zone default now();
 
+  -- Versões antigas exigiam nome único no sistema todo; agora é único por clube
+  -- (índice club_exercises_nome_unico abaixo). Só troca a regra, não apaga dados.
+  alter table public.club_exercises drop constraint if exists club_exercises_nome_key;
+  drop index if exists public.club_exercises_nome_key;
+
   -- Catálogo antigo, sem clube (nada é apagado): os exercícios ficam com o clube mais
-  -- antigo e os outros clubes recebem uma cópia
+  -- antigo e os outros clubes recebem uma cópia (sem repetir nome que o clube já tem)
   do $$
   declare
     v_first uuid := (select id from public.clubs order by created_at, id limit 1);
@@ -3020,7 +3025,11 @@
       insert into public.club_exercises (club_id, nome, bloco, exige_pr)
         select k.id, e.nome, e.bloco, coalesce(e.exige_pr, true)
         from public.club_exercises e cross join public.clubs k
-        where e.club_id is null and k.id <> v_first;
+        where e.club_id is null and k.id <> v_first
+          and not exists (
+            select 1 from public.club_exercises x
+            where x.club_id = k.id and lower(trim(x.nome)) = lower(trim(e.nome))
+          );
       update public.club_exercises set club_id = v_first where club_id is null;
     end if;
   end $$;
