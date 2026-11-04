@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { useDialogs } from '../ui/Dialogs';
 import {
-  UserPlus, Loader2, AlertCircle, CheckCircle2, X, Copy, MessageCircle, ShieldCheck, UserX, UserCheck, KeyRound, Mail,
+  UserPlus, Loader2, AlertCircle, CheckCircle2, X, Copy, MessageCircle, ShieldCheck, UserX, UserCheck, KeyRound, Mail, ImageOff,
 } from 'lucide-react';
 import { TeamMember, addCoach, listTeam, setCoachActive, setCoachRole } from '../../lib/team';
 import { ClubCrest, ClubInfo } from '../../lib/club';
 import { uploadEscudo } from '../../lib/platform';
 import { ImagePlus } from 'lucide-react';
+import { PhotoPicker } from '../ui/PhotoPicker';
+import { removePhoto, uploadPhoto } from '../../lib/photos';
 
 interface TeamManagementProps {
   /** user_id do admin logado (não pode se desativar/rebaixar por engano) */
@@ -39,6 +41,26 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({ currentUserId, c
       setError(err.message);
     } finally {
       setUploading(false);
+    }
+  };
+
+  const changeMemberPhoto = async (member: TeamMember, file: File) => {
+    setError('');
+    await uploadPhoto('coach', member.user_id, club.id, file, member.photo_url);
+    showFeedback(`Foto de ${member.nome} atualizada.`);
+    await load();
+  };
+
+  const removeMemberPhoto = async (member: TeamMember) => {
+    const ok = await confirm({ message: `Remover a foto de ${member.nome}?`, confirmLabel: 'Remover', danger: true });
+    if (!ok) return;
+    setError('');
+    try {
+      await removePhoto('coach', member.user_id, club.id, member.photo_url);
+      showFeedback(`Foto de ${member.nome} removida.`);
+      await load();
+    } catch (err: any) {
+      setError(err.message);
     }
   };
 
@@ -196,6 +218,17 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({ currentUserId, c
           {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : m.active ? <UserX className="w-3.5 h-3.5" /> : <UserCheck className="w-3.5 h-3.5" />}
           {m.active ? 'Desativar' : 'Reativar'}
         </button>
+        {m.photo_url && (
+          <button
+            type="button"
+            onClick={() => removeMemberPhoto(m)}
+            disabled={busy}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700 text-xs font-bold disabled:opacity-40"
+            title={`Remover a foto de ${m.nome}`}
+          >
+            <ImageOff className="w-3.5 h-3.5" /> Foto
+          </button>
+        )}
       </div>
     );
   };
@@ -260,11 +293,22 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({ currentUserId, c
             {team.map((m) => (
               <li key={m.user_id} className={`bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3 ${m.active ? '' : 'opacity-70'}`}>
                 <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="font-bold text-white truncate">
-                      {m.nome} {m.user_id === currentUserId && <span className="text-xs font-normal text-slate-500">(você)</span>}
-                    </p>
-                    <p className="text-xs text-slate-400 flex items-center gap-1 min-w-0"><Mail className="w-3 h-3 flex-shrink-0" /><span className="truncate">{m.email}</span></p>
+                  <div className="flex items-start gap-2.5 min-w-0">
+                    <PhotoPicker
+                      name={m.nome}
+                      src={m.photo_url}
+                      onPick={(file) => changeMemberPhoto(m, file)}
+                      onError={setError}
+                      className="w-10 h-10"
+                      textClassName="text-xs"
+                      title={`Trocar foto de ${m.nome}`}
+                    />
+                    <div className="min-w-0">
+                      <p className="font-bold text-white truncate">
+                        {m.nome} {m.user_id === currentUserId && <span className="text-xs font-normal text-slate-500">(você)</span>}
+                      </p>
+                      <p className="text-xs text-slate-400 flex items-center gap-1 min-w-0"><Mail className="w-3 h-3 flex-shrink-0" /><span className="truncate">{m.email}</span></p>
+                    </div>
                   </div>
                   <RoleBadge m={m} />
                 </div>
@@ -289,10 +333,23 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({ currentUserId, c
                 {team.map((m) => (
                   <tr key={m.user_id} className={`hover:bg-slate-800/40 ${m.active ? '' : 'opacity-70'}`}>
                     <td className="py-3.5 px-4">
-                      <p className="font-bold text-white">
-                        {m.nome} {m.user_id === currentUserId && <span className="text-xs font-normal text-slate-500">(você)</span>}
-                      </p>
-                      <p className="text-xs text-slate-400 break-all">{m.email}</p>
+                      <div className="flex items-center gap-2.5">
+                        <PhotoPicker
+                          name={m.nome}
+                          src={m.photo_url}
+                          onPick={(file) => changeMemberPhoto(m, file)}
+                          onError={setError}
+                          className="w-10 h-10"
+                          textClassName="text-xs"
+                          title={`Trocar foto de ${m.nome}`}
+                        />
+                        <div className="min-w-0">
+                          <p className="font-bold text-white">
+                            {m.nome} {m.user_id === currentUserId && <span className="text-xs font-normal text-slate-500">(você)</span>}
+                          </p>
+                          <p className="text-xs text-slate-400 break-all">{m.email}</p>
+                        </div>
+                      </div>
                     </td>
                     <td className="py-3.5 px-3"><RoleBadge m={m} /></td>
                     <td className="py-3.5 px-3"><StatusBadge m={m} /></td>

@@ -12,6 +12,9 @@ import { ClubCrest, ClubInfo, useClub } from '../lib/club';
 import { supabase } from '../lib/supabase';
 import { CoachLogin } from './CoachLogin';
 import { Athlete } from '../types';
+import { PhotoPicker } from './ui/PhotoPicker';
+import { uploadPhoto } from '../lib/photos';
+import { useDialogs } from './ui/Dialogs';
 import { lazyNamed } from '../lib/lazy';
 import { useHistoryState } from '../lib/navigation';
 import { useTodayISO } from '../lib/useToday';
@@ -102,6 +105,7 @@ export interface CoachProfile {
   coach: {
     nome: string;
     email: string;
+    photo_url?: string | null;
     role: 'admin' | 'treinador';
     active: boolean;
     must_change_password: boolean;
@@ -112,6 +116,7 @@ export interface CoachProfile {
 export const CoachArea: React.FC<{ recovery?: boolean }> = ({ recovery = false }) => {
   const [recoveryMode, setRecoveryMode] = useState(recovery);
   const { setClub } = useClub();
+  const { notify } = useDialogs();
   const [session, setSession] = useState<any>(null);
   const [profile, setProfile] = useState<CoachProfile | null>(null);
   const [profileError, setProfileError] = useState('');
@@ -372,6 +377,20 @@ export const CoachArea: React.FC<{ recovery?: boolean }> = ({ recovery = false }
       {/* Cabeçalho da comissão técnica */}
       <div data-tour="coach-banner" className="bg-slate-900/90 border border-slate-800 rounded-3xl p-4 sm:p-5 shadow-xl flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0 flex-1">
+          <PhotoPicker
+            name={coach!.nome}
+            src={coach!.photo_url}
+            onPick={async (file) => {
+              if (!userId) return;
+              await uploadPhoto('coach', userId, viewClub.id, file, coach!.photo_url);
+              notify('Foto atualizada.', 'success');
+              reloadProfile();
+            }}
+            onError={(message) => notify(message, 'error')}
+            className="w-11 h-11"
+            textClassName="text-sm"
+            title="Trocar minha foto"
+          />
           <ClubCrest club={viewClub} className="w-10 h-12 flex-shrink-0" />
           <div className="min-w-0 flex-1">
             <h2 className="text-base sm:text-lg font-black text-white tracking-tight truncate">Painel da Comissão Técnica</h2>

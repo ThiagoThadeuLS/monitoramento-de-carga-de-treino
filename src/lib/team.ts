@@ -8,6 +8,7 @@ export interface TeamMember {
   active: boolean;
   must_change_password: boolean;
   created_at: string;
+  photo_url?: string | null;
 }
 
 const MESSAGES: Record<string, string> = {
@@ -45,7 +46,7 @@ export async function listTeam(): Promise<TeamMember[]> {
   if (!supabase) return [];
   const { data, error } = await supabase
     .from('coaches')
-    .select('user_id, nome, email, role, active, must_change_password, created_at')
+    .select('user_id, nome, email, role, active, must_change_password, created_at, photo_url')
     .order('nome');
   if (error) throw new Error(teamError(error));
   return (data ?? []) as TeamMember[];

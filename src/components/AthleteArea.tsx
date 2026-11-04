@@ -1,6 +1,6 @@
 import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { lazyNamed } from '../lib/lazy';
-import { ArrowLeft, CalendarDays, HelpCircle, History, Home, Loader2, LogOut, Shield, ShieldAlert, Trophy, User } from 'lucide-react';
+import { ArrowLeft, CalendarDays, HelpCircle, History, Home, Loader2, LogOut, Shield, ShieldAlert, Trophy } from 'lucide-react';
 import { TERMS_VERSION, TermsGate } from './TermsGate';
 import { isPhysicalTraining, PHYSICAL_TRAINING } from '../data/constants';
 import { useDialogs } from './ui/Dialogs';
@@ -17,6 +17,7 @@ import { AthleteLogin } from './AthleteLogin';
 import { AthleteChangePassword } from './AthleteChangePassword';
 import { AthleteToday, TodayAction, sessionMinutes } from './athlete/AthleteToday';
 import { AthleteCompetitionList } from './athlete/AthleteCompetitionList';
+import { Avatar } from './ui/Avatar';
 import { PseRecord, PsrRecord, WeightRecord } from '../types';
 import { isSupabaseConfigured } from '../lib/supabase';
 import { useHistoryState } from '../lib/navigation';
@@ -460,9 +461,13 @@ export const AthleteArea: React.FC = () => {
       )}
 
       <div data-tour="athlete-card" className="w-full bg-slate-800/80 border border-slate-700/80 rounded-2xl p-3.5 shadow-xl backdrop-blur flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center flex-shrink-0">
-          <User className="w-5 h-5 text-emerald-400" />
-        </div>
+        <Avatar
+          name={athlete.nome}
+          src={athlete.photo_url}
+          className="w-10 h-10"
+          textClassName="text-sm"
+          roundedClassName="rounded-xl"
+        />
         <div className="min-w-0 flex-1">
           <p className="font-bold text-white truncate">{athlete.nome}</p>
           <p className="text-xs text-slate-400">

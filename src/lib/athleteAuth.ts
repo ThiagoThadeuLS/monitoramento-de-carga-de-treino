@@ -15,6 +15,7 @@ export interface AthleteSession {
     nome: string;
     classe?: string | null;
     categoria?: string | null;
+    photo_url?: string | null;
   };
   club: ClubInfo | null;
   /** Termo de uso aceito (vem junto com a sessão; ausente em bancos antigos) */
