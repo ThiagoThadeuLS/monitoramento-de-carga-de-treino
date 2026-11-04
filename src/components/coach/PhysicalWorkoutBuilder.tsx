@@ -1,7 +1,7 @@
 import React, { useCallback, useState, useEffect } from 'react';
 import { deleteById, supabase } from '../../lib/supabase';
 import { useDialogs } from '../ui/Dialogs';
-import { addDaysISO, todayISO } from '../../lib/date';
+import { addDaysISO, startOfWeekISO, todayISO } from '../../lib/date';
 import { PHYSICAL_TRAINING } from '../../data/constants';
 import { Dumbbell, Plus, Trash2, Loader2, Pencil, X, BookOpen, Layers, Save } from 'lucide-react';
 import { WorkoutTemplate, rowsToBlocks } from '../../lib/workoutTemplates';
@@ -80,16 +80,23 @@ export function PhysicalWorkoutBuilder({ sessionId }: { sessionId?: string | nul
     async function loadPhysicalSessions() {
       if (!supabase) return;
       setLoadingSessions(true);
-      // Só os treinos físicos a partir de 2 meses atrás (para a lista não ficar enorme)
+      // Só os treinos físicos desta semana e da próxima (segunda a domingo)
+      const weekStart = startOfWeekISO(todayISO());
       const { data, error } = await supabase
         .from('training_sessions')
         .select('id, name, date, training_type')
         .eq('training_type', PHYSICAL_TRAINING)
-        .gte('date', addDaysISO(todayISO(), -60))
-        .order('date', { ascending: false });
+        .gte('date', weekStart)
+        .lte('date', addDaysISO(weekStart, 13))
+        .order('date', { ascending: true });
 
       if (!error && data) {
         const fisicos = data as TrainingSessionItem[];
+        // Treino de outra semana aberto pela Agenda: entra na lista para dar para editar a ficha dele
+        if (sessionId && !fisicos.some((s) => s.id === sessionId)) {
+          const { data: extra } = await supabase.from('training_sessions').select('id, name, date, training_type').eq('id', sessionId).maybeSingle();
+          if (extra) fisicos.unshift(extra as TrainingSessionItem);
+        }
         setSessions(fisicos);
         if (fisicos.length > 0) {
           setSelectedSessionId((cur) => cur || fisicos[0].id);
@@ -98,7 +105,7 @@ export function PhysicalWorkoutBuilder({ sessionId }: { sessionId?: string | nul
       setLoadingSessions(false);
     }
     loadPhysicalSessions();
-  }, []);
+  }, [sessionId]);
 
   useEffect(() => {
     async function loadCatalog() {
@@ -360,7 +367,7 @@ export function PhysicalWorkoutBuilder({ sessionId }: { sessionId?: string | nul
             {loadingSessions ? (
               <div className="text-xs text-slate-500 flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Carregando...</div>
             ) : sessions.length === 0 ? (
-              <p className="text-xs text-amber-400">Nenhum treino físico no cronograma.</p>
+              <p className="text-xs text-amber-400">Nenhum treino físico nesta semana nem na próxima. Cadastre no cronograma.</p>
             ) : (
               <select
                 value={selectedSessionId}

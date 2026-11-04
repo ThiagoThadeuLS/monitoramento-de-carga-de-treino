@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { History, Loader2, AlertCircle, Flame, HeartPulse, Scale, Pencil, Trash2, ShieldCheck, Ban } from 'lucide-react';
+import { History, Loader2, AlertCircle, Flame, HeartPulse, Scale, Pencil, Trash2, ShieldCheck, Ban, ChevronDown } from 'lucide-react';
 import { AthleteHistory as HistoryData, deleteAthleteRecord, getAthleteHistory } from '../lib/athleteAuth';
 import { addDaysISO, todayISO } from '../lib/date';
 import { DailyStatsChart } from './coach/DailyStatsChart';
@@ -31,6 +31,8 @@ export const AthleteHistory: React.FC<{
   onCorrect: (kind: Kind) => void;
 }> = ({ token, athleteId, clubName, termsAcceptedAt, onCorrect }) => {
   const [range, setRange] = useState(30);
+  // Lista de respostas começa fechada (a tela fica mais curta); o atleta abre quando quiser
+  const [answersOpen, setAnswersOpen] = useState(false);
   const [data, setData] = useState<HistoryData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -194,11 +196,23 @@ export const AthleteHistory: React.FC<{
           )}
 
           <section className="bg-slate-900/90 border border-slate-800 rounded-2xl overflow-hidden">
-            <header className="px-4 py-3 border-b border-slate-800">
-              <h3 className="font-bold text-white text-sm">Minhas respostas</h3>
-              <p className="text-xs text-slate-500">Enviou algo errado hoje? Toque em Corrigir: a resposta é apagada e o formulário abre para enviar de novo.</p>
-            </header>
-            {entries.length === 0 ? (
+            <button
+              type="button"
+              onClick={() => setAnswersOpen((v) => !v)}
+              aria-expanded={answersOpen}
+              className={`w-full px-4 py-3 flex items-center justify-between gap-3 text-left hover:bg-slate-800/40 ${answersOpen ? 'border-b border-slate-800' : ''}`}
+            >
+              <span className="min-w-0">
+                <span className="block font-bold text-white text-sm">
+                  Minhas respostas <span className="text-slate-500 font-medium">({entries.length})</span>
+                </span>
+                {answersOpen && (
+                  <span className="block text-xs text-slate-500">Enviou algo errado hoje? Toque em Corrigir: a resposta é apagada e o formulário abre para enviar de novo.</span>
+                )}
+              </span>
+              <ChevronDown className={`w-5 h-5 text-slate-400 flex-shrink-0 transition-transform ${answersOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {!answersOpen ? null : entries.length === 0 ? (
               <p className="py-10 text-center text-sm text-slate-500">Nenhuma resposta neste período.</p>
             ) : (
               <div className="divide-y divide-slate-800/60">

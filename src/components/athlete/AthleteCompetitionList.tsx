@@ -21,7 +21,11 @@ export const AthleteCompetitionList: React.FC<{ token: string; today: string }> 
     };
   }, [token, today]);
 
-  const upcoming = list.filter((c) => c.data >= today).sort((a, b) => a.data.localeCompare(b.data));
+  // Só as 3 próximas (a Agenda não fica comprida)
+  const upcoming = list
+    .filter((c) => c.data >= today)
+    .sort((a, b) => a.data.localeCompare(b.data))
+    .slice(0, 3);
   if (upcoming.length === 0) return null;
 
   return (
