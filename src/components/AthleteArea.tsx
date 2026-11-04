@@ -1,6 +1,6 @@
 import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { lazyNamed } from '../lib/lazy';
-import { ArrowLeft, CalendarDays, HelpCircle, History, Home, Loader2, LogOut, Shield, ShieldAlert, Trophy, User } from 'lucide-react';
+import { ArrowLeft, CalendarDays, HelpCircle, History, Home, Loader2, LogOut, Shield, ShieldAlert, Trophy } from 'lucide-react';
 import { TERMS_VERSION, TermsGate } from './TermsGate';
 import { isPhysicalTraining, PHYSICAL_TRAINING } from '../data/constants';
 import { useDialogs } from './ui/Dialogs';
@@ -17,8 +17,10 @@ import { AthleteLogin } from './AthleteLogin';
 import { AthleteChangePassword } from './AthleteChangePassword';
 import { AthleteToday, TodayAction, sessionMinutes } from './athlete/AthleteToday';
 import { AthleteCompetitionList } from './athlete/AthleteCompetitionList';
+import { PhotoPicker } from './ui/PhotoPicker';
 import { PseRecord, PsrRecord, WeightRecord } from '../types';
 import { isSupabaseConfigured } from '../lib/supabase';
+import { uploadOwnAthletePhoto } from '../lib/photos';
 import { useHistoryState } from '../lib/navigation';
 import { useTodayISO } from '../lib/useToday';
 import { nowTimeHM } from '../lib/date';
@@ -376,6 +378,15 @@ export const AthleteArea: React.FC = () => {
   const { athlete } = session;
   const token = session.token;
 
+  // Foto do próprio atleta: reduzida no navegador (512 px) e com nome fixo no Storage
+  const changePhoto = async (file: File) => {
+    const clubId = session.club?.id;
+    if (!clubId) throw new Error('Não foi possível identificar seu clube. Entre novamente.');
+    const url = await uploadOwnAthletePhoto({ token, athleteId: athlete.id, clubId, file });
+    setSession((cur) => (cur ? { ...cur, athlete: { ...cur.athlete, photo_url: url } } : cur));
+    notify('Foto atualizada.', 'success');
+  };
+
   // Duração programada de cada tipo de treino de hoje (sugestão na PSE)
   const scheduledDurations: Record<string, number> = {};
   for (const s of home?.sessions ?? []) {
@@ -460,9 +471,15 @@ export const AthleteArea: React.FC = () => {
       )}
 
       <div data-tour="athlete-card" className="w-full bg-slate-800/80 border border-slate-700/80 rounded-2xl p-3.5 shadow-xl backdrop-blur flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center flex-shrink-0">
-          <User className="w-5 h-5 text-emerald-400" />
-        </div>
+        <PhotoPicker
+          name={athlete.nome}
+          src={athlete.photo_url}
+          onPick={changePhoto}
+          onError={(message) => notify(message, 'error')}
+          title="Trocar minha foto"
+          className="w-14 h-14"
+          textClassName="text-base"
+        />
         <div className="min-w-0 flex-1">
           <p className="font-bold text-white truncate">{athlete.nome}</p>
           <p className="text-xs text-slate-400">

@@ -7,6 +7,7 @@ import { DailyStatsChart } from './DailyStatsChart';
 import { MONOTONY_LIMIT, ZONE_INFO, dailyLoads, format2, formatUA, groupSeries, loadMetrics, sessionLoad } from '../../lib/load';
 import { mean } from '../../lib/stats';
 import { brDate, downloadCsv, fileSlug, formatKg, localTime, toCsv } from '../../lib/export';
+import { Avatar } from '../ui/Avatar';
 
 type ProfileAthlete = Athlete & { terms_accepted_at?: string | null };
 
@@ -141,6 +142,12 @@ export const AthleteProfile: React.FC<{ athleteId: string; onClose: () => void }
       >
         {/* Cabeçalho */}
         <div className="px-4 sm:px-6 py-4 border-b border-slate-800 flex items-start gap-3" style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}>
+          <Avatar
+            name={athlete?.nome ?? 'Atleta'}
+            src={athlete?.photo_url}
+            className="w-16 h-16 sm:w-20 sm:h-20"
+            textClassName="text-xl"
+          />
           <div className="min-w-0 flex-1">
             <p className="text-[11px] font-bold uppercase tracking-wider text-sky-300 flex items-center gap-1.5">
               <Activity className="w-3.5 h-3.5" /> Ficha do atleta

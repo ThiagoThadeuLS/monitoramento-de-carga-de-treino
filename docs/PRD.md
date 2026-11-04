@@ -79,7 +79,7 @@ Cada clube só enxerga os próprios dados.
 - **RF-08 — Peso:** peso corporal (30 a 250 kg).
 - **RF-09 — Data correta:** os registros usam a data local do aparelho.
 - **RF-10 — Agenda (somente leitura):** treinos da semana passada, da atual e da próxima **destinados ao atleta** (conforme o público de cada treino). Tocar num treino abre detalhes e as **anotações do treinador**.
-- **RF-11 — Identidade do clube:** cabeçalho com nome e escudo do clube e as **cores do clube**.
+- **RF-11 — Identidade do clube:** cabeçalho com nome e escudo do clube e as **cores do clube**. O perfil do atleta mostra a **foto** cadastrada pelo treinador (ou as iniciais do nome quando não houver foto).
 - **RF-12 — Lembretes (notificações):** sempre no horário de Brasília e **somente dentro do horário de avisos definido pelo clube** (padrão 06:00–22:00):
   - **PSR:** a partir do **início** do horário de avisos, nos dias em que o atleta tem treino; repete **a cada 20 min** até responder.
   - **PSE:** **20 min após o fim de cada treino** destinado ao atleta (sem horário de fim: início + 1h30); repete **a cada 20 min** até responder aquele treino ("não treinei" encerra os lembretes do dia).
@@ -103,9 +103,9 @@ Abas: **Dia, Período, Carga, Agenda, Adversários, Gestão**.
 - **RF-19 — Agenda — cronograma:** criar, editar e excluir treinos com data, horário de início e fim, nome, tipo, **PSE esperada (1–10)**, **anotações** e **para quem**: **todos**, **somente** (grupos e/ou pessoas) ou **todos exceto**. Só a semana atual e a próxima podem ser programadas; a semana passada fica para consulta; treinos mais antigos são **apagados** automaticamente.
 - **RF-20 — Agenda — horário dos avisos e pesagem:** o treinador define **das … às …** (início antes do fim) e os **dias e horário do lembrete de pesagem**. O fim do horário também é o prazo da tabela "Sem resposta".
 - **RF-21 — Adversários:** cards com iniciais, categoria de peso, classe (juvenil/júnior/sênior) e origem (clube nacional ou país); busca por nome, categoria, clube, país ou observação; filtros por classe e nacional/internacional; ficha completa ao tocar; cadastro e edição em janela; exclusão com confirmação.
-- **RF-22 — Gestão → Atletas:** cadastrar, editar e excluir (nome, **CPF** obrigatório, válido e único na plataforma, classe, categoria, celular, sexo); busca; **redefinir a senha** para a inicial; abrir a **ficha**. **Inativar/reativar**: o inativo não entra no app nem recebe lembretes e some das listas, mas o histórico é mantido (filtro "Mostrar inativos"). Excluir avisa que apaga todo o histórico. Selos **Inativo** e **Termo pendente**.
+- **RF-22 — Gestão → Atletas:** cadastrar, editar e excluir (nome, **CPF** obrigatório, válido e único na plataforma, classe, categoria, celular, sexo); busca; **redefinir a senha** para a inicial; abrir a **ficha**; adicionar, trocar ou remover a **foto** do atleta (PNG, JPG ou WEBP, reduzida automaticamente para 512 px antes de subir). **Inativar/reativar**: o inativo não entra no app nem recebe lembretes e some das listas, mas o histórico é mantido (filtro "Mostrar inativos"). Excluir avisa que apaga todo o histórico. Selos **Inativo** e **Termo pendente**.
 - **RF-23 — Gestão → Grupos:** criar, renomear e excluir grupos e escolher os participantes; **um atleta pode estar em vários grupos**. Usados no público dos treinos e nos filtros.
-- **RF-24 — Gestão → Treinadores (só admin):** cadastrar treinador com **senha temporária** (mostrada uma vez, com Copiar e WhatsApp); promover/rebaixar admin; desativar/reativar. O clube **nunca fica sem admin ativo**; o admin não altera a própria conta. Troca do **escudo** (PNG, JPG, WEBP ou SVG, até 1 MB).
+- **RF-24 — Gestão → Treinadores (só admin):** cadastrar treinador com **senha temporária** (mostrada uma vez, com Copiar e WhatsApp); promover/rebaixar admin; desativar/reativar. O clube **nunca fica sem admin ativo**; o admin não altera a própria conta. Troca do **escudo** (PNG, JPG, WEBP ou SVG, até 1 MB) e da **foto de cada treinador** (cada um troca a própria no cabeçalho; o admin também pode trocar a dos colegas).
 - **RF-25 — Gestão → Cores (só admin):** 8 **paletas prontas** ou **personalizada** (cor principal e cor de fundo em hexadecimal, com seletor). Prévia ao vivo, aviso de fundo claro demais ou pouco contraste, "Voltar ao padrão". Vale para todos os treinadores e atletas do clube e fica guardada no aparelho para abrir já com as cores.
 
 ### 3.4 Tour guiado (atletas e treinadores)
@@ -148,7 +148,7 @@ Abas: **Dia, Período, Carga, Agenda, Adversários, Gestão**.
 |---|---|---|---|---|
 | Supabase Postgres | SDK `@supabase/supabase-js` + funções RPC | Clubes, treinadores, atletas, PSE, PSR, peso, grupos, cronograma, adversários, lembretes, cores, convites, registro | Disponível | Piloto |
 | Supabase Auth | E-mail e senha | Login de treinadores, admins e donos (atletas usam login próprio por CPF) | Disponível | Piloto |
-| Supabase Storage | Bucket público `escudos` | Escudos dos clubes | Disponível | Piloto |
+| Supabase Storage | Buckets públicos `escudos` e `fotos` | Escudos dos clubes e fotos de atletas/treinadores (imagens reduzidas no navegador, ~30–80 KB cada) | Disponível | Piloto |
 | Supabase Edge Function `enviar-lembretes` | HTTP (Deno) + biblioteca `web-push` | Busca lembretes vencidos e envia as notificações; remove aparelhos inválidos | Disponível | Piloto |
 | pg_cron + pg_net (Supabase) | Agendamento no banco | Chama `enviar-lembretes` a cada 5 min; limpeza semanal do cronograma antigo | Disponível | Piloto |
 | Web Push (FCM / Apple / Mozilla) | Protocolo Web Push com chaves VAPID | Notificações para os aparelhos dos atletas | Disponível | Piloto |
@@ -240,7 +240,7 @@ Legenda: ✅ implementado e testado (banco em Postgres local simulando o Supabas
 Serve para banco novo e para atualizar o atual, pode ser executado várias vezes e não apaga dados. Sempre que o arquivo mudar, rodar de novo inteiro. O clube de teste (Minas, id fixo) só é criado na primeira execução em banco novo.
 Só em banco de teste: `supabase_dados_ficticios.sql` (36 atletas fictícios com 8 semanas de PSE, PSR e peso, removíveis).
 
-**Zerar para o piloto:** `supabase_zerar_banco.sql` apaga todos os dados e mantém só o que é dos owners (`platform_owners`, as contas de login deles e o registro de acessos da Área Restrita). Tem trava (trocar `'NAO'` por `'SIM'`), roda tudo ou nada e mostra a contagem de cada tabela no fim. Usar uma vez, antes do piloto; depois, o clube piloto entra pelo convite da Área Restrita. Escudos enviados nos testes são apagados pelo painel (Storage → escudos).
+**Zerar para o piloto:** `supabase_zerar_banco.sql` apaga todos os dados e mantém só o que é dos owners (`platform_owners`, as contas de login deles e o registro de acessos da Área Restrita). Tem trava (trocar `'NAO'` por `'SIM'`), roda tudo ou nada e mostra a contagem de cada tabela no fim. Usar uma vez, antes do piloto; depois, o clube piloto entra pelo convite da Área Restrita. Escudos e fotos enviados nos testes são apagados pelo painel (Storage → `escudos` e `fotos`).
 
 **Configuração do Supabase (Authentication → Sign In / Providers):**
 - "Allow new users to sign up": **ligado** (o banco barra cadastros sem convite).

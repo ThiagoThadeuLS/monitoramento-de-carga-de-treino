@@ -7,6 +7,7 @@ export interface ClubAthlete {
   classe?: string | null;
   categoria?: string | null;
   sexo?: string | null;
+  photo_url?: string | null;
   active: boolean;
 }
 
@@ -24,7 +25,7 @@ export function fetchClubAthletes(club: string | null | undefined, force = false
   const promise = (async () => {
     const { data, error } = await supabase!
       .from('athletes')
-      .select('id, nome, classe, categoria, sexo, active')
+      .select('id, nome, classe, categoria, sexo, photo_url, active')
       .order('nome');
     if (error) throw error;
     return ((data ?? []) as ClubAthlete[]).map((a) => ({ ...a, active: a.active !== false }));

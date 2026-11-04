@@ -1,11 +1,15 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { UserPlus, Search, Edit3, Trash2, CheckCircle2, AlertCircle, X, Loader2, Phone, IdCard, KeyRound, LineChart, UserX, UserCheck, ShieldAlert } from 'lucide-react';
+import { UserPlus, Search, Edit3, Trash2, CheckCircle2, AlertCircle, X, Loader2, Phone, IdCard, KeyRound, LineChart, UserX, UserCheck, ShieldAlert, ImageOff } from 'lucide-react';
 import { Athlete } from '../../types';
 import { deleteById, supabase } from '../../lib/supabase';
 import { useDialogs } from '../ui/Dialogs';
 import { formatCpf, isValidCpf, onlyCpfDigits } from '../../lib/cpf';
 import { resetAthletePassword } from '../../lib/athleteAuth';
 import { invalidateClubAthletes } from '../../lib/athletes';
+import { useClub } from '../../lib/club';
+import { Avatar } from '../ui/Avatar';
+import { PhotoPicker } from '../ui/PhotoPicker';
+import { removePhoto, uploadPhoto } from '../../lib/photos';
 
 interface AthleteManagementProps {
   athleteToEdit?: Athlete | null;
@@ -55,6 +59,7 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
   onOpenProfile,
 }) => {
   const { confirm } = useDialogs();
+  const { club } = useClub();
   const [athletes, setAthletes] = useState<AthleteRow[]>([]);
   const [showInactive, setShowInactive] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -145,6 +150,39 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
     setCategoria(athlete.categoria || CATEGORIAS_PESO[athleteSexo][athleteClasse][0]);
     setCelular(athlete.celular ? formatPhone(athlete.celular) : '');
     setIsModalOpen(true);
+  };
+
+  const changeAthletePhoto = async (athlete: Athlete, file: File) => {
+    if (!club) throw new Error('Clube não carregado. Recarregue a página.');
+    setModalError('');
+    const url = await uploadPhoto('athlete', athlete.id, club.id, file, athlete.photo_url);
+    const updated = { ...athlete, photo_url: url };
+    setAthletes((list) => list.map((a) => (a.id === athlete.id ? { ...a, photo_url: url } : a)));
+    setEditingAthlete((cur) => (cur && cur.id === athlete.id ? updated : cur));
+    invalidateClubAthletes();
+    setFeedbackMsg({ type: 'success', text: `Foto de "${athlete.nome}" atualizada.` });
+    setTimeout(() => setFeedbackMsg(null), 5000);
+  };
+
+  const clearAthletePhoto = async (athlete: Athlete) => {
+    if (!club) return;
+    const ok = await confirm({
+      message: `Remover a foto de "${athlete.nome}"?`,
+      confirmLabel: 'Remover',
+      danger: true,
+    });
+    if (!ok) return;
+    setModalError('');
+    try {
+      await removePhoto('athlete', athlete.id, club.id, athlete.photo_url);
+      setAthletes((list) => list.map((a) => (a.id === athlete.id ? { ...a, photo_url: null } : a)));
+      setEditingAthlete((cur) => (cur && cur.id === athlete.id ? { ...cur, photo_url: null } : cur));
+      invalidateClubAthletes();
+      setFeedbackMsg({ type: 'success', text: `Foto de "${athlete.nome}" removida.` });
+      setTimeout(() => setFeedbackMsg(null), 5000);
+    } catch (err: any) {
+      setModalError(err.message);
+    }
   };
 
   const handleSaveAthlete = async (e: React.FormEvent) => {
@@ -359,14 +397,17 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
                 className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-md"
               >
                 <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <h4 className="text-base font-bold text-white leading-tight break-words">
-                      {athlete.nome}
-                    </h4>
-                    <Badges athlete={athlete} />
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      {athlete.categoria || 'Geral'} • {athlete.sexo || 'Não informado'}
-                    </p>
+                  <div className="flex items-start gap-2.5 min-w-0">
+                    <Avatar name={athlete.nome} src={athlete.photo_url} className="w-11 h-11" textClassName="text-xs" />
+                    <div className="min-w-0">
+                      <h4 className="text-base font-bold text-white leading-tight break-words">
+                        {athlete.nome}
+                      </h4>
+                      <Badges athlete={athlete} />
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {athlete.categoria || 'Geral'} • {athlete.sexo || 'Não informado'}
+                      </p>
+                    </div>
                   </div>
                   <span className="px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold text-xs flex-shrink-0">
                     {athlete.classe || 'Sênior'}
@@ -449,14 +490,19 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
                   {filteredAthletes.map((athlete) => (
                     <tr key={athlete.id} className="hover:bg-slate-800/40 transition-colors">
                       <td className="py-3.5 px-4 font-bold text-white">
-                        {onOpenProfile ? (
-                          <button type="button" onClick={() => onOpenProfile(athlete.id)} className="text-left hover:text-sky-300 hover:underline">
-                            {athlete.nome}
-                          </button>
-                        ) : (
-                          athlete.nome
-                        )}
-                        <Badges athlete={athlete} />
+                        <div className="flex items-center gap-2.5">
+                          <Avatar name={athlete.nome} src={athlete.photo_url} className="w-11 h-11" textClassName="text-xs" />
+                          <div className="min-w-0">
+                            {onOpenProfile ? (
+                              <button type="button" onClick={() => onOpenProfile(athlete.id)} className="text-left hover:text-sky-300 hover:underline">
+                                {athlete.nome}
+                              </button>
+                            ) : (
+                              athlete.nome
+                            )}
+                            <Badges athlete={athlete} />
+                          </div>
+                        </div>
                       </td>
                       <td className={`py-3.5 px-3 text-xs whitespace-nowrap ${athlete.cpf ? 'text-slate-400' : 'text-amber-400'}`}>
                         {athlete.cpf ? formatCpf(athlete.cpf) : 'Sem CPF'}
@@ -550,6 +596,38 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
 
             {/* Modal Form */}
             <form onSubmit={handleSaveAthlete} className="p-6 space-y-4">
+              {editingAthlete ? (
+                <div className="flex items-center gap-3 p-3 rounded-2xl bg-slate-950/60 border border-slate-800">
+                  <PhotoPicker
+                    name={nome || editingAthlete.nome}
+                    src={editingAthlete.photo_url}
+                    onPick={(file) => changeAthletePhoto(editingAthlete, file)}
+                    onError={setModalError}
+                    className="w-16 h-16"
+                    textClassName="text-lg"
+                    title="Trocar foto do atleta"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-slate-300">Foto do atleta</p>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      PNG, JPG ou WEBP. A imagem é reduzida automaticamente antes de subir.
+                    </p>
+                    {editingAthlete.photo_url && (
+                      <button
+                        type="button"
+                        onClick={() => clearAthletePhoto(editingAthlete)}
+                        className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-bold text-red-300 hover:text-red-200"
+                      >
+                        <ImageOff className="w-3 h-3" /> Remover foto
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-[11px] text-slate-500">
+                  A foto pode ser adicionada depois de salvar: edite o atleta e toque no avatar.
+                </p>
+              )}
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5">
                   Nome Completo *

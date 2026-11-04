@@ -3,7 +3,7 @@
 -- ATENÇÃO: APAGA TODOS OS DADOS. NÃO TEM COMO DESFAZER.
 --
 -- Fica:
---   * todas as tabelas, funções, regras de acesso, agendamentos (pg_cron) e o bucket de escudos;
+--   * todas as tabelas, funções, regras de acesso, agendamentos (pg_cron) e os buckets de escudos e fotos;
 --   * os owners da plataforma (tabela platform_owners) e as contas de login deles;
 --   * o registro de acessos da Área Restrita (owner_access_log). Para zerar também, mude a
 --     segunda linha da trava para true.
@@ -128,9 +128,9 @@ from (
          'ficaram: ' || coalesce(string_agg(lower(u.email), ', ' order by lower(u.email)), 'nenhuma')
   from auth.users u
   union all
-  select 3, 'storage: arquivos de escudo', count(*),
-         case when count(*) = 0 then 'vazio' else 'apague pelo painel: Storage -> escudos' end
+  select 3, 'storage: arquivos (escudos e fotos)', count(*),
+         case when count(*) = 0 then 'vazio' else 'apague pelo painel: Storage -> escudos e fotos' end
   from storage.objects o
-  where o.bucket_id = 'escudos'
+  where o.bucket_id in ('escudos', 'fotos')
 ) x
 order by ordem, tabela;

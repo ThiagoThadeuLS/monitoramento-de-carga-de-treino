@@ -15,6 +15,7 @@ export interface AthleteSession {
     nome: string;
     classe?: string | null;
     categoria?: string | null;
+    photo_url?: string | null;
   };
   club: ClubInfo | null;
   /** Termo de uso aceito (vem junto com a sessão; ausente em bancos antigos) */
@@ -46,6 +47,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   peso_ja_enviado: 'Você já registrou o peso hoje. Para corrigir, apague o registro de hoje no Histórico e envie de novo.',
   pr_invalido: 'Informe uma carga maior que zero e de até 500 kg.',
   exercicio_invalido: 'Esse exercício não está no catálogo do clube (ou não pede PR).',
+  foto_invalida: 'Não foi possível validar a foto. Envie a imagem de novo.',
   'duplicate key': 'Esse registro já existe.',
 };
 
@@ -141,6 +143,16 @@ export async function setAthletePassword(token: string, newPassword: string): Pr
 export async function logoutAthlete(token: string): Promise<void> {
   writeToken(null);
   if (supabase) await supabase.rpc('athlete_logout', { p_token: token });
+}
+
+/**
+ * Foto do próprio atleta (p_url null = sem foto). O banco descobre o atleta pelo
+ * token e só aceita o endereço da pasta dele no Storage.
+ */
+export async function saveAthletePhoto(token: string, url: string | null): Promise<string | null> {
+  const { data, error } = await client().rpc('athlete_set_photo', { p_token: token, p_url: url });
+  if (error) throw toAuthError(error);
+  return (data ?? null) as string | null;
 }
 
 type NewRecord<T> = Omit<T, 'id' | 'created_at' | 'athlete_id'>;
