@@ -246,7 +246,7 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({ onEditAthlete, onO
                 <li key={athlete.id} className="p-4 space-y-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-start gap-2.5 min-w-0">
-                      <Avatar name={athlete.nome} src={athlete.photo_url} className="w-9 h-9" textClassName="text-[11px]" />
+                      <Avatar name={athlete.nome} src={athlete.photo_url} className="w-11 h-11" textClassName="text-xs" />
                       <div className="min-w-0">
                         {onOpenProfile ? (
                           <button type="button" onClick={() => onOpenProfile(athlete.id)} className="font-bold text-white leading-tight break-words text-left underline decoration-slate-600 underline-offset-2">
@@ -347,7 +347,7 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({ onEditAthlete, onO
                       <td className="py-3 px-4">
                         <div className="flex items-center justify-between gap-3">
                           <div className="flex items-center gap-2.5 min-w-0">
-                            <Avatar name={athlete.nome} src={athlete.photo_url} className="w-9 h-9" textClassName="text-[11px]" />
+                            <Avatar name={athlete.nome} src={athlete.photo_url} className="w-11 h-11" textClassName="text-xs" />
                             <div className="min-w-0">
                               {onOpenProfile ? (
                                 <button type="button" onClick={() => onOpenProfile(athlete.id)} className="font-bold text-white leading-tight text-left hover:text-sky-300 hover:underline" title="Abrir a ficha do atleta">

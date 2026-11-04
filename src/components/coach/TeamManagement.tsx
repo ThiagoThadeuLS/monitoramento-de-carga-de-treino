@@ -299,8 +299,8 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({ currentUserId, c
                       src={m.photo_url}
                       onPick={(file) => changeMemberPhoto(m, file)}
                       onError={setError}
-                      className="w-10 h-10"
-                      textClassName="text-xs"
+                      className="w-12 h-12"
+                      textClassName="text-sm"
                       title={`Trocar foto de ${m.nome}`}
                     />
                     <div className="min-w-0">

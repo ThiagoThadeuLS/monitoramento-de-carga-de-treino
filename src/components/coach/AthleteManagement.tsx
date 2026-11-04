@@ -398,7 +398,7 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-start gap-2.5 min-w-0">
-                    <Avatar name={athlete.nome} src={athlete.photo_url} className="w-9 h-9" textClassName="text-[11px]" />
+                    <Avatar name={athlete.nome} src={athlete.photo_url} className="w-11 h-11" textClassName="text-xs" />
                     <div className="min-w-0">
                       <h4 className="text-base font-bold text-white leading-tight break-words">
                         {athlete.nome}
@@ -491,7 +491,7 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
                     <tr key={athlete.id} className="hover:bg-slate-800/40 transition-colors">
                       <td className="py-3.5 px-4 font-bold text-white">
                         <div className="flex items-center gap-2.5">
-                          <Avatar name={athlete.nome} src={athlete.photo_url} className="w-9 h-9" textClassName="text-[11px]" />
+                          <Avatar name={athlete.nome} src={athlete.photo_url} className="w-11 h-11" textClassName="text-xs" />
                           <div className="min-w-0">
                             {onOpenProfile ? (
                               <button type="button" onClick={() => onOpenProfile(athlete.id)} className="text-left hover:text-sky-300 hover:underline">
@@ -603,8 +603,8 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
                     src={editingAthlete.photo_url}
                     onPick={(file) => changeAthletePhoto(editingAthlete, file)}
                     onError={setModalError}
-                    className="w-14 h-14"
-                    textClassName="text-base"
+                    className="w-16 h-16"
+                    textClassName="text-lg"
                     title="Trocar foto do atleta"
                   />
                   <div className="min-w-0 flex-1">

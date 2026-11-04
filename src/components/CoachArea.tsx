@@ -387,8 +387,8 @@ export const CoachArea: React.FC<{ recovery?: boolean }> = ({ recovery = false }
               reloadProfile();
             }}
             onError={(message) => notify(message, 'error')}
-            className="w-11 h-11"
-            textClassName="text-sm"
+            className="w-14 h-14"
+            textClassName="text-base"
             title="Trocar minha foto"
           />
           <ClubCrest club={viewClub} className="w-10 h-12 flex-shrink-0" />

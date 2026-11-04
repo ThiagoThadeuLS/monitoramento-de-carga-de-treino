@@ -8,7 +8,7 @@ interface AvatarProps {
   className?: string;
   /** Tamanho das iniciais quando não há foto */
   textClassName?: string;
-  /** Arredondamento (padrão: rounded-xl) */
+  /** Arredondamento (padrão: círculo) */
   roundedClassName?: string;
 }
 
@@ -18,7 +18,7 @@ export const Avatar: React.FC<AvatarProps> = ({
   src,
   className = 'w-10 h-10',
   textClassName = 'text-xs',
-  roundedClassName = 'rounded-xl',
+  roundedClassName = 'rounded-full',
 }) => {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [src]);

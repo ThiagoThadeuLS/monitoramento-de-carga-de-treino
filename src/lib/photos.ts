@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { saveAthletePhoto } from './athleteAuth';
 
 // Fotos de atletas e treinadores: reduzidas no navegador e guardadas no Storage
 // (bucket público "fotos"). Cada arquivo fica pequeno (512 px, ~30–80 KB), então
@@ -189,4 +190,36 @@ export async function removePhoto(kind: PhotoKind, id: string, clubId: string, u
 
   const path = photoPathFromUrl(url, clubId);
   if (path) await supabase.storage.from(PHOTO_BUCKET).remove([path]).catch(() => undefined);
+}
+
+/**
+ * Foto do próprio atleta (ele não usa o Supabase Auth). O arquivo sobe com o nome
+ * fixo "perfil.<ext>" na pasta dele: trocar a foto SUBSTITUI o arquivo, então cada
+ * atleta ocupa uma imagem só (~30–80 KB, 512 px) e o plano gratuito não cresce.
+ * O banco confere o endereço pelo token antes de gravar no cadastro.
+ */
+export async function uploadOwnAthletePhoto(params: {
+  token: string;
+  athleteId: string;
+  clubId: string;
+  file: File;
+}): Promise<string> {
+  if (!supabase) throw new Error('Supabase não configurado.');
+  const problem = checkPhotoFile(params.file);
+  if (problem) throw new Error(problem);
+
+  const { blob, ext } = await shrinkPhoto(params.file);
+  const path = `${params.clubId}/atletas/${params.athleteId}/perfil.${ext}`;
+
+  const { error } = await supabase.storage.from(PHOTO_BUCKET).upload(path, blob, {
+    contentType: blob.type,
+    cacheControl: '31536000',
+    upsert: true,
+  });
+  if (error) throw new Error(photoError(error));
+
+  // O ?v= muda a cada troca: o navegador não reaproveita a imagem antiga do cache
+  const publicUrl = supabase.storage.from(PHOTO_BUCKET).getPublicUrl(path).data.publicUrl;
+  const saved = await saveAthletePhoto(params.token, `${publicUrl}?v=${Date.now()}`);
+  return saved ?? `${publicUrl}?v=${Date.now()}`;
 }

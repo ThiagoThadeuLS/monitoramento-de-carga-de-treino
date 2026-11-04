@@ -145,8 +145,8 @@ export const AthleteProfile: React.FC<{ athleteId: string; onClose: () => void }
           <Avatar
             name={athlete?.nome ?? 'Atleta'}
             src={athlete?.photo_url}
-            className="w-12 h-12 sm:w-14 sm:h-14"
-            textClassName="text-base"
+            className="w-16 h-16 sm:w-20 sm:h-20"
+            textClassName="text-xl"
           />
           <div className="min-w-0 flex-1">
             <p className="text-[11px] font-bold uppercase tracking-wider text-sky-300 flex items-center gap-1.5">
