@@ -35,7 +35,7 @@ export function sessionMinutes(s: { start_time: string; end_time?: string | null
 
 /** Quais treinos do dia já têm PSE (mesma regra do relatório do treinador). */
 function answeredSessions(home: AthleteHome): Set<string> {
-  return new Set(matchPseToSessions(home.sessions, home.pse).keys());
+  return new Set(matchPseToSessions(home.sessions as any, home.pse as any).keys());
 }
 
 const Row: React.FC<{

@@ -3754,6 +3754,691 @@
   revoke execute on function public.athlete_home(uuid) from public;
   grant execute on function public.athlete_home(uuid) to anon, authenticated;
 
+
+  -- ############################################################
+  -- PARTE 14. FISIOTERAPIA
+  -- * Papel "fisio": vê só a área de fisioterapia + atletas e grupos do clube.
+  -- * Caso -> sessões -> plano -> check-in do atleta -> critérios -> alta.
+  -- * Treinador vê só o resumo (restrição, previsão, dor e critérios);
+  --   notas clínicas ficam privadas.
+  -- ############################################################
+
+  -- ------------------------------------------------------------
+  -- 1. Papel fisio no clube
+  -- ------------------------------------------------------------
+  alter table public.coaches drop constraint if exists coaches_role_check;
+  alter table public.coaches
+    add constraint coaches_role_check check (role in ('admin', 'treinador', 'fisio'));
+
+  alter table public.coach_invites drop constraint if exists coach_invites_role_check;
+  alter table public.coach_invites
+    add constraint coach_invites_role_check check (role in ('admin', 'treinador', 'fisio'));
+
+  create or replace function public.is_fisio()
+  returns boolean
+  language sql
+  stable
+  security definer
+  set search_path = ''
+  as $$
+    select public.support_club_id() is null
+      and exists (
+        select 1
+        from public.coaches c
+        join public.clubs k on k.id = c.club_id
+        where c.user_id = auth.uid()
+          and c.active
+          and c.role = 'fisio'
+          and k.status = 'ativo'
+      );
+  $$;
+
+  revoke execute on function public.is_fisio() from public, anon;
+  grant execute on function public.is_fisio() to authenticated;
+
+  -- Convite e troca de papel aceitam fisio (o restante da regra continua igual)
+  create or replace function public.club_add_coach(p_nome text, p_email text, p_role text default 'treinador')
+  returns uuid
+  language plpgsql
+  volatile
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_email text := lower(trim(coalesce(p_email, '')));
+    v_token uuid;
+  begin
+    if not public.is_club_admin() then
+      raise exception 'nao_autorizado';
+    end if;
+    if length(trim(coalesce(p_nome, ''))) = 0 then
+      raise exception 'nome_obrigatorio';
+    end if;
+    if v_email !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' then
+      raise exception 'email_invalido';
+    end if;
+    if p_role not in ('admin', 'treinador', 'fisio') then
+      raise exception 'papel_invalido';
+    end if;
+    if exists (select 1 from auth.users u where lower(u.email) = v_email) then
+      raise exception 'email_ja_cadastrado';
+    end if;
+
+    update public.coach_invites
+      set canceled_at = now()
+    where email = v_email and used_at is null and canceled_at is null;
+
+    insert into public.coach_invites (kind, club_id, email, nome, role, created_by, expires_at)
+    values ('coach', public.current_club_id(), v_email, trim(p_nome), p_role, auth.uid(), now() + interval '15 minutes')
+    returning token into v_token;
+
+    return v_token;
+  end;
+  $$;
+
+  create or replace function public.club_set_coach_role(p_user_id uuid, p_role text)
+  returns void
+  language plpgsql
+  volatile
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_coach public.coaches;
+  begin
+    if not public.is_club_admin() then raise exception 'nao_autorizado'; end if;
+    if p_role not in ('admin', 'treinador', 'fisio') then raise exception 'papel_invalido'; end if;
+
+    select * into v_coach from public.coaches where user_id = p_user_id and club_id = public.current_club_id();
+    if not found then raise exception 'nao_autorizado'; end if;
+
+    if not public._club_keeps_admin(v_coach.club_id, p_user_id, p_role, v_coach.active) then
+      raise exception 'ultimo_admin';
+    end if;
+
+    update public.coaches set role = p_role where user_id = p_user_id;
+  end;
+  $$;
+
+  -- Fisio não redefine senha de atleta (isso é da comissão técnica)
+  create or replace function public.coach_reset_athlete_password(p_athlete_id uuid)
+  returns void
+  language plpgsql
+  volatile
+  security definer
+  set search_path = ''
+  as $$
+  begin
+    if public.support_club_id() is not null
+      or public.is_fisio()
+      or not exists (
+        select 1 from public.athletes a
+        where a.id = p_athlete_id and a.club_id = public.current_club_id()
+      ) then
+      raise exception 'nao_autorizado';
+    end if;
+
+    delete from public.athlete_credentials where athlete_id = p_athlete_id;
+    delete from public.athlete_sessions where athlete_id = p_athlete_id;
+  end;
+  $$;
+
+  -- Fisio não vê o resumo de peso/competição
+  create or replace function public.coach_competition_summary(p_competition_id uuid)
+  returns table (
+    athlete_id uuid,
+    nome text,
+    categoria text,
+    classe text,
+    peso_atual numeric,
+    peso_data date
+  )
+  language plpgsql
+  stable
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_competition public.competitions;
+  begin
+    if auth.uid() is null or public.is_fisio() then
+      raise exception 'nao_autorizado';
+    end if;
+
+    select c.* into v_competition
+    from public.competitions c
+    where c.id = p_competition_id
+      and c.club_id = public.current_club_id();
+
+    if not found then
+      raise exception 'competicao_nao_encontrada';
+    end if;
+
+    return query
+      select a.id, a.nome, a.categoria, a.classe, w.weight, w.date
+      from public.athletes a
+      left join lateral (
+        select wr.weight, wr.date
+        from public.weight_records wr
+        where wr.athlete_id = a.id
+        order by wr.date desc, wr.created_at desc
+        limit 1
+      ) w on true
+      where a.club_id = v_competition.club_id
+        and a.active
+        and public.competition_applies_to(v_competition, a.id)
+      order by a.nome;
+  end;
+  $$;
+
+  -- ------------------------------------------------------------
+  -- 2. Tabelas da fisioterapia
+  -- ------------------------------------------------------------
+  create table if not exists public.physio_exercises (
+    id uuid primary key default gen_random_uuid(),
+    club_id uuid not null default public.current_club_id() references public.clubs(id) on delete cascade,
+    nome text not null check (length(trim(nome)) between 1 and 100),
+    descricao text,
+    regiao text,
+    created_at timestamp with time zone default now() not null
+  );
+  create index if not exists physio_exercises_club_idx on public.physio_exercises (club_id);
+
+  create table if not exists public.physio_cases (
+    id uuid primary key default gen_random_uuid(),
+    club_id uuid not null default public.current_club_id() references public.clubs(id) on delete cascade,
+    athlete_id uuid not null references public.athletes(id) on delete cascade,
+    status text not null default 'avaliacao'
+      check (status in ('avaliacao', 'tratamento', 'retorno_gradual', 'alta')),
+    regiao text not null check (length(trim(regiao)) between 1 and 100),
+    lado text check (lado in ('direito', 'esquerdo', 'bilateral')),
+    inicio date not null default public.training_today(),
+    previsao_retorno date,
+    retorno_real date,
+    restricao text,
+    observacoes_treinador text,
+    notas_privadas text,
+    created_by uuid default auth.uid() references auth.users(id) on delete set null,
+    created_at timestamp with time zone default now() not null,
+    updated_at timestamp with time zone default now() not null
+  );
+  create index if not exists physio_cases_club_idx on public.physio_cases (club_id);
+  create index if not exists physio_cases_athlete_idx on public.physio_cases (athlete_id);
+  -- Um caso ativo por atleta; depois da alta, pode abrir outro caso.
+  create unique index if not exists physio_cases_um_ativo
+    on public.physio_cases (athlete_id) where status <> 'alta';
+
+  create table if not exists public.physio_sessions (
+    id uuid primary key default gen_random_uuid(),
+    club_id uuid not null default public.current_club_id() references public.clubs(id) on delete cascade,
+    case_id uuid not null references public.physio_cases(id) on delete cascade,
+    date date not null default public.training_today(),
+    dor_repouso integer check (dor_repouso between 0 and 10),
+    dor_movimento integer check (dor_movimento between 0 and 10),
+    funcao_score integer check (funcao_score between 0 and 100),
+    conduta text,
+    proxima_sessao date,
+    notas text,
+    created_by uuid default auth.uid() references auth.users(id) on delete set null,
+    created_at timestamp with time zone default now() not null
+  );
+  create index if not exists physio_sessions_case_idx on public.physio_sessions (case_id, date);
+
+  create table if not exists public.physio_prescriptions (
+    id uuid primary key default gen_random_uuid(),
+    club_id uuid not null default public.current_club_id() references public.clubs(id) on delete cascade,
+    case_id uuid not null references public.physio_cases(id) on delete cascade,
+    exercise_id uuid references public.physio_exercises(id) on delete set null,
+    nome text not null check (length(trim(nome)) between 1 and 120),
+    series text,
+    repeticoes text,
+    frequencia text,
+    orientacao text,
+    ativo boolean not null default true,
+    created_at timestamp with time zone default now() not null
+  );
+  create index if not exists physio_prescriptions_case_idx on public.physio_prescriptions (case_id);
+
+  create table if not exists public.physio_checkins (
+    id uuid primary key default gen_random_uuid(),
+    club_id uuid not null default public.current_club_id() references public.clubs(id) on delete cascade,
+    case_id uuid not null references public.physio_cases(id) on delete cascade,
+    athlete_id uuid not null references public.athletes(id) on delete cascade,
+    prescription_id uuid not null references public.physio_prescriptions(id) on delete cascade,
+    date date not null default public.training_today(),
+    done boolean not null default true,
+    dor_antes integer check (dor_antes between 0 and 10),
+    dor_depois integer check (dor_depois between 0 and 10),
+    observacao text,
+    created_at timestamp with time zone default now() not null,
+    unique (prescription_id, date)
+  );
+  create index if not exists physio_checkins_case_idx on public.physio_checkins (case_id, date);
+  create index if not exists physio_checkins_athlete_idx on public.physio_checkins (athlete_id, date);
+
+  create table if not exists public.physio_criteria (
+    id uuid primary key default gen_random_uuid(),
+    club_id uuid not null default public.current_club_id() references public.clubs(id) on delete cascade,
+    case_id uuid not null references public.physio_cases(id) on delete cascade,
+    descricao text not null check (length(trim(descricao)) between 1 and 200),
+    cumprido boolean not null default false,
+    cumprido_em date,
+    ordem integer not null default 0,
+    created_at timestamp with time zone default now() not null
+  );
+  create index if not exists physio_criteria_case_idx on public.physio_criteria (case_id, ordem);
+
+  -- Clube e atleta sempre vêm do caso (nunca do navegador)
+  create or replace function public.physio_cases_check()
+  returns trigger
+  language plpgsql
+  security definer
+  set search_path = ''
+  as $$
+  begin
+    select a.club_id into new.club_id from public.athletes a where a.id = new.athlete_id;
+    if new.club_id is null then
+      raise exception 'atleta_invalido';
+    end if;
+    new.updated_at := now();
+    return new;
+  end;
+  $$;
+
+  drop trigger if exists physio_cases_check on public.physio_cases;
+  create trigger physio_cases_check before insert or update on public.physio_cases
+    for each row execute function public.physio_cases_check();
+
+  create or replace function public.physio_child_check()
+  returns trigger
+  language plpgsql
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_case public.physio_cases;
+  begin
+    select c.* into v_case from public.physio_cases c where c.id = new.case_id;
+    if not found then
+      raise exception 'registro_nao_encontrado';
+    end if;
+    new.club_id := v_case.club_id;
+    if tg_table_name = 'physio_checkins' and new.athlete_id <> v_case.athlete_id then
+      raise exception 'atleta_invalido';
+    end if;
+    return new;
+  end;
+  $$;
+
+  drop trigger if exists physio_sessions_check on public.physio_sessions;
+  create trigger physio_sessions_check before insert or update on public.physio_sessions
+    for each row execute function public.physio_child_check();
+
+  drop trigger if exists physio_prescriptions_check on public.physio_prescriptions;
+  create trigger physio_prescriptions_check before insert or update on public.physio_prescriptions
+    for each row execute function public.physio_child_check();
+
+  drop trigger if exists physio_checkins_check on public.physio_checkins;
+  create trigger physio_checkins_check before insert or update on public.physio_checkins
+    for each row execute function public.physio_child_check();
+
+  drop trigger if exists physio_criteria_check on public.physio_criteria;
+  create trigger physio_criteria_check before insert or update on public.physio_criteria
+    for each row execute function public.physio_child_check();
+
+  -- ------------------------------------------------------------
+  -- 3. Regras de acesso
+  --    Fisio: acesso total às tabelas da fisio; só leitura de atletas
+  --    (e grupos, que já usam as regras do clube). Negado no resto.
+  -- ------------------------------------------------------------
+  do $$
+  declare
+    t text;
+  begin
+    foreach t in array array[
+      'physio_cases', 'physio_sessions', 'physio_prescriptions',
+      'physio_checkins', 'physio_criteria', 'physio_exercises'
+    ]
+    loop
+      execute format('alter table public.%I enable row level security', t);
+      execute format('revoke all on public.%I from anon', t);
+      execute format('grant select, insert, update, delete on public.%I to authenticated', t);
+      execute format('drop policy if exists %I on public.%I', 'Fisio: acesso total', t);
+      execute format(
+        'create policy %I on public.%I for all to authenticated
+           using (club_id = (select public.current_club_id()) and (select public.is_fisio()))
+           with check (club_id = (select public.current_club_id()) and (select public.is_fisio()) and (select public.support_club_id()) is null)',
+        'Fisio: acesso total', t
+      );
+    end loop;
+  end $$;
+
+  -- Fisio não lê nem escreve nas tabelas da comissão técnica
+  do $$
+  declare
+    t text;
+  begin
+    foreach t in array array[
+      'pse_records', 'psr_records', 'weight_records', 'training_sessions',
+      'adversarios', 'adversario_observacoes', 'adversario_ocultos',
+      'competitions', 'club_exercises', 'workout_prescriptions', 'athlete_prs',
+      'workout_completions', 'club_reminder_settings', 'coaches'
+    ]
+    loop
+      if to_regclass('public.' || t) is null then continue; end if;
+      execute format('drop policy if exists %I on public.%I', 'Fisio: sem acesso', t);
+      execute format(
+        'create policy %I on public.%I as restrictive for all to authenticated
+           using (not (select public.is_fisio()))
+           with check (not (select public.is_fisio()))',
+        'Fisio: sem acesso', t
+      );
+    end loop;
+  end $$;
+
+  -- Atletas: fisio lê, mas não cadastra, altera nem exclui
+  drop policy if exists "Fisio: não cadastra atleta" on public.athletes;
+  create policy "Fisio: não cadastra atleta" on public.athletes
+    as restrictive for insert to authenticated
+    with check (not (select public.is_fisio()));
+
+  drop policy if exists "Fisio: não altera atleta" on public.athletes;
+  create policy "Fisio: não altera atleta" on public.athletes
+    as restrictive for update to authenticated
+    using (not (select public.is_fisio()))
+    with check (not (select public.is_fisio()));
+
+  drop policy if exists "Fisio: não exclui atleta" on public.athletes;
+  create policy "Fisio: não exclui atleta" on public.athletes
+    as restrictive for delete to authenticated
+    using (not (select public.is_fisio()));
+
+  -- ------------------------------------------------------------
+  -- 4. Resumo para o treinador (sem notas clínicas privadas)
+  -- ------------------------------------------------------------
+  create or replace function public.coach_physio_summary()
+  returns json
+  language sql
+  stable
+  security definer
+  set search_path = ''
+  as $$
+    select coalesce(
+      json_agg(row_to_json(x) order by (x.status = 'alta'), x.previsao_retorno nulls last, x.athlete_nome),
+      '[]'::json
+    )
+    from (
+      select
+        c.id as case_id,
+        c.athlete_id,
+        a.nome as athlete_nome,
+        a.classe,
+        a.categoria,
+        c.status,
+        c.regiao,
+        c.lado,
+        c.inicio,
+        c.previsao_retorno,
+        c.retorno_real,
+        c.restricao,
+        c.observacoes_treinador,
+        (select s.dor_repouso from public.physio_sessions s
+          where s.case_id = c.id order by s.date desc, s.created_at desc limit 1) as dor_ultima,
+        (select s.dor_movimento from public.physio_sessions s
+          where s.case_id = c.id order by s.date desc, s.created_at desc limit 1) as dor_movimento_ultima,
+        (select max(s.date) from public.physio_sessions s where s.case_id = c.id) as ultima_sessao,
+        (select count(*) from public.physio_criteria cr where cr.case_id = c.id) as criterios_total,
+        (select count(*) from public.physio_criteria cr where cr.case_id = c.id and cr.cumprido) as criterios_cumpridos,
+        (select count(*) from public.physio_prescriptions p where p.case_id = c.id and p.ativo) as prescricoes_ativas
+      from public.physio_cases c
+      join public.athletes a on a.id = c.athlete_id
+      where c.club_id = public.current_club_id()
+    ) x;
+  $$;
+
+  create or replace function public.coach_physio_case_detail(p_case_id uuid)
+  returns json
+  language plpgsql
+  stable
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_case public.physio_cases;
+    v_athlete public.athletes;
+  begin
+    select c.* into v_case
+    from public.physio_cases c
+    where c.id = p_case_id and c.club_id = public.current_club_id();
+
+    if not found then
+      return null;
+    end if;
+
+    select a.* into v_athlete from public.athletes a where a.id = v_case.athlete_id;
+
+    return json_build_object(
+      'case', json_build_object(
+        'id', v_case.id,
+        'athlete_id', v_case.athlete_id,
+        'athlete_nome', v_athlete.nome,
+        'classe', v_athlete.classe,
+        'categoria', v_athlete.categoria,
+        'status', v_case.status,
+        'regiao', v_case.regiao,
+        'lado', v_case.lado,
+        'inicio', v_case.inicio,
+        'previsao_retorno', v_case.previsao_retorno,
+        'retorno_real', v_case.retorno_real,
+        'restricao', v_case.restricao,
+        'observacoes_treinador', v_case.observacoes_treinador
+      ),
+      'sessions', coalesce((
+        select json_agg(json_build_object(
+          'date', s.date,
+          'dor_repouso', s.dor_repouso,
+          'dor_movimento', s.dor_movimento,
+          'funcao_score', s.funcao_score
+        ) order by s.date)
+        from public.physio_sessions s
+        where s.case_id = v_case.id
+      ), '[]'::json),
+      'criteria', coalesce((
+        select json_agg(json_build_object(
+          'id', cr.id,
+          'descricao', cr.descricao,
+          'cumprido', cr.cumprido,
+          'cumprido_em', cr.cumprido_em
+        ) order by cr.ordem, cr.created_at)
+        from public.physio_criteria cr
+        where cr.case_id = v_case.id
+      ), '[]'::json),
+      'prescriptions', coalesce((
+        select json_agg(json_build_object(
+          'id', p.id,
+          'nome', p.nome,
+          'series', p.series,
+          'repeticoes', p.repeticoes,
+          'frequencia', p.frequencia,
+          'orientacao', p.orientacao
+        ) order by p.created_at)
+        from public.physio_prescriptions p
+        where p.case_id = v_case.id and p.ativo
+      ), '[]'::json)
+    );
+  end;
+  $$;
+
+  revoke execute on function public.coach_physio_summary() from public, anon;
+  revoke execute on function public.coach_physio_case_detail(uuid) from public, anon;
+  grant execute on function public.coach_physio_summary() to authenticated;
+  grant execute on function public.coach_physio_case_detail(uuid) to authenticated;
+
+  -- ------------------------------------------------------------
+  -- 5. Atleta: plano ativo, check-in e evolução da dor
+  -- ------------------------------------------------------------
+  create or replace function public.athlete_physio(p_token uuid)
+  returns json
+  language plpgsql
+  stable
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_me uuid := public._athlete_ready(p_token);
+    v_club uuid;
+    v_today date := public.training_today();
+    v_case public.physio_cases;
+  begin
+    select a.club_id into v_club from public.athletes a where a.id = v_me;
+
+    select c.* into v_case
+    from public.physio_cases c
+    where c.athlete_id = v_me
+      and c.club_id = v_club
+      and c.status <> 'alta'
+    order by c.inicio desc, c.created_at desc
+    limit 1;
+
+    if not found then
+      return json_build_object('today', v_today, 'case', null);
+    end if;
+
+    return json_build_object(
+      'today', v_today,
+      'case', json_build_object(
+        'id', v_case.id,
+        'status', v_case.status,
+        'regiao', v_case.regiao,
+        'lado', v_case.lado,
+        'inicio', v_case.inicio,
+        'previsao_retorno', v_case.previsao_retorno,
+        'restricao', v_case.restricao
+      ),
+      'criteria', coalesce((
+        select json_agg(json_build_object(
+          'id', cr.id,
+          'descricao', cr.descricao,
+          'cumprido', cr.cumprido
+        ) order by cr.ordem, cr.created_at)
+        from public.physio_criteria cr
+        where cr.case_id = v_case.id
+      ), '[]'::json),
+      'prescriptions', coalesce((
+        select json_agg(json_build_object(
+          'id', p.id,
+          'nome', p.nome,
+          'series', p.series,
+          'repeticoes', p.repeticoes,
+          'frequencia', p.frequencia,
+          'orientacao', p.orientacao
+        ) order by p.created_at)
+        from public.physio_prescriptions p
+        where p.case_id = v_case.id and p.ativo
+      ), '[]'::json),
+      'checkins', coalesce((
+        select json_agg(json_build_object(
+          'prescription_id', ck.prescription_id,
+          'date', ck.date,
+          'done', ck.done,
+          'dor_antes', ck.dor_antes,
+          'dor_depois', ck.dor_depois,
+          'observacao', ck.observacao
+        ) order by ck.created_at)
+        from public.physio_checkins ck
+        where ck.case_id = v_case.id and ck.date = v_today
+      ), '[]'::json),
+      'pain_history', coalesce((
+        select json_agg(json_build_object(
+          'date', x.date,
+          'dor_repouso', x.dor_repouso,
+          'dor_movimento', x.dor_movimento
+        ) order by x.date)
+        from (
+          select s.date, s.dor_repouso, s.dor_movimento
+          from public.physio_sessions s
+          where s.case_id = v_case.id
+          order by s.date desc
+          limit 14
+        ) x
+      ), '[]'::json)
+    );
+  end;
+  $$;
+
+  create or replace function public.athlete_physio_checkin(
+    p_token uuid,
+    p_prescription_id uuid,
+    p_done boolean,
+    p_dor_antes integer,
+    p_dor_depois integer,
+    p_observacao text
+  )
+  returns void
+  language plpgsql
+  volatile
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_me uuid := public._athlete_ready(p_token);
+    v_presc public.physio_prescriptions;
+    v_case public.physio_cases;
+    v_today date := public.training_today();
+  begin
+    select p.* into v_presc
+    from public.physio_prescriptions p
+    where p.id = p_prescription_id and p.ativo;
+
+    if not found then
+      raise exception 'registro_nao_encontrado';
+    end if;
+
+    select c.* into v_case
+    from public.physio_cases c
+    where c.id = v_presc.case_id
+      and c.athlete_id = v_me
+      and c.status <> 'alta';
+
+    if not found then
+      raise exception 'registro_nao_encontrado';
+    end if;
+
+    if p_dor_antes is not null and (p_dor_antes < 0 or p_dor_antes > 10) then
+      raise exception 'dor_invalida';
+    end if;
+    if p_dor_depois is not null and (p_dor_depois < 0 or p_dor_depois > 10) then
+      raise exception 'dor_invalida';
+    end if;
+
+    insert into public.physio_checkins (
+      club_id, case_id, athlete_id, prescription_id, date, done, dor_antes, dor_depois, observacao
+    )
+    values (
+      v_case.club_id, v_case.id, v_me, p_prescription_id, v_today,
+      coalesce(p_done, true), p_dor_antes, p_dor_depois,
+      nullif(trim(coalesce(p_observacao, '')), '')
+    )
+    on conflict (prescription_id, date) do update
+      set done = excluded.done,
+          dor_antes = excluded.dor_antes,
+          dor_depois = excluded.dor_depois,
+          observacao = excluded.observacao,
+          created_at = now();
+  end;
+  $$;
+
+  revoke execute on function public.athlete_physio(uuid) from public;
+  revoke execute on function public.athlete_physio_checkin(uuid, uuid, boolean, integer, integer, text) from public;
+  grant execute on function public.athlete_physio(uuid) to anon, authenticated;
+  grant execute on function public.athlete_physio_checkin(uuid, uuid, boolean, integer, integer, text) to anon, authenticated;
+
+  -- ------------------------------------------------------------
+  -- 6. Permissões das funções internas
+  -- ------------------------------------------------------------
+  revoke execute on function public.physio_cases_check() from public, anon, authenticated;
+  revoke execute on function public.physio_child_check() from public, anon, authenticated;
+
   notify pgrst, 'reload schema';
 
 

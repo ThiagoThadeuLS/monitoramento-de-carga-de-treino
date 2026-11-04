@@ -20,8 +20,14 @@ interface AthletePhysicalWorkoutExecutionProps {
   onBack: () => void;
 }
 
-const BAR_WEIGHT = 20;
+const BAR_PRESETS = [20, 15, 10, 5] as const;
 const fmtKg = (v: number) => String(v).replace('.', ',');
+
+/** Aceita vírgula ou ponto e limita a barras de 1 a 50 kg. */
+function parseBarWeight(text: string): number | null {
+  const value = Number(text.replace(',', '.'));
+  return Number.isFinite(value) && value >= 1 && value <= 50 ? value : null;
+}
 
 // ─── Visual barbell plate display ────────────────────────────────────────────
 function PlateVisual({
@@ -150,6 +156,22 @@ export function AthletePhysicalWorkoutExecution({
   // Cronômetro em andamento fica neste aparelho; o treino concluído fica no banco
   const storageKey = `workout_timer_${athleteId}_${sessionId}`;
 
+  // Barra escolhida para este treino (nem sempre é a olímpica de 20 kg)
+  const barStorageKey = `workout_bar_${athleteId}_${sessionId}`;
+  const [barText, setBarText] = useState('20');
+  const barWeight = parseBarWeight(barText) ?? 20;
+
+  const changeBar = (value: string) => {
+    setBarText(value);
+    if (parseBarWeight(value) !== null) {
+      try {
+        localStorage.setItem(barStorageKey, value);
+      } catch {
+        /* sem armazenamento */
+      }
+    }
+  };
+
   // ── Timer state (persistent) ──
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [accumulatedSeconds, setAccumulatedSeconds] = useState(0);
@@ -173,6 +195,17 @@ export function AthletePhysicalWorkoutExecution({
       else next.add(id);
       return next;
     });
+
+  // Load bar weight for this workout
+  useEffect(() => {
+    if (!athleteId || !sessionId) return;
+    try {
+      const saved = localStorage.getItem(barStorageKey);
+      if (saved && parseBarWeight(saved) !== null) setBarText(saved);
+    } catch {
+      /* sem armazenamento */
+    }
+  }, [barStorageKey, athleteId, sessionId]);
 
   // Load timer state
   useEffect(() => {
@@ -290,8 +323,8 @@ export function AthletePhysicalWorkoutExecution({
 
   /**
    * Carga do exercício pelo PR. Nunca arredonda para cima: com barra, usa o maior peso
-   * montável até a carga; sem barra (ou abaixo dos 20 kg da barra), arredonda para baixo
-   * de 0,5 em 0,5 kg e não mostra anilhas.
+   * montável até a carga; sem barra (ou abaixo do peso da barra escolhida), arredonda
+   * para baixo de 0,5 em 0,5 kg e não mostra anilhas.
    */
   const calculateLoad = (p: WorkoutPrescription) => {
     if (!p.porcentagem_pr) return null;
@@ -301,10 +334,10 @@ export function AthletePhysicalWorkoutExecution({
     const arredondado = Math.floor(teorico * 2 + 1e-9) / 2;
     const base = { teorico: Math.round(teorico * 10) / 10 };
     if (p.usa_barra === false) return { ...base, pesoAjustado: arredondado, plates: false, note: '' };
-    if (teorico < BAR_WEIGHT) {
-      return { ...base, pesoAjustado: arredondado, plates: false, note: `Abaixo da barra de ${BAR_WEIGHT} kg: use uma barra mais leve ou halteres.` };
+    if (teorico < barWeight) {
+      return { ...base, pesoAjustado: arredondado, plates: false, note: `Abaixo da barra de ${fmtKg(barWeight)} kg: use uma barra mais leve ou halteres.` };
     }
-    return { ...base, pesoAjustado: ajustarCargaMontavel(teorico, BAR_WEIGHT).pesoAjustado, plates: true, note: '' };
+    return { ...base, pesoAjustado: ajustarCargaMontavel(teorico, barWeight).pesoAjustado, plates: true, note: '' };
   };
 
   // ── READ-ONLY mode (treino já concluído) ───────────────────────────────────
@@ -474,6 +507,57 @@ export function AthletePhysicalWorkoutExecution({
         </div>
       </div>
 
+      {/* Bar weight used in the plate calculation */}
+      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3">
+        <div className="flex items-start gap-2">
+          <Dumbbell className="w-4 h-4 text-sky-400 flex-shrink-0 mt-0.5" />
+          <div className="min-w-0">
+            <p className="text-xs font-bold text-white">Barra usada neste treino</p>
+            <p className="text-[11px] text-slate-400">
+              O cálculo das anilhas muda conforme a barra. Escolha a que você vai usar hoje.
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {BAR_PRESETS.map((weight) => {
+            const active = barWeight === weight;
+            return (
+              <button
+                key={weight}
+                type="button"
+                aria-pressed={active}
+                onClick={() => changeBar(String(weight))}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
+                  active
+                    ? 'bg-sky-500 text-slate-950 border-sky-500'
+                    : 'bg-slate-950 text-slate-300 border-slate-700 hover:text-white hover:border-slate-500'
+                }`}
+              >
+                {weight} kg
+              </button>
+            );
+          })}
+          <label className="flex items-center gap-1.5 sm:ml-auto">
+            <span className="text-[11px] text-slate-400">Outra</span>
+            <input
+              type="number"
+              inputMode="decimal"
+              min="1"
+              max="50"
+              step="0.5"
+              value={barText}
+              onChange={(e) => changeBar(e.target.value)}
+              onBlur={() => {
+                if (parseBarWeight(barText) === null) changeBar(String(barWeight));
+              }}
+              aria-label="Peso da barra em kg"
+              className="w-20 bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-white text-xs text-center tabular-nums focus:outline-none focus:ring-2 focus:ring-sky-500"
+            />
+            <span className="text-[11px] text-slate-400">kg</span>
+          </label>
+        </div>
+      </div>
+
       <div className="space-y-4">
         {/* Prescriptions */}
         <div className="space-y-3">
@@ -561,12 +645,12 @@ export function AthletePhysicalWorkoutExecution({
                   <div className="border-t border-slate-800 bg-slate-950/60 px-4 py-4 space-y-3">
                     <div className="flex items-center justify-between mb-1">
                       <p className="text-[10px] uppercase font-bold text-violet-400 tracking-wider">Montagem da Barra</p>
-                      <span className="text-[10px] text-slate-500">barra olímpica 20 kg</span>
+                      <span className="text-[10px] text-slate-500">barra de {fmtKg(barWeight)} kg</span>
                     </div>
                     <PlateVisual
                       totalWeight={carga!.pesoAjustado}
                       theoreticalWeight={carga!.teorico}
-                      barWeight={BAR_WEIGHT}
+                      barWeight={barWeight}
                     />
                   </div>
                 )}
