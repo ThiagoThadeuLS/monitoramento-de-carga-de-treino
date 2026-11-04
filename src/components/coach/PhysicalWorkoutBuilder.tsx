@@ -1,9 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { deleteById, supabase } from '../../lib/supabase';
 import { useDialogs } from '../ui/Dialogs';
 import { addDaysISO, todayISO } from '../../lib/date';
 import { PHYSICAL_TRAINING } from '../../data/constants';
-import { Dumbbell, Plus, Trash2, Loader2, Pencil, X, BookOpen } from 'lucide-react';
+import { Dumbbell, Plus, Trash2, Loader2, Pencil, X, BookOpen, Layers, Save } from 'lucide-react';
+import { WorkoutTemplate, rowsToBlocks } from '../../lib/workoutTemplates';
+import { WorkoutTemplateLibrary } from './physical/WorkoutTemplateLibrary';
 
 interface TrainingSessionItem {
   id: string;
@@ -29,6 +31,8 @@ interface Prescription {
   usa_pr: boolean;
   porcentagem_pr?: number | null;
   observacoes_tecnico?: string | null;
+  /** Ordem na ficha (fichas antigas não têm: ficam na ordem de cadastro) */
+  posicao?: number | null;
 }
 
 /** `sessionId`: treino aberto pela agenda (sem isso, começa pelo mais recente). */
@@ -54,6 +58,12 @@ export function PhysicalWorkoutBuilder({ sessionId }: { sessionId?: string | nul
 
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
   const [loadingPrescriptions, setLoadingPrescriptions] = useState(false);
+  const [prescriptionsVersion, setPrescriptionsVersion] = useState(0);
+
+  // Modelos de ficha (fichas prontas para reaproveitar)
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [templateDraft, setTemplateDraft] = useState<WorkoutTemplate | null>(null);
+  const clearTemplateDraft = useCallback(() => setTemplateDraft(null), []);
 
   // Estados do formulário de prescrição
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -121,21 +131,30 @@ export function PhysicalWorkoutBuilder({ sessionId }: { sessionId?: string | nul
       return;
     }
     const client = supabase;
+    let cancelled = false;
     async function loadPrescriptions() {
       setLoadingPrescriptions(true);
+      // Mesma ordem que o atleta vê: sem posição (fichas antigas) primeiro, na ordem de cadastro
       const { data, error } = await client
         .from('workout_prescriptions')
         .select('*')
         .eq('training_session_id', selectedSessionId)
+        .order('posicao', { ascending: true, nullsFirst: true })
         .order('created_at', { ascending: true });
 
+      if (cancelled) return;
       if (!error && data) {
         setPrescriptions(data);
       }
       setLoadingPrescriptions(false);
     }
     loadPrescriptions();
-  }, [selectedSessionId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedSessionId, prescriptionsVersion]);
+
+  const lastPosition = prescriptions.reduce((m, p) => Math.max(m, p.posicao ?? 0), 0);
 
   const handleSelectCatalogExercise = (nomeEx: string) => {
     setExercicio(nomeEx);
@@ -275,9 +294,10 @@ export function PhysicalWorkoutBuilder({ sessionId }: { sessionId?: string | nul
         notify(`Erro ao atualizar: ${error.message}`, 'error');
       }
     } else {
+      // Ficha com ordem (veio de modelo): o novo exercício vai para o fim
       const { data, error } = await supabase
         .from('workout_prescriptions')
-        .insert([payload])
+        .insert([{ ...payload, posicao: lastPosition > 0 ? lastPosition + 1 : null }])
         .select()
         .single();
 
@@ -324,6 +344,15 @@ export function PhysicalWorkoutBuilder({ sessionId }: { sessionId?: string | nul
           >
             <BookOpen className="w-4 h-4" />
             <span>{showCatalogManager ? 'Ocultar Catálogo' : 'Gerenciar Catálogo Oficial'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowTemplates(!showTemplates)}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-violet-300 border border-slate-700 text-xs font-bold transition-all"
+          >
+            <Layers className="w-4 h-4" />
+            <span>{showTemplates ? 'Ocultar Modelos' : 'Modelos de ficha'}</span>
           </button>
 
           <div className="w-full sm:w-64">
@@ -460,6 +489,23 @@ export function PhysicalWorkoutBuilder({ sessionId }: { sessionId?: string | nul
         </div>
       )}
 
+      {showTemplates && (
+        <WorkoutTemplateLibrary
+          catalog={catalog}
+          sessionId={selectedSessionId || null}
+          sessionLabel={(() => {
+            const s = sessions.find((x) => x.id === selectedSessionId);
+            return s ? `${s.date} - ${s.name}` : undefined;
+          })()}
+          fichaCount={prescriptions.length}
+          lastPosition={lastPosition}
+          draft={templateDraft}
+          onDraftHandled={clearTemplateDraft}
+          onApplied={() => setPrescriptionsVersion((v) => v + 1)}
+          onClose={() => setShowTemplates(false)}
+        />
+      )}
+
       {selectedSessionId && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="md:col-span-1 bg-slate-900/80 border border-slate-800 rounded-2xl p-4 space-y-4">
@@ -582,6 +628,27 @@ export function PhysicalWorkoutBuilder({ sessionId }: { sessionId?: string | nul
               <span>Exercícios Prescritos para o Treino</span>
               <span className="text-xs bg-slate-800 text-sky-400 px-2 py-0.5 rounded-md">{prescriptions.length} itens</span>
             </h3>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setShowTemplates(true)}
+                className="px-3 py-1.5 rounded-lg bg-violet-500/15 border border-violet-500/40 text-violet-200 hover:bg-violet-500/25 text-[11px] font-bold flex items-center gap-1.5"
+              >
+                <Layers className="w-3.5 h-3.5" /> Usar modelo
+              </button>
+              {prescriptions.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTemplateDraft({ nome: '', descricao: null, blocos: rowsToBlocks(prescriptions.map((p) => ({ ...p, series: Number(p.series) || 1, porcentagem_pr: p.porcentagem_pr ?? null, observacoes_tecnico: p.observacoes_tecnico ?? null }))) });
+                    setShowTemplates(true);
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 hover:bg-slate-700 text-[11px] font-bold flex items-center gap-1.5"
+                >
+                  <Save className="w-3.5 h-3.5" /> Salvar como modelo
+                </button>
+              )}
+            </div>
 
             {loadingPrescriptions ? (
               <div className="py-12 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-sky-400" /></div>

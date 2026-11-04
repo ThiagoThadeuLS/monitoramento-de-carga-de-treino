@@ -3438,6 +3438,8 @@
   );
   alter table public.workout_prescriptions add column if not exists club_id uuid references public.clubs(id) on delete cascade;
   alter table public.workout_prescriptions add column if not exists observacoes_tecnico text;
+  -- Ordem do exercício na ficha (modelos e fichas novas). Sem posição = ordem de cadastro, antes dos com posição.
+  alter table public.workout_prescriptions add column if not exists posicao integer;
   alter table public.workout_prescriptions add column if not exists created_at timestamp with time zone default now();
 
   -- Clube vem do treino. Ficha de um treino que já não existe fica guardada sem clube
@@ -3688,7 +3690,7 @@
                    where e.club_id = v_session.club_id and lower(trim(e.nome)) = lower(trim(w.exercicio))
                    limit 1
                  ), true)
-               ) order by w.created_at, w.id)
+               ) order by w.posicao nulls first, w.created_at, w.id)
         from public.workout_prescriptions w
         where w.training_session_id = v_session.id
       ), '[]'::json),
@@ -4313,5 +4315,44 @@
 
   revoke execute on function public.athlete_achievements(uuid) from public;
   grant execute on function public.athlete_achievements(uuid) to anon, authenticated;
+
+  notify pgrst, 'reload schema';
+
+  -- ############################################################
+  -- PARTE 18. MODELOS DE FICHA DA PREPARAÇÃO FÍSICA
+  -- * O treinador monta fichas prontas (blocos com exercícios) e reaproveita em outros
+  --   treinos. Usar um modelo COPIA os exercícios para o treino: editar o modelo depois
+  --   não muda os treinos que já o usaram.
+  -- * blocos = [{ "id", "nome", "itens": [{ "id", "exercicio", "series", "repeticoes",
+  --   "usa_pr", "porcentagem_pr", "observacoes_tecnico" }] }] (na ordem da ficha)
+  -- ############################################################
+  create table if not exists public.workout_templates (
+    id uuid primary key default gen_random_uuid(),
+    club_id uuid not null default public.current_club_id() references public.clubs(id) on delete cascade,
+    nome text not null check (length(trim(nome)) between 1 and 80),
+    descricao text check (descricao is null or length(descricao) <= 300),
+    blocos jsonb not null default '[]'::jsonb check (jsonb_typeof(blocos) = 'array' and pg_column_size(blocos) < 100000),
+    created_at timestamp with time zone not null default now(),
+    updated_at timestamp with time zone not null default now()
+  );
+  -- Nome único no clube (serve também para buscar pelo clube)
+  create unique index if not exists workout_templates_nome_unico on public.workout_templates (club_id, lower(trim(nome)));
+
+  alter table public.workout_templates enable row level security;
+  revoke all on public.workout_templates from anon;
+  drop policy if exists "Clube: leitura" on public.workout_templates;
+  create policy "Clube: leitura" on public.workout_templates
+    for select to authenticated using (club_id = (select public.current_club_id()));
+  drop policy if exists "Clube: inclusão" on public.workout_templates;
+  create policy "Clube: inclusão" on public.workout_templates
+    for insert to authenticated with check (club_id = (select public.current_club_id()) and (select public.support_club_id()) is null);
+  drop policy if exists "Clube: alteração" on public.workout_templates;
+  create policy "Clube: alteração" on public.workout_templates
+    for update to authenticated
+    using (club_id = (select public.current_club_id()) and (select public.support_club_id()) is null)
+    with check (club_id = (select public.current_club_id()));
+  drop policy if exists "Clube: exclusão" on public.workout_templates;
+  create policy "Clube: exclusão" on public.workout_templates
+    for delete to authenticated using (club_id = (select public.current_club_id()) and (select public.support_club_id()) is null);
 
   notify pgrst, 'reload schema';
