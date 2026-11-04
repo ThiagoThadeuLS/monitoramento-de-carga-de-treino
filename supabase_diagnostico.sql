@@ -204,6 +204,9 @@ from (values
   (43, 'Participantes de grupo de outro clube', $q$select count(*) from public.athlete_group_members m join public.athlete_groups g on g.id = m.group_id join public.athletes a on a.id = m.athlete_id where g.club_id is distinct from a.club_id$q$),
   (44, 'Adversários (fichas / observações)', $q$select (select count(*) from public.adversarios) || ' / ' || (select count(*) from public.adversario_observacoes)$q$),
   (45, 'Competições', $q$select count(*) from public.competitions$q$),
+  (46, 'Fotos (atletas com foto / treinadores com foto / arquivos no Storage)', $q$select (select count(*) from public.athletes where photo_url is not null) || ' / ' || (select count(*) from public.coaches where photo_url is not null) || ' / ' || (select count(*) from storage.objects where bucket_id = 'fotos')$q$),
+  (47, 'Fotos: arquivos de atleta já excluído (sobras, podem sair pelo painel)', $q$select count(*) from storage.objects o where o.bucket_id = 'fotos' and (storage.foldername(o.name))[2] = 'atletas' and not exists (select 1 from public.athletes a where a.id::text = (storage.foldername(o.name))[3])$q$),
+  (48, 'Fotos: regras que aceitam envio sem login (o certo é 0)', $q$select count(*) from pg_policies where schemaname = 'storage' and tablename = 'objects' and cmd in ('INSERT', 'UPDATE', 'DELETE', 'ALL') and 'anon' = any(roles)$q$),
 
   -- Lembretes e agendamento
   (50, 'Aparelhos de lembrete (total / ativos / expirados)', $q$select count(*) || ' / ' || count(*) filter (where expired_at is null) || ' / ' || count(*) filter (where expired_at is not null) from public.push_subscriptions$q$),

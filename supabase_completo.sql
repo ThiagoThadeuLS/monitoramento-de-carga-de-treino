@@ -1805,11 +1805,16 @@
         file_size_limit = excluded.file_size_limit,
         allowed_mime_types = excluded.allowed_mime_types;
 
-  -- Leitura: o bucket é público (a foto aparece no app do atleta, que não usa o Supabase Auth)
+  -- A imagem abre pelo endereço público (bucket público: o app do atleta não usa o Supabase Auth).
+  -- Listar, substituir e apagar pela API: só a pasta do próprio clube. Antes qualquer conta
+  -- logada listava as fotos de todos os clubes (com os códigos de clube e de atleta).
   drop policy if exists "Fotos: leitura" on storage.objects;
   create policy "Fotos: leitura" on storage.objects
     for select to authenticated
-    using (bucket_id = 'fotos');
+    using (
+      bucket_id = 'fotos'
+      and (storage.foldername(name))[1] = (select public.current_club_id())::text
+    );
 
   -- Estrutura do caminho: <clube>/atletas/<atleta>/arquivo.jpg
   --                      <clube>/treinadores/<treinador>/arquivo.jpg
@@ -1827,7 +1832,7 @@
         or (
           (storage.foldername(name))[2] = 'treinadores'
           and (
-            (storage.foldername(name))[3] = auth.uid()::text
+            (storage.foldername(name))[3] = (select auth.uid())::text
             or (select public.is_club_admin())
           )
         )
@@ -1846,7 +1851,7 @@
         or (
           (storage.foldername(name))[2] = 'treinadores'
           and (
-            (storage.foldername(name))[3] = auth.uid()::text
+            (storage.foldername(name))[3] = (select auth.uid())::text
             or (select public.is_club_admin())
           )
         )
@@ -1861,7 +1866,7 @@
         or (
           (storage.foldername(name))[2] = 'treinadores'
           and (
-            (storage.foldername(name))[3] = auth.uid()::text
+            (storage.foldername(name))[3] = (select auth.uid())::text
             or (select public.is_club_admin())
           )
         )
@@ -1880,7 +1885,7 @@
         or (
           (storage.foldername(name))[2] = 'treinadores'
           and (
-            (storage.foldername(name))[3] = auth.uid()::text
+            (storage.foldername(name))[3] = (select auth.uid())::text
             or (select public.is_club_admin())
           )
         )
@@ -4228,97 +4233,17 @@
 
   -- ############################################################
   -- PARTE 16. FOTO DO PRÓPRIO ATLETA
-  -- * O atleta não usa o Supabase Auth: o upload é feito pelo navegador (cliente
-  --   anônimo) e o banco confere o endereço pelo token da sessão antes de gravar.
-  -- * Nome fixo "perfil.<ext>": trocar a foto SUBSTITUI o arquivo, então cada
-  --   atleta ocupa uma imagem só (~30–80 KB, 512 px) e o plano gratuito não cresce.
-  -- * O caminho continua <clube>/atletas/<atleta>/perfil.webp, então as regras do
-  --   treinador (club_set_athlete_photo) continuam valendo sem mudança.
+  -- * O atleta não usa o Supabase Auth, então o Storage não sabe quem ele é. A foto
+  --   dele sobe pela Edge Function "foto-atleta" (supabase/functions/foto-atleta), que
+  --   confere a sessão do app no banco (athlete_get_session) e grava com a chave do
+  --   servidor. Nenhuma regra do Storage aceita envio sem login.
+  -- * A versão anterior deixava enviar sem login: qualquer pessoa que soubesse o código
+  --   do clube e o do atleta trocava a foto dele. As regras e funções dela saem aqui
+  --   (são regras de acesso, não dados: as fotos continuam onde estão).
   -- ############################################################
-
-  -- ------------------------------------------------------------
-  -- 1. Escrita no bucket "fotos": só a pasta do próprio atleta, só o arquivo
-  --    "perfil.*" e só se o atleta existir no clube informado na pasta.
-  --    (security definer: o cliente anônimo não lê public.athletes)
-  -- ------------------------------------------------------------
-  create or replace function public.athlete_photo_upload_allowed(p_name text)
-  returns boolean
-  language sql
-  stable
-  security definer
-  set search_path = ''
-  as $$
-    select coalesce(
-      array_length(storage.foldername(p_name), 1) = 3
-      and (storage.foldername(p_name))[2] = 'atletas'
-      and p_name ~* '/perfil\.(png|jpe?g|webp)$'
-      and exists (
-        select 1
-        from public.athletes a
-        where a.id::text = (storage.foldername(p_name))[3]
-          and a.club_id::text = (storage.foldername(p_name))[1]
-          and a.active
-      ),
-      false
-    );
-  $$;
-
-  revoke execute on function public.athlete_photo_upload_allowed(text) from public;
-  grant execute on function public.athlete_photo_upload_allowed(text) to anon, authenticated;
-
   drop policy if exists "Fotos: atleta envia a própria foto" on storage.objects;
-  create policy "Fotos: atleta envia a própria foto" on storage.objects
-    for insert to anon, authenticated
-    with check (bucket_id = 'fotos' and (select public.athlete_photo_upload_allowed(name)));
-
-  -- Subir de novo o mesmo caminho ("Trocar foto") exige também a política de update
   drop policy if exists "Fotos: atleta substitui a própria foto" on storage.objects;
-  create policy "Fotos: atleta substitui a própria foto" on storage.objects
-    for update to anon, authenticated
-    using (bucket_id = 'fotos' and (select public.athlete_photo_upload_allowed(name)))
-    with check (bucket_id = 'fotos' and (select public.athlete_photo_upload_allowed(name)));
-
-  -- Sem política de exclusão para o atleta: o nome fixo já evita arquivo sobrando.
-
-  -- ------------------------------------------------------------
-  -- 2. Grava a foto no cadastro do atleta logado (p_url null = sem foto)
-  -- ------------------------------------------------------------
-  create or replace function public.athlete_set_photo(p_token uuid, p_url text)
-  returns text
-  language plpgsql
-  volatile
-  security definer
-  set search_path = ''
-  as $$
-  declare
-    v_athlete public.athletes;
-    v_file text;
-  begin
-    v_athlete := public._athlete_from_token(p_token);
-
-    if p_url is null then
-      update public.athletes set photo_url = null where id = v_athlete.id;
-      return null;
-    end if;
-
-    -- Só o endereço público da pasta do próprio atleta (o ?v= é só cache do navegador)
-    if p_url !~* ('^https://[a-z0-9-]+\.supabase\.co/storage/v1/object/public/fotos/' ||
-                  v_athlete.club_id::text || '/atletas/' || v_athlete.id::text ||
-                  '/perfil\.(png|jpe?g|webp)(\?v=[0-9]+)?$') then
-      raise exception 'foto_invalida';
-    end if;
-
-    v_file := split_part(regexp_replace(p_url, '^.*/fotos/', ''), '?', 1);
-    if not exists (select 1 from storage.objects o where o.bucket_id = 'fotos' and o.name = v_file) then
-      raise exception 'foto_invalida';
-    end if;
-
-    update public.athletes set photo_url = p_url where id = v_athlete.id;
-    return p_url;
-  end;
-  $$;
-
-  revoke execute on function public.athlete_set_photo(uuid, text) from public;
-  grant execute on function public.athlete_set_photo(uuid, text) to anon, authenticated;
+  drop function if exists public.athlete_photo_upload_allowed(text);
+  drop function if exists public.athlete_set_photo(uuid, text);
 
   notify pgrst, 'reload schema';

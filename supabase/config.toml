@@ -4,3 +4,8 @@
 # das regras do banco (push_due_reminders), então não exige token.
 [functions.enviar-lembretes]
 verify_jwt = false
+
+# Foto do próprio atleta: o atleta não tem login do Supabase (entra com CPF + senha do
+# app). A função confere a sessão dele no banco antes de gravar a foto.
+[functions.foto-atleta]
+verify_jwt = false

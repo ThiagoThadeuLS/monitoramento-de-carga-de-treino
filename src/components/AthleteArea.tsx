@@ -378,11 +378,9 @@ export const AthleteArea: React.FC = () => {
   const { athlete } = session;
   const token = session.token;
 
-  // Foto do próprio atleta: reduzida no navegador (512 px) e com nome fixo no Storage
+  // Foto do próprio atleta: reduzida no navegador (512 px); o servidor confere a sessão e grava
   const changePhoto = async (file: File) => {
-    const clubId = session.club?.id;
-    if (!clubId) throw new Error('Não foi possível identificar seu clube. Entre novamente.');
-    const url = await uploadOwnAthletePhoto({ token, athleteId: athlete.id, clubId, file });
+    const url = await uploadOwnAthletePhoto(token, file);
     setSession((cur) => (cur ? { ...cur, athlete: { ...cur.athlete, photo_url: url } } : cur));
     notify('Foto atualizada.', 'success');
   };

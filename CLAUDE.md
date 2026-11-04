@@ -5,7 +5,7 @@ Plataforma multi-clube (piloto: judô do Minas Tênis Clube). O atleta registra 
 ## Stack
 
 - React 18 + TypeScript + Vite + Tailwind; ícones `lucide-react`.
-- Supabase (Postgres + Auth + Storage + Edge Function `enviar-lembretes`). Deploy na Vercel.
+- Supabase (Postgres + Auth + Storage + Edge Functions `enviar-lembretes` e `foto-atleta`). Deploy na Vercel.
 - PWA: `public/sw.js` recebe os lembretes (Web Push). No celular o app só funciona instalado.
 
 ## Comandos
@@ -31,7 +31,7 @@ Antes de terminar uma mudança: `npm run typecheck && npm run lint && npm test`.
 - `supabase_dados_ficticios.sql` = dados de teste (clube "Desenvolvimento"). O antigo `supabase_zerar_banco.sql` foi removido depois do início do piloto (está no histórico do git).
 - `supabase_diagnostico.sql` = consultas só de leitura para conferir o banco (estrutura, regras de acesso, funções, saúde). Rode um bloco por vez.
 - `supabase_limpeza.sql` = limpeza opcional de sobras (fisioterapia descontinuada, tabela e colunas antigas): só remove o que está vazio; dados de teste só saem com a trava ligada.
-- **Storage:** buckets públicos `escudos` (escudo do clube) e `fotos` (atletas e treinadores). As fotos são recortadas/reduzidas no navegador para 512 px WEBP/JPEG antes de subir ([photos.ts](src/lib/photos.ts)), ficando com ~30–80 KB. O caminho é `<clube>/atletas/<atleta>/...` ou `<clube>/treinadores/<treinador>/...`; o banco só aceita o endereço depois de conferir a pasta (RPCs `club_set_athlete_photo`/`club_set_coach_photo`) e a foto antiga é removida ao trocar. Para acompanhar o plano gratuito, veja **Storage → Usage** no painel: 100 atletas com foto ocupam cerca de 5 MB.
+- **Storage:** buckets públicos `escudos` (escudo do clube) e `fotos` (atletas e treinadores). As fotos são recortadas/reduzidas no navegador para 512 px WEBP/JPEG antes de subir ([photos.ts](src/lib/photos.ts)), ficando com ~30–80 KB. O caminho é `<clube>/atletas/<atleta>/...` ou `<clube>/treinadores/<treinador>/...`; a comissão envia direto (regras do Storage por clube) e o banco só aceita o endereço depois de conferir a pasta (RPCs `club_set_athlete_photo`/`club_set_coach_photo`). **A foto do próprio atleta passa pela Edge Function `foto-atleta`**, que confere a sessão do app: nenhuma regra do Storage aceita envio sem login. Cada pessoa fica com uma foto só (ao trocar, as anteriores da pasta saem) e excluir o atleta apaga a pasta dele. Para acompanhar o plano gratuito, veja **Storage → Usage** no painel: 100 atletas com foto ocupam cerca de 5 MB.
 
 ## Regras de segurança (não quebrar)
 
@@ -63,3 +63,4 @@ Antes de terminar uma mudança: `npm run typecheck && npm run lint && npm test`.
 - `src/components/coach/`: telas do treinador. Telas grandes ficam divididas em subpastas (`adversaries/`, `period/`).
 - `src/lib/`: acesso ao banco e cálculos puros (`load.ts` = carga interna/ACWR/monotonia, `stats.ts`, `barbellCalculator.ts` = montagem da barra, arredonda a carga **para baixo**, `weightPlan.ts` = limite acima da categoria até a pesagem: 8% com 14+ dias, 5% de 7 a 13, 3% de 1 a 6, categoria no dia, `cpf.ts`, `export.ts` = CSV para Excel com proteção contra fórmulas, `photos.ts` = redução e envio de fotos). Avatares: `ui/Avatar.tsx` (foto ou iniciais) e `ui/PhotoPicker.tsx` (avatar clicável que envia a imagem).
 - `supabase/functions/enviar-lembretes`: chamada pelo pg_cron a cada 5 min; quem recebe lembrete é decidido em `public.push_due_reminders`. Proteção opcional por segredo (`CRON_SECRET` + cabeçalho `x-cron-secret`; passo a passo no fim da parte 7 do SQL).
+- `supabase/functions/foto-atleta`: foto do próprio atleta (recebe a imagem + cabeçalho `x-athlete-token`, confere com `athlete_get_session` e grava com a chave do servidor). Publicar: `npx supabase functions deploy foto-atleta --no-verify-jwt`.

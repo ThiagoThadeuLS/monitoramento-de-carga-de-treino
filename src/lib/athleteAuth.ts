@@ -48,7 +48,10 @@ const ERROR_MESSAGES: Record<string, string> = {
   peso_ja_enviado: 'Você já registrou o peso hoje. Para corrigir, apague o registro de hoje no Histórico e envie de novo.',
   pr_invalido: 'Informe uma carga maior que zero e de até 500 kg.',
   exercicio_invalido: 'Esse exercício não está no catálogo do clube (ou não pede PR).',
-  foto_invalida: 'Não foi possível validar a foto. Envie a imagem de novo.',
+  foto_invalida: 'Não foi possível ler a foto. Tente outra imagem (JPG, PNG ou WEBP).',
+  foto_grande: 'A foto ficou grande demais. Tente outra imagem.',
+  foto_sem_servidor: 'O envio de fotos ainda não foi ativado no servidor. Avise a comissão técnica.',
+  falha_servidor: 'Não foi possível salvar a foto agora. Tente de novo em instantes.',
   'duplicate key': 'Esse registro já existe.',
 };
 
@@ -150,13 +153,31 @@ export async function logoutAthlete(token: string): Promise<void> {
 }
 
 /**
- * Foto do próprio atleta (p_url null = sem foto). O banco descobre o atleta pelo
- * token e só aceita o endereço da pasta dele no Storage.
+ * Foto do próprio atleta. O atleta não usa o Supabase Auth, então a foto passa pela
+ * Edge Function "foto-atleta": ela confere a sessão (token) no banco e grava na pasta
+ * dele. Devolve o endereço público da foto nova.
  */
-export async function saveAthletePhoto(token: string, url: string | null): Promise<string | null> {
-  const { data, error } = await client().rpc('athlete_set_photo', { p_token: token, p_url: url });
-  if (error) throw toAuthError(error);
-  return (data ?? null) as string | null;
+export async function sendAthletePhoto(token: string, photo: Blob): Promise<string> {
+  const { data, error } = await client().functions.invoke('foto-atleta', {
+    body: photo,
+    headers: { 'x-athlete-token': token },
+  });
+  if (error) {
+    // A função responde { erro }; 404 = função ainda não publicada no Supabase
+    const res = (error as { context?: unknown }).context;
+    let code = '';
+    if (res instanceof Response) {
+      code = await res.json().then(
+        (j: { erro?: string }) => j?.erro ?? '',
+        () => ''
+      );
+      if (!code && res.status === 404) code = 'foto_sem_servidor';
+    }
+    throw toAuthError({ message: code || error.message });
+  }
+  const url = (data as { url?: string } | null)?.url;
+  if (!url) throw toAuthError({ message: 'falha_servidor' });
+  return url;
 }
 
 type NewRecord<T> = Omit<T, 'id' | 'created_at' | 'athlete_id'>;

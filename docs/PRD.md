@@ -79,7 +79,7 @@ Cada clube só enxerga os próprios dados.
 - **RF-08 — Peso:** peso corporal (30 a 250 kg).
 - **RF-09 — Data correta:** os registros usam a data local do aparelho.
 - **RF-10 — Agenda (somente leitura):** treinos da semana passada, da atual e da próxima **destinados ao atleta** (conforme o público de cada treino). Tocar num treino abre detalhes e as **anotações do treinador**.
-- **RF-11 — Identidade do clube:** cabeçalho com nome e escudo do clube e as **cores do clube**. O perfil do atleta mostra a **foto** cadastrada pelo treinador (ou as iniciais do nome quando não houver foto).
+- **RF-11 — Identidade do clube:** cabeçalho com nome e escudo do clube e as **cores do clube**. O perfil do atleta mostra a **foto** (ou as iniciais do nome quando não houver foto). O atleta troca a própria foto tocando nela no app; a comissão técnica também pode trocar.
 - **RF-12 — Lembretes (notificações):** sempre no horário de Brasília e **somente dentro do horário de avisos definido pelo clube** (padrão 06:00–22:00):
   - **PSR:** a partir do **início** do horário de avisos, nos dias em que o atleta tem treino; repete **a cada 20 min** até responder.
   - **PSE:** **20 min após o fim de cada treino** destinado ao atleta (sem horário de fim: início + 1h30); repete **a cada 20 min** até responder aquele treino ("não treinei" encerra os lembretes do dia).
@@ -103,7 +103,7 @@ Abas: **Dia, Período, Carga, Agenda, Adversários, Gestão**.
 - **RF-19 — Agenda — cronograma:** criar, editar e excluir treinos com data, horário de início e fim, nome, tipo, **PSE esperada (1–10)**, **anotações** e **para quem**: **todos**, **somente** (grupos e/ou pessoas) ou **todos exceto**. Só a semana atual e a próxima podem ser programadas; a semana passada fica para consulta; treinos mais antigos são **apagados** automaticamente.
 - **RF-20 — Agenda — horário dos avisos e pesagem:** o treinador define **das … às …** (início antes do fim) e os **dias e horário do lembrete de pesagem**. O fim do horário também é o prazo da tabela "Sem resposta".
 - **RF-21 — Adversários:** cards com iniciais, categoria de peso, classe (juvenil/júnior/sênior) e origem (clube nacional ou país); busca por nome, categoria, clube, país ou observação; filtros por classe e nacional/internacional; ficha completa ao tocar; cadastro e edição em janela; exclusão com confirmação.
-- **RF-22 — Gestão → Atletas:** cadastrar, editar e excluir (nome, **CPF** obrigatório, válido e único na plataforma, classe, categoria, celular, sexo); busca; **redefinir a senha** para a inicial; abrir a **ficha**; adicionar, trocar ou remover a **foto** do atleta (PNG, JPG ou WEBP, reduzida automaticamente para 512 px antes de subir). **Inativar/reativar**: o inativo não entra no app nem recebe lembretes e some das listas, mas o histórico é mantido (filtro "Mostrar inativos"). Excluir avisa que apaga todo o histórico. Selos **Inativo** e **Termo pendente**.
+- **RF-22 — Gestão → Atletas:** cadastrar, editar e excluir (nome, **CPF** obrigatório, válido e único na plataforma, classe, categoria, celular, sexo); busca; **redefinir a senha** para a inicial; abrir a **ficha**; adicionar, trocar ou remover a **foto** do atleta (qualquer imagem que o navegador abra; é recortada e reduzida para 512 px antes de subir, e cada pessoa fica com uma foto só). Excluir o atleta apaga também a foto. **Inativar/reativar**: o inativo não entra no app nem recebe lembretes e some das listas, mas o histórico é mantido (filtro "Mostrar inativos"). Excluir avisa que apaga todo o histórico. Selos **Inativo** e **Termo pendente**.
 - **RF-23 — Gestão → Grupos:** criar, renomear e excluir grupos e escolher os participantes; **um atleta pode estar em vários grupos**. Usados no público dos treinos e nos filtros.
 - **RF-24 — Gestão → Treinadores (só admin):** cadastrar treinador com **senha temporária** (mostrada uma vez, com Copiar e WhatsApp); promover/rebaixar admin; desativar/reativar. O clube **nunca fica sem admin ativo**; o admin não altera a própria conta. Troca do **escudo** (PNG, JPG, WEBP ou SVG, até 1 MB) e da **foto de cada treinador** (cada um troca a própria no cabeçalho; o admin também pode trocar a dos colegas).
 - **RF-25 — Gestão → Cores (só admin):** 8 **paletas prontas** ou **personalizada** (cor principal e cor de fundo em hexadecimal, com seletor). Prévia ao vivo, aviso de fundo claro demais ou pouco contraste, "Voltar ao padrão". Vale para todos os treinadores e atletas do clube e fica guardada no aparelho para abrir já com as cores.
@@ -150,7 +150,8 @@ Abas: **Dia, Período, Carga, Agenda, Adversários, Gestão**.
 | Supabase Auth | E-mail e senha | Login de treinadores, admins e donos (atletas usam login próprio por CPF) | Disponível | Piloto |
 | Supabase Storage | Buckets públicos `escudos` e `fotos` | Escudos dos clubes e fotos de atletas/treinadores (imagens reduzidas no navegador, ~30–80 KB cada) | Disponível | Piloto |
 | Supabase Edge Function `enviar-lembretes` | HTTP (Deno) + biblioteca `web-push` | Busca lembretes vencidos e envia as notificações; remove aparelhos inválidos | Disponível | Piloto |
-| pg_cron + pg_net (Supabase) | Agendamento no banco | Chama `enviar-lembretes` a cada 5 min; limpeza semanal do cronograma antigo | Disponível | Piloto |
+| Supabase Edge Function `foto-atleta` | HTTP (Deno) | Foto do próprio atleta: confere a sessão do app e grava a foto na pasta dele (o atleta não tem login do Supabase) | A publicar | Piloto |
+| pg_cron + pg_net (Supabase) | Agendamento no banco | Chama `enviar-lembretes` a cada 5 min (o cronograma guarda todos os treinos; não há limpeza automática) | Disponível | Piloto |
 | Web Push (FCM / Apple / Mozilla) | Protocolo Web Push com chaves VAPID | Notificações para os aparelhos dos atletas | Disponível | Piloto |
 | Vercel | Deploy pela CLI + variáveis de ambiente | Build estático; `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_VAPID_PUBLIC_KEY` | Disponível | Piloto |
 | WhatsApp (link `wa.me`) | Link de compartilhamento | Envio manual de senha temporária e convites | Disponível | Piloto |
@@ -257,6 +258,7 @@ Só em banco de teste: `supabase_dados_ficticios.sql` (36 atletas fictícios com
 **Lembretes (uma vez):**
 - Extensões `pg_cron` e `pg_net` ativas (Database → Extensions).
 - Função `enviar-lembretes` publicada (código em `supabase/functions/enviar-lembretes`, `verify_jwt = false`) com os segredos `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` e `VAPID_SUBJECT`.
+- Função `foto-atleta` publicada (código em `supabase/functions/foto-atleta`, `verify_jwt = false`): `npx supabase functions deploy foto-atleta --no-verify-jwt`.
 - Agendamento `cron.schedule('enviar-lembretes', '*/5 * * * *', …)` — comando no fim da parte 7 do `supabase_completo.sql`.
 
 **Vercel:** variáveis `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` e `VITE_VAPID_PUBLIC_KEY`; publicação pela CLI (`vercel deploy --prod`). Gerar convites de clube pelo site publicado (o link usa o endereço de onde foi gerado).

@@ -1,8 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Camera, Loader2 } from 'lucide-react';
 import { Avatar } from './Avatar';
-import { PHOTO_ACCEPT } from '../../lib/photos';
+import { PHOTO_ACCEPT, checkPhotoFile } from '../../lib/photos';
 import { PhotoCropDialog } from './PhotoCropDialog';
+
+/** Marca no histórico do navegador enquanto o ajuste da foto está aberto */
+const HISTORY_MARK = 'ajusteFoto';
 
 interface PhotoPickerProps {
   name: string;
@@ -34,14 +37,36 @@ export const PhotoPicker: React.FC<PhotoPickerProps> = ({
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState<File | null>(null);
 
+  // "Voltar" do celular fecha o ajuste da foto (em vez de sair da tela de trás)
+  useEffect(() => {
+    if (!pending) return;
+    const onPop = () => setPending(null);
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, [pending]);
+
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';
-    if (file) setPending(file);
+    if (!file) return;
+    const problem = checkPhotoFile(file);
+    if (problem) {
+      onError?.(problem);
+      return;
+    }
+    window.history.pushState({ ...((window.history.state as Record<string, unknown> | null) ?? {}), [HISTORY_MARK]: true }, '');
+    setPending(file);
+  };
+
+  /** Fechou pelo botão: tira o passo que o ajuste criou no histórico (o "voltar" fecha sozinho). */
+  const closeDialog = () => {
+    const st = window.history.state as Record<string, unknown> | null;
+    if (st?.[HISTORY_MARK]) window.history.back();
+    setPending(null);
   };
 
   const save = async (file: File) => {
-    setPending(null);
+    closeDialog();
     setBusy(true);
     try {
       await onPick(file);
@@ -79,7 +104,7 @@ export const PhotoPicker: React.FC<PhotoPickerProps> = ({
       </label>
 
       {pending && (
-        <PhotoCropDialog file={pending} name={name} onCancel={() => setPending(null)} onConfirm={save} />
+        <PhotoCropDialog file={pending} name={name} onCancel={closeDialog} onConfirm={save} />
       )}
     </>
   );

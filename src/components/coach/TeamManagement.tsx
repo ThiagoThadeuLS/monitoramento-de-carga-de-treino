@@ -14,7 +14,7 @@ interface TeamManagementProps {
   /** user_id do admin logado (não pode se desativar/rebaixar por engano) */
   currentUserId: string;
   club: ClubInfo;
-  /** Escudo trocado: o painel recarrega o clube (cabeçalho) */
+  /** Escudo ou a própria foto trocados: o painel recarrega o cabeçalho */
   onClubChanged: () => void;
 }
 
@@ -46,8 +46,9 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({ currentUserId, c
 
   const changeMemberPhoto = async (member: TeamMember, file: File) => {
     setError('');
-    await uploadPhoto('coach', member.user_id, club.id, file, member.photo_url);
+    await uploadPhoto('coach', member.user_id, club.id, file);
     showFeedback(`Foto de ${member.nome} atualizada.`);
+    if (member.user_id === currentUserId) onClubChanged();
     await load();
   };
 
@@ -56,8 +57,9 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({ currentUserId, c
     if (!ok) return;
     setError('');
     try {
-      await removePhoto('coach', member.user_id, club.id, member.photo_url);
+      await removePhoto('coach', member.user_id, club.id);
       showFeedback(`Foto de ${member.nome} removida.`);
+      if (member.user_id === currentUserId) onClubChanged();
       await load();
     } catch (err: any) {
       setError(err.message);
