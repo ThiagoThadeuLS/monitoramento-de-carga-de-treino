@@ -1,14 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { FileDown, Loader2, Eye, SlidersHorizontal, BarChart3, Table2 } from 'lucide-react';
 import { useClub } from '../../../lib/club';
-import { fetchClubAthletes } from '../../../lib/athletes';
+import { ClubAthlete, fetchClubAthletes } from '../../../lib/athletes';
+import { useDialogs } from '../../ui/Dialogs';
 import { PseRecord, PsrRecord } from '../../../types';
 import { addDaysISO, todayISO } from '../../../lib/date';
 import { AthleteSelection, EMPTY_SELECTION, GroupFilter, resolveSelection } from '../GroupFilter';
 import { useClubGroups } from '../../../lib/groups';
-import { fetchRange } from '../period/shared';
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
+import { MAX_DAYS, fetchRange } from '../period/shared';
 import { ReportPreview, ReportState } from './ReportPreview';
 import { ChartKind } from './ChartRenderer';
 
@@ -27,25 +26,82 @@ const DEFAULT_METRICS = [
   { id: 'humor', label: 'Humor por dia', enabled: false, view: 'table' as const, chartKind: 'radar' as ChartKind },
 ];
 
+/**
+ * Gera o PDF por partes: o cabeçalho e cada atleta viram uma imagem própria, e cada atleta
+ * começa numa página nova (o primeiro fica embaixo do cabeçalho, se couber). Uma imagem
+ * única de todos os atletas passava do tamanho que o navegador aguenta e saía em branco.
+ * As bibliotecas de PDF só são baixadas aqui, na hora de gerar.
+ */
+async function buildPdf(root: HTMLElement, filename: string) {
+  const [{ default: JsPdf }, { default: html2canvas }] = await Promise.all([import('jspdf'), import('html2canvas')]);
+  const pdf = new JsPdf('p', 'pt', 'a4');
+  const margin = 20;
+  const usableW = pdf.internal.pageSize.getWidth() - margin * 2;
+  const bottom = pdf.internal.pageSize.getHeight() - margin;
+  let y = margin;
+  let empty = true;
+  const newPage = () => {
+    pdf.addPage();
+    y = margin;
+    empty = true;
+  };
+
+  const parts = Array.from(root.querySelectorAll<HTMLElement>('[data-report-page]'));
+  for (const [i, el] of parts.entries()) {
+    const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+    const pxPerPt = canvas.width / usableW;
+    const heightPt = canvas.height / pxPerPt;
+    if (!empty && (i > 1 || y + heightPt > bottom)) newPage();
+    // Parte maior que a página (atleta com muitas métricas): continua nas páginas seguintes
+    for (let srcY = 0; srcY < canvas.height; ) {
+      const slicePx = Math.min(canvas.height - srcY, Math.floor((bottom - y) * pxPerPt));
+      const slice = document.createElement('canvas');
+      slice.width = canvas.width;
+      slice.height = slicePx;
+      slice.getContext('2d')!.drawImage(canvas, 0, srcY, canvas.width, slicePx, 0, 0, canvas.width, slicePx);
+      pdf.addImage(slice.toDataURL('image/jpeg', 0.92), 'JPEG', margin, y, usableW, slicePx / pxPerPt);
+      srcY += slicePx;
+      y += slicePx / pxPerPt + 12;
+      empty = false;
+      if (srcY < canvas.height) newPage();
+    }
+  }
+  pdf.save(filename);
+}
+
 export const ReportBuilder: React.FC<Props> = ({ coachName }) => {
   const { club } = useClub();
   const { groups } = useClubGroups();
-  const [athletes, setAthletes] = useState<Array<any>>([]);
+  const { notify } = useDialogs();
+  const [athletes, setAthletes] = useState<ClubAthlete[]>([]);
   const [selection, setSelection] = useState<AthleteSelection>(EMPTY_SELECTION);
   const [from, setFrom] = useState(addDaysISO(todayISO(), -14));
   const [to, setTo] = useState(todayISO());
   const [pse, setPse] = useState<PseRecord[]>([]);
   const [psr, setPsr] = useState<PsrRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [generating, setGenerating] = useState(false);
   const [notesGerais, setNotesGerais] = useState('');
   const [notesLesoes, setNotesLesoes] = useState('');
   const [metrics, setMetrics] = useState(DEFAULT_METRICS);
   const previewRef = useRef<HTMLDivElement>(null);
 
+  // Período válido e de no máximo 1 ano (igual à Análise do Período)
+  const rangeError =
+    !from || !to
+      ? 'Preencha as duas datas.'
+      : from > to
+      ? 'A data "De" precisa ser anterior à data "Até".'
+      : addDaysISO(from, MAX_DAYS - 1) < to
+      ? 'Escolha um período de no máximo 1 ano.'
+      : '';
+
   useEffect(() => {
+    if (rangeError) return;
     let cancelled = false;
     setLoading(true);
+    setLoadError('');
     Promise.all([fetchClubAthletes(club?.id ?? null), fetchRange<PseRecord>('pse_records', from, to), fetchRange<PsrRecord>('psr_records', from, to)])
       .then(([a, p, pr]) => {
         if (cancelled) return;
@@ -53,11 +109,12 @@ export const ReportBuilder: React.FC<Props> = ({ coachName }) => {
         setPse(p);
         setPsr(pr);
       })
+      .catch((err) => !cancelled && setLoadError(`Não foi possível carregar os dados: ${(err as Error)?.message ?? err}`))
       .finally(() => !cancelled && setLoading(false));
     return () => {
       cancelled = true;
     };
-  }, [club?.id, from, to]);
+  }, [club?.id, from, to, rangeError]);
 
   const selected = useMemo(() => resolveSelection(selection, groups), [selection, groups]);
   const people = useMemo(() => athletes.filter((a) => a.active && (!selected || selected.has(a.id))), [athletes, selected]);
@@ -83,25 +140,10 @@ export const ReportBuilder: React.FC<Props> = ({ coachName }) => {
     if (!previewRef.current || generating) return;
     setGenerating(true);
     try {
-      const canvas = await html2canvas(previewRef.current, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF('p', 'pt', 'a4');
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      const imgWidth = pageWidth - 40;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      let heightLeft = imgHeight;
-      let position = 20;
-      pdf.addImage(imgData, 'PNG', 20, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight - 40;
-      while (heightLeft > 0) {
-        position = heightLeft - imgHeight + 20;
-        pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 20, position, imgWidth, imgHeight);
-        heightLeft -= pageHeight - 40;
-      }
       const filename = `relatorio-${(club?.nome || 'clube').replace(/[^a-z0-9]/gi, '_').toLowerCase()}-${to}.pdf`;
-      pdf.save(filename);
+      await buildPdf(previewRef.current, filename);
+    } catch (err) {
+      notify(`Não foi possível gerar o PDF: ${(err as Error)?.message ?? err}`, 'error');
     } finally {
       setGenerating(false);
     }
@@ -120,7 +162,7 @@ export const ReportBuilder: React.FC<Props> = ({ coachName }) => {
             </div>
             <button
               onClick={() => setShowPreview(true)}
-              disabled={loading || people.length === 0}
+              disabled={loading || !!rangeError || !!loadError || people.length === 0}
               className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 text-xs font-bold disabled:opacity-50"
             >
               <Eye className="w-4 h-4" />
@@ -146,6 +188,9 @@ export const ReportBuilder: React.FC<Props> = ({ coachName }) => {
                       <input type="date" value={to} max={todayISO()} onChange={(e) => setTo(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-2 text-white text-xs" />
                     </label>
                   </div>
+                  {(rangeError || loadError) && (
+                    <p className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">{rangeError || loadError}</p>
+                  )}
                   <GroupFilter groups={groups} athletes={athletes.filter((a) => a.active)} value={selection} onChange={setSelection} />
                   <div>
                     <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Anotações gerais</span>

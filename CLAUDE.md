@@ -28,11 +28,13 @@ Antes de terminar uma mudança: `npm run typecheck && npm run lint && npm test`.
 - Nas políticas (RLS), chame as funções dentro de `(select ...)`: `club_id = (select public.current_club_id())`. Assim o banco calcula uma vez por consulta, e não linha por linha.
 - Funções `security definer` sempre com `set search_path = ''` e nomes qualificados (`public.`, `extensions.`). Depois de criar, `revoke ... from public, anon` e `grant` só para quem precisa.
 - **O script não apaga dados**: nada de `delete`/`truncate` soltos no arquivo nem limpeza automática (o cronograma guarda todos os treinos). Para criar uma regra nova (ex.: índice único), confira antes se os dados antigos já cumprem a regra e, se não cumprirem, só avise (`raise notice`).
-- `supabase_dados_ficticios.sql` = dados de teste; `supabase_zerar_banco.sql` apaga tudo (só antes do piloto).
+- `supabase_dados_ficticios.sql` = dados de teste (clube "Desenvolvimento"). O antigo `supabase_zerar_banco.sql` foi removido depois do início do piloto (está no histórico do git).
+- `supabase_diagnostico.sql` = consultas só de leitura para conferir o banco (estrutura, regras de acesso, funções, saúde). Rode um bloco por vez.
+- `supabase_limpeza.sql` = limpeza opcional de sobras (fisioterapia descontinuada, tabela e colunas antigas): só remove o que está vazio; dados de teste só saem com a trava ligada.
 
 ## Regras de segurança (não quebrar)
 
-- **Atleta não usa o Supabase Auth.** Ele entra com CPF + senha pelas funções `athlete_*`, que recebem o token da sessão (`p_token`) e descobrem o atleta no banco. **`athlete_id` nunca vem do navegador.** Toda leitura/escrita do atleta passa por uma função `athlete_*` em [src/lib/athleteAuth.ts](src/lib/athleteAuth.ts); nunca use `supabase.from(...)` em telas do atleta (o cliente dele é anônimo).
+- **Atleta não usa o Supabase Auth.** Ele entra com CPF + senha (`athlete_login`, com limite de tentativas; senha errada volta como `{ erro }` para a tentativa ficar registrada) pelas funções `athlete_*`, que recebem o token da sessão (`p_token`) e descobrem o atleta no banco. **`athlete_id` nunca vem do navegador.** Toda leitura/escrita do atleta passa por uma função `athlete_*` em [src/lib/athleteAuth.ts](src/lib/athleteAuth.ts); nunca use `supabase.from(...)` em telas do atleta (o cliente dele é anônimo).
 - **Treinador** usa as tabelas direto; o RLS limita ao clube dele (`club_id = public.current_club_id()`). Toda tabela nova de dados do clube recebe `club_id` e as 4 políticas padrão ("Clube: leitura/inclusão/alteração/exclusão", escrita bloqueada quando `support_club_id()` não é nulo).
 - **Modo suporte** (dono da plataforma em `/restrito`): somente leitura. Funções que escrevem conferem `support_club_id() is null`.
 - Com RLS, um `delete` bloqueado não dá erro (apaga 0 linhas). Para excluir pelo id, use `deleteById` de [src/lib/supabase.ts](src/lib/supabase.ts), que confere se apagou.
@@ -59,4 +61,4 @@ Antes de terminar uma mudança: `npm run typecheck && npm run lint && npm test`.
 - "Hoje" que vira sozinho à meia-noite: `useTodayISO()` ([useToday.ts](src/lib/useToday.ts)).
 - `src/components/coach/`: telas do treinador. Telas grandes ficam divididas em subpastas (`adversaries/`, `period/`).
 - `src/lib/`: acesso ao banco e cálculos puros (`load.ts` = carga interna/ACWR/monotonia, `stats.ts`, `barbellCalculator.ts` = montagem da barra, arredonda a carga **para baixo**, `weightPlan.ts` = limite acima da categoria até a pesagem: 8% com 14+ dias, 5% de 7 a 13, 3% de 1 a 6, categoria no dia, `cpf.ts`, `export.ts` = CSV para Excel com proteção contra fórmulas).
-- `supabase/functions/enviar-lembretes`: chamada pelo pg_cron a cada 5 min; quem recebe lembrete é decidido em `public.push_due_reminders`.
+- `supabase/functions/enviar-lembretes`: chamada pelo pg_cron a cada 5 min; quem recebe lembrete é decidido em `public.push_due_reminders`. Proteção opcional por segredo (`CRON_SECRET` + cabeçalho `x-cron-secret`; passo a passo no fim da parte 7 do SQL).

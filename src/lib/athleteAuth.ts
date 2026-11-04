@@ -27,6 +27,7 @@ const TOKEN_KEY = 'athlete_session_token';
 
 const ERROR_MESSAGES: Record<string, string> = {
   credenciais_invalidas: 'CPF ou senha incorretos. Confira os dados ou fale com seu treinador.',
+  muitas_tentativas: 'Muitas tentativas erradas. Espere 15 minutos e tente de novo, ou fale com seu treinador.',
   sessao_invalida: 'Sua sessão expirou. Entre novamente.',
   troca_de_senha_pendente: 'Você precisa criar sua nova senha antes de enviar respostas.',
   senha_curta: 'A nova senha precisa ter pelo menos 6 caracteres.',
@@ -110,6 +111,9 @@ export async function loginAthlete(cpf: string, password: string): Promise<Athle
     p_password: password,
   });
   if (error || !data) throw toAuthError(error);
+  // Senha errada e bloqueio por tentativas vêm como resposta { erro } (o banco registra a tentativa)
+  const erro = (data as { erro?: string }).erro;
+  if (erro) throw toAuthError({ message: erro });
   const session = parseSession(data);
   writeToken(session.token);
   return session;

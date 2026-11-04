@@ -36,6 +36,8 @@ interface Props {
 
 const brDate = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 
+const CHART_LABEL: Record<string, string> = { line: 'linha', bar: 'barras', area: 'área', radar: 'radar' };
+
 const metricLabel: Record<string, string> = {
   pse_medio: 'Média de PSE por dia',
   carga_ua: 'Carga (PSE x minutos) por dia',
@@ -107,6 +109,8 @@ export const ReportPreview = forwardRef<HTMLDivElement, Props>(({ club, coachNam
   return (
     <div ref={ref} style={{ width: 1100, maxWidth: 1100, background: '#ffffff', color: '#0f172a', fontFamily: 'Inter, system-ui, -apple-system, BlinkMacSystemFont, sans-serif' }}>
       <div style={{ padding: 40 }}>
+        {/* data-report-page: cada parte vira imagem própria no PDF (atleta começa em página nova) */}
+        <div data-report-page="cabecalho">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
             {club?.escudo_url ? (
@@ -144,9 +148,10 @@ export const ReportPreview = forwardRef<HTMLDivElement, Props>(({ club, coachNam
             )}
           </div>
         )}
+        </div>
 
-        {athletesData.map((item, idx) => (
-          <div key={item.athlete.id} style={{ pageBreakAfter: idx < athletesData.length - 1 ? 'always' : 'auto', marginBottom: 40 }}>
+        {athletesData.map((item) => (
+          <div key={item.athlete.id} data-report-page="atleta" style={{ marginBottom: 40 }}>
             <div style={{ border: '1px solid #e2e8f0', borderRadius: 18, padding: 18, display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22 }}>
               <div>
                 <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.12em', color: '#64748b' }}>Atleta</div>
@@ -167,7 +172,7 @@ export const ReportPreview = forwardRef<HTMLDivElement, Props>(({ club, coachNam
                 <div key={metric.id} style={{ border: '1px solid #e2e8f0', borderRadius: 18, marginBottom: 18, overflow: 'hidden' }}>
                   <div style={{ padding: '14px 20px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div style={{ fontSize: 14, fontWeight: 800 }}>{metricLabel[metric.id] || metric.label}</div>
-                    <div style={{ fontSize: 11, color: '#475569' }}>{metric.view === 'chart' ? `Gráfico • ${metric.chartKind}` : 'Tabela'}</div>
+                    <div style={{ fontSize: 11, color: '#475569' }}>{metric.view === 'chart' ? `Gráfico • ${CHART_LABEL[metric.chartKind] ?? metric.chartKind}` : 'Tabela'}</div>
                   </div>
                   <div style={{ padding: 18 }}>
                     {metric.view === 'chart' ? (
@@ -245,7 +250,6 @@ export const ReportPreview = forwardRef<HTMLDivElement, Props>(({ club, coachNam
                         <th style={{ textAlign: 'center', padding: '7px 8px', border: '1px solid #e2e8f0' }}>Dor</th>
                         <th style={{ textAlign: 'center', padding: '7px 8px', border: '1px solid #e2e8f0' }}>Estresse</th>
                         <th style={{ textAlign: 'center', padding: '7px 8px', border: '1px solid #e2e8f0' }}>Humor</th>
-                        <th style={{ textAlign: 'center', padding: '7px 8px', border: '1px solid #e2e8f0' }}>PSR</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -261,7 +265,6 @@ export const ReportPreview = forwardRef<HTMLDivElement, Props>(({ club, coachNam
                             <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', textAlign: 'center' }}>{r.muscle_soreness_score}</td>
                             <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', textAlign: 'center' }}>{r.stress_score}</td>
                             <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', textAlign: 'center' }}>{r.mood_score}</td>
-                            <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: 800 }}>{r.psr_score}</td>
                           </tr>
                         ))}
                     </tbody>

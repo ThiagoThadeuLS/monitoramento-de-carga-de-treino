@@ -240,7 +240,7 @@ Legenda: ✅ implementado e testado (banco em Postgres local simulando o Supabas
 Serve para banco novo e para atualizar o atual, pode ser executado várias vezes e não apaga dados. Sempre que o arquivo mudar, rodar de novo inteiro. O clube de teste (Minas, id fixo) só é criado na primeira execução em banco novo.
 Só em banco de teste: `supabase_dados_ficticios.sql` (36 atletas fictícios com 8 semanas de PSE, PSR e peso, removíveis).
 
-**Zerar para o piloto:** `supabase_zerar_banco.sql` apaga todos os dados e mantém só o que é dos owners (`platform_owners`, as contas de login deles e o registro de acessos da Área Restrita). Tem trava (trocar `'NAO'` por `'SIM'`), roda tudo ou nada e mostra a contagem de cada tabela no fim. Usar uma vez, antes do piloto; depois, o clube piloto entra pelo convite da Área Restrita. Escudos enviados nos testes são apagados pelo painel (Storage → escudos).
+**Zerar para o piloto (feito; o script foi removido do repositório depois do início do piloto e está no histórico do git):** `supabase_zerar_banco.sql` apagava todos os dados e mantinha só o que é dos owners (`platform_owners`, as contas de login deles e o registro de acessos da Área Restrita). Tinha trava (trocar `'NAO'` por `'SIM'`), rodava tudo ou nada e mostrava a contagem de cada tabela no fim. Era para usar uma vez, antes do piloto; depois, o clube piloto entra pelo convite da Área Restrita. Escudos enviados nos testes são apagados pelo painel (Storage → escudos).
 
 **Configuração do Supabase (Authentication → Sign In / Providers):**
 - "Allow new users to sign up": **ligado** (o banco barra cadastros sem convite).

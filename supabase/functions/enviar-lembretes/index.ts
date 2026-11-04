@@ -51,7 +51,15 @@ interface Subscription {
 /** Falhas seguidas (sem ser "expirado") até marcar o aparelho como expirado e pedir para ativar de novo */
 const MAX_FAILURES = 5;
 
-Deno.serve(async () => {
+// Proteção opcional: com o segredo CRON_SECRET definido, só quem manda o mesmo valor no
+// cabeçalho x-cron-secret (o agendamento do banco) consegue chamar a função.
+// Passo a passo no fim da parte 7 do supabase_completo.sql.
+const CRON_SECRET = (Deno.env.get('CRON_SECRET') ?? '').trim();
+
+Deno.serve(async (req) => {
+  if (CRON_SECRET && req.headers.get('x-cron-secret') !== CRON_SECRET) {
+    return Response.json({ ok: false, error: 'não autorizado' }, { status: 401 });
+  }
   if (vapidError) return Response.json({ ok: false, step: 'segredos', error: vapidError }, { status: 500 });
   const { data: due, error } = await supabase.rpc('push_due_reminders');
   if (error) return Response.json({ ok: false, step: 'push_due_reminders', error: error.message }, { status: 500 });

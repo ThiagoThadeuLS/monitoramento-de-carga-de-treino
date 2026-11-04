@@ -383,5 +383,3 @@ export const Tour: React.FC<{ steps: TourStep[]; onClose: () => void }> = ({ ste
     document.body
   );
 };
-
-export { HelpButton } from './HelpButton';
