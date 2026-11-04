@@ -6,6 +6,8 @@ export interface Athlete {
   categoria?: string;
   celular?: string;
   sexo?: string;
+  /** Foto do atleta no Storage (bucket público "fotos") */
+  photo_url?: string | null;
   active?: boolean;
   created_at?: string;
 }

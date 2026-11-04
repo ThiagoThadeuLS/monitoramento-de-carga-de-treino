@@ -7,6 +7,7 @@ import { useClub } from '../../lib/club';
 import { fetchClubAthletes } from '../../lib/athletes';
 import { useClubGroups } from '../../lib/groups';
 import { AthleteSelection, EMPTY_SELECTION, GroupFilter, resolveSelection } from './GroupFilter';
+import { Avatar } from '../ui/Avatar';
 
 interface AthleteDailyStatus {
   athlete: Athlete;
@@ -244,17 +245,20 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({ onEditAthlete, onO
               return (
                 <li key={athlete.id} className="p-4 space-y-3">
                   <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      {onOpenProfile ? (
-                        <button type="button" onClick={() => onOpenProfile(athlete.id)} className="font-bold text-white leading-tight break-words text-left underline decoration-slate-600 underline-offset-2">
-                          {athlete.nome}
-                        </button>
-                      ) : (
-                        <p className="font-bold text-white leading-tight break-words">{athlete.nome}</p>
-                      )}
-                      <p className="text-xs text-slate-400 mt-0.5 break-words">
-                        Classe {athlete.classe || 'A'} • {athlete.categoria}
-                      </p>
+                    <div className="flex items-start gap-2.5 min-w-0">
+                      <Avatar name={athlete.nome} src={athlete.photo_url} className="w-11 h-11" textClassName="text-xs" />
+                      <div className="min-w-0">
+                        {onOpenProfile ? (
+                          <button type="button" onClick={() => onOpenProfile(athlete.id)} className="font-bold text-white leading-tight break-words text-left underline decoration-slate-600 underline-offset-2">
+                            {athlete.nome}
+                          </button>
+                        ) : (
+                          <p className="font-bold text-white leading-tight break-words">{athlete.nome}</p>
+                        )}
+                        <p className="text-xs text-slate-400 mt-0.5 break-words">
+                          Classe {athlete.classe || 'A'} • {athlete.categoria}
+                        </p>
+                      </div>
                     </div>
                     {onEditAthlete && (
                       <button
@@ -342,17 +346,20 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({ onEditAthlete, onO
                       {/* Atleta com Botão de Editar Direto */}
                       <td className="py-3 px-4">
                         <div className="flex items-center justify-between gap-3">
-                          <div>
-                            {onOpenProfile ? (
-                              <button type="button" onClick={() => onOpenProfile(athlete.id)} className="font-bold text-white leading-tight text-left hover:text-sky-300 hover:underline" title="Abrir a ficha do atleta">
-                                {athlete.nome}
-                              </button>
-                            ) : (
-                              <p className="font-bold text-white leading-tight">{athlete.nome}</p>
-                            )}
-                            <p className="text-xs text-slate-400 mt-0.5">
-                              Classe {athlete.classe || 'A'} • {athlete.categoria}
-                            </p>
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <Avatar name={athlete.nome} src={athlete.photo_url} className="w-11 h-11" textClassName="text-xs" />
+                            <div className="min-w-0">
+                              {onOpenProfile ? (
+                                <button type="button" onClick={() => onOpenProfile(athlete.id)} className="font-bold text-white leading-tight text-left hover:text-sky-300 hover:underline" title="Abrir a ficha do atleta">
+                                  {athlete.nome}
+                                </button>
+                              ) : (
+                                <p className="font-bold text-white leading-tight">{athlete.nome}</p>
+                              )}
+                              <p className="text-xs text-slate-400 mt-0.5">
+                                Classe {athlete.classe || 'A'} • {athlete.categoria}
+                              </p>
+                            </div>
                           </div>
                           {onEditAthlete && (
                             <button

@@ -31,6 +31,7 @@ Antes de terminar uma mudança: `npm run typecheck && npm run lint && npm test`.
 - `supabase_dados_ficticios.sql` = dados de teste (clube "Desenvolvimento"). O antigo `supabase_zerar_banco.sql` foi removido depois do início do piloto (está no histórico do git).
 - `supabase_diagnostico.sql` = consultas só de leitura para conferir o banco (estrutura, regras de acesso, funções, saúde). Rode um bloco por vez.
 - `supabase_limpeza.sql` = limpeza opcional de sobras (fisioterapia descontinuada, tabela e colunas antigas): só remove o que está vazio; dados de teste só saem com a trava ligada.
+- **Storage:** buckets públicos `escudos` (escudo do clube) e `fotos` (atletas e treinadores). As fotos são recortadas/reduzidas no navegador para 512 px WEBP/JPEG antes de subir ([photos.ts](src/lib/photos.ts)), ficando com ~30–80 KB. O caminho é `<clube>/atletas/<atleta>/...` ou `<clube>/treinadores/<treinador>/...`; o banco só aceita o endereço depois de conferir a pasta (RPCs `club_set_athlete_photo`/`club_set_coach_photo`) e a foto antiga é removida ao trocar. Para acompanhar o plano gratuito, veja **Storage → Usage** no painel: 100 atletas com foto ocupam cerca de 5 MB.
 
 ## Regras de segurança (não quebrar)
 
@@ -60,5 +61,5 @@ Antes de terminar uma mudança: `npm run typecheck && npm run lint && npm test`.
 - Lista de atletas e grupos com cache de 2 min por clube (`fetchClubAthletes` em [athletes.ts](src/lib/athletes.ts), `listGroupsCached`/`useClubGroups`). Depois de alterar atleta ou grupo, chame `invalidateClubAthletes()` / `invalidateGroups()`. Essa lista não traz CPF nem celular.
 - "Hoje" que vira sozinho à meia-noite: `useTodayISO()` ([useToday.ts](src/lib/useToday.ts)).
 - `src/components/coach/`: telas do treinador. Telas grandes ficam divididas em subpastas (`adversaries/`, `period/`).
-- `src/lib/`: acesso ao banco e cálculos puros (`load.ts` = carga interna/ACWR/monotonia, `stats.ts`, `barbellCalculator.ts` = montagem da barra, arredonda a carga **para baixo**, `weightPlan.ts` = limite acima da categoria até a pesagem: 8% com 14+ dias, 5% de 7 a 13, 3% de 1 a 6, categoria no dia, `cpf.ts`, `export.ts` = CSV para Excel com proteção contra fórmulas).
+- `src/lib/`: acesso ao banco e cálculos puros (`load.ts` = carga interna/ACWR/monotonia, `stats.ts`, `barbellCalculator.ts` = montagem da barra, arredonda a carga **para baixo**, `weightPlan.ts` = limite acima da categoria até a pesagem: 8% com 14+ dias, 5% de 7 a 13, 3% de 1 a 6, categoria no dia, `cpf.ts`, `export.ts` = CSV para Excel com proteção contra fórmulas, `photos.ts` = redução e envio de fotos). Avatares: `ui/Avatar.tsx` (foto ou iniciais) e `ui/PhotoPicker.tsx` (avatar clicável que envia a imagem).
 - `supabase/functions/enviar-lembretes`: chamada pelo pg_cron a cada 5 min; quem recebe lembrete é decidido em `public.push_due_reminders`. Proteção opcional por segredo (`CRON_SECRET` + cabeçalho `x-cron-secret`; passo a passo no fim da parte 7 do SQL).
