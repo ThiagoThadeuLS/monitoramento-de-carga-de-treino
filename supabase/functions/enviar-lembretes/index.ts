@@ -45,7 +45,11 @@ interface Subscription {
   endpoint: string;
   p256dh: string;
   auth: string;
+  failures: number;
 }
+
+/** Falhas seguidas (sem ser "expirado") até marcar o aparelho como expirado e pedir para ativar de novo */
+const MAX_FAILURES = 5;
 
 Deno.serve(async () => {
   if (vapidError) return Response.json({ ok: false, step: 'segredos', error: vapidError }, { status: 500 });
@@ -60,7 +64,8 @@ Deno.serve(async () => {
   for (let i = 0; i < athleteIds.length; i += 100) {
     const { data: subsData, error: subsError } = await supabase
       .from('push_subscriptions')
-      .select('id, athlete_id, endpoint, p256dh, auth')
+      .select('id, athlete_id, endpoint, p256dh, auth, failures')
+      .is('expired_at', null)
       .in('athlete_id', athleteIds.slice(i, i + 100));
     if (subsError) return Response.json({ ok: false, step: 'push_subscriptions', error: subsError.message }, { status: 500 });
     subs.push(...((subsData ?? []) as Subscription[]));
@@ -68,8 +73,10 @@ Deno.serve(async () => {
 
   let sent = 0;
   let failed = 0;
-  const expired: string[] = [];
-  const deliveredTo = new Set<string>();
+  let expiredCount = 0;
+  const okIds = new Set<string>();
+  // Resultado de cada aparelho (gravado no fim): o treinador vê quem não está recebendo e por quê
+  const results: { id: string; expire: boolean; failures: number; error: string }[] = [];
 
   // Envia um lembrete para todos os aparelhos do atleta
   async function sendItem(item: Due) {
@@ -89,12 +96,15 @@ Deno.serve(async () => {
             payload,
             { TTL: 60 * 60, urgency: 'high' },
           );
-          deliveredTo.add(item.athlete_id);
+          okIds.add(s.id);
           sent++;
         } catch (err) {
           const status = (err as { statusCode?: number }).statusCode;
-          // 404/410: o aparelho cancelou ou a assinatura expirou -> remover
-          if (status === 404 || status === 410) expired.push(s.id);
+          const failures = (s.failures ?? 0) + 1;
+          // 404/410: assinatura expirada ou cancelada. Muitas falhas seguidas (ex.: chave VAPID trocada) também.
+          const expire = status === 404 || status === 410 || failures >= MAX_FAILURES;
+          if (expire) expiredCount++;
+          results.push({ id: s.id, expire, failures, error: `${status ?? 'sem status'}: ${(err as Error).message}`.slice(0, 300) });
           failed++;
           console.error('push falhou', status, (err as Error).message);
         }
@@ -112,16 +122,31 @@ Deno.serve(async () => {
     await Promise.all(items.slice(i, i + BATCH).map(sendItem));
   }
 
-  const delivered = [...deliveredTo];
-  const sentAt = new Date().toISOString();
-  for (let i = 0; i < delivered.length; i += 100) {
+  const now = new Date().toISOString();
+  // Aparelhos que aceitaram: zera as falhas (em grupos de 100 ids)
+  const ok = [...okIds];
+  for (let i = 0; i < ok.length; i += 100) {
     await supabase
       .from('push_subscriptions')
-      .update({ last_sent_at: sentAt })
-      .in('athlete_id', delivered.slice(i, i + 100));
+      .update({ last_sent_at: now, failures: 0, last_error: null })
+      .in('id', ok.slice(i, i + 100));
   }
+  // Falhas: guarda o erro; expirados ficam marcados (não são apagados) e o app pede para ativar de novo
+  await Promise.all(
+    results
+      .filter((r) => !okIds.has(r.id))
+      .map((r) =>
+        supabase
+          .from('push_subscriptions')
+          .update({
+            failures: r.failures,
+            last_error: r.error,
+            last_error_at: now,
+            ...(r.expire ? { expired_at: now } : {}),
+          })
+          .eq('id', r.id),
+      ),
+  );
 
-  if (expired.length) await supabase.from('push_subscriptions').delete().in('id', expired);
-
-  return Response.json({ ok: true, due: items.length, sent, failed, removed: expired.length });
+  return Response.json({ ok: true, due: items.length, sent, failed, expired: expiredCount });
 });

@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { nowTimeHM, stampInAppZone, todayISO } from '../../lib/date';
 import { AthleteGroup, sessionAppliesTo } from '../../lib/groups';
 import { PseRecord, PsrRecord, TrainingSession } from '../../types';
+import { matchPseToSessions } from '../../lib/pseMatch';
 
 interface Props {
   days: string[];
@@ -73,13 +74,11 @@ export const MissingResponses: React.FC<Props> = ({ days, athletes, selected, gr
         else if (late(date, psrRec.created_at))
           out.push({ key: `${date}-${a.id}-psr`, date, athleteId: a.id, nome: a.nome, what: 'PSR', status: 'atrasado', sentAt: psrRec.created_at });
 
-        // PSE: uma por treino. "Não treinei" vale para o dia todo.
-        const recs = pse.filter((r) => r.athlete_id === a.id && r.date === date).sort((x, y) => (x.created_at ?? '').localeCompare(y.created_at ?? ''));
-        const skipped = recs.find((r) => r.did_not_train);
-        const used = new Set<PseRecord>();
+        // PSE: uma por treino. "Não treinei" vale para o treino dele (ou para o dia todo, se veio sem treino).
+        const recs = pse.filter((r) => r.athlete_id === a.id && r.date === date);
+        const matched = matchPseToSessions(mine, recs);
         for (const s of mine) {
-          const rec = skipped ?? recs.find((r) => !used.has(r) && r.training_type === s.training_type);
-          if (rec && !skipped) used.add(rec);
+          const rec = matched.get(s.id);
           const what = `PSE • ${s.name}`;
           const key = `${date}-${a.id}-${s.id}`;
           if (!rec) out.push({ key, date, athleteId: a.id, nome: a.nome, what, status: 'faltou' });
