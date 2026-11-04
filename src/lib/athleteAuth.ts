@@ -312,11 +312,18 @@ export interface CatalogExercise {
   nome: string;
 }
 
+export interface AthletePrPoint {
+  peso_pr: number;
+  created_at?: string;
+}
+
 export interface AthletePr {
   id: string;
   exercicio: string;
   peso_pr: number;
   updated_at?: string;
+  /** Evolução do exercício (do primeiro registro para o atual) */
+  history?: AthletePrPoint[];
 }
 
 /** Exercícios do catálogo do clube que pedem PR e os PRs do atleta logado. */
@@ -324,7 +331,14 @@ export async function listAthletePrs(token: string): Promise<{ catalog: CatalogE
   const { data, error } = await client().rpc('athlete_list_prs', { p_token: token });
   if (error) throw toAuthError(error);
   const d = (data ?? {}) as { catalog?: CatalogExercise[]; prs?: AthletePr[] };
-  return { catalog: d.catalog ?? [], prs: (d.prs ?? []).map((p) => ({ ...p, peso_pr: Number(p.peso_pr) })) };
+  return {
+    catalog: d.catalog ?? [],
+    prs: (d.prs ?? []).map((p) => ({
+      ...p,
+      peso_pr: Number(p.peso_pr),
+      history: (p.history ?? []).map((h) => ({ peso_pr: Number(h.peso_pr), created_at: h.created_at })),
+    })),
+  };
 }
 
 /** Grava ou atualiza o PR (carga de 1 repetição, em kg) num exercício do catálogo. */

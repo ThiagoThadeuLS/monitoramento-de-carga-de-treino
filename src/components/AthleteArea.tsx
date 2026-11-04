@@ -568,7 +568,7 @@ export const AthleteArea: React.FC = () => {
         {pane(
           'prs',
           <div data-tour="athlete-prs">
-            <AthletePrView token={token} />
+            <AthletePrView token={token} athlete={athlete} />
           </div>
         )}
 

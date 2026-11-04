@@ -4768,3 +4768,137 @@
   grant execute on function public.athlete_set_photo(uuid, text) to anon, authenticated;
 
   notify pgrst, 'reload schema';
+
+
+  -- ############################################################
+  -- PARTE 16. EVOLUÇÃO DOS PRs E CARD COMPARTILHÁVEL
+  -- * athlete_prs guarda só o PR atual; aqui cada mudança de carga vira um ponto
+  --   de histórico, o que permite mostrar a evolução e destacar o "novo PR".
+  -- * Nada é apagado: o histórico só cresce (o PR atual continua em athlete_prs).
+  -- ############################################################
+
+  create table if not exists public.athlete_pr_history (
+    id uuid primary key default gen_random_uuid(),
+    club_id uuid references public.clubs(id) on delete cascade,
+    athlete_id uuid not null references public.athletes(id) on delete cascade,
+    exercicio text not null,
+    peso_pr numeric(6,2) not null check (peso_pr > 0 and peso_pr <= 500),
+    created_at timestamp with time zone default now() not null
+  );
+
+  create index if not exists athlete_pr_history_athlete_idx
+    on public.athlete_pr_history (athlete_id, created_at);
+
+  -- Clube do histórico = clube do atleta (mesma regra das respostas)
+  create or replace function public.athlete_pr_history_set_club()
+  returns trigger
+  language plpgsql
+  security definer
+  set search_path = ''
+  as $$
+  begin
+    if new.club_id is null then
+      select a.club_id into new.club_id from public.athletes a where a.id = new.athlete_id;
+    end if;
+    return new;
+  end;
+  $$;
+
+  drop trigger if exists athlete_pr_history_set_club on public.athlete_pr_history;
+  create trigger athlete_pr_history_set_club before insert on public.athlete_pr_history
+    for each row execute function public.athlete_pr_history_set_club();
+
+  -- Cada PR criado ou alterado entra no histórico (só quando a carga muda)
+  create or replace function public.athlete_prs_log_history()
+  returns trigger
+  language plpgsql
+  security definer
+  set search_path = ''
+  as $$
+  begin
+    if tg_op = 'INSERT' then
+      insert into public.athlete_pr_history (club_id, athlete_id, exercicio, peso_pr)
+      values (new.club_id, new.athlete_id, new.exercicio, new.peso_pr);
+    elsif new.peso_pr is distinct from old.peso_pr
+       or lower(trim(new.exercicio)) is distinct from lower(trim(old.exercicio)) then
+      insert into public.athlete_pr_history (club_id, athlete_id, exercicio, peso_pr)
+      values (new.club_id, new.athlete_id, new.exercicio, new.peso_pr);
+    end if;
+    return new;
+  end;
+  $$;
+
+  drop trigger if exists athlete_prs_log_history on public.athlete_prs;
+  create trigger athlete_prs_log_history after insert or update on public.athlete_prs
+    for each row execute function public.athlete_prs_log_history();
+
+  -- PRs que já existiam ganham o primeiro ponto (só se ainda não tiverem nenhum)
+  insert into public.athlete_pr_history (club_id, athlete_id, exercicio, peso_pr, created_at)
+  select p.club_id, p.athlete_id, p.exercicio, p.peso_pr, coalesce(p.updated_at, p.created_at, now())
+  from public.athlete_prs p
+  where not exists (
+    select 1 from public.athlete_pr_history h
+    where h.athlete_id = p.athlete_id
+      and lower(trim(h.exercicio)) = lower(trim(p.exercicio))
+  );
+
+  alter table public.athlete_pr_history enable row level security;
+  revoke all on public.athlete_pr_history from anon;
+  grant select on public.athlete_pr_history to authenticated;
+
+  drop policy if exists "Clube: leitura do histórico de PRs" on public.athlete_pr_history;
+  create policy "Clube: leitura do histórico de PRs" on public.athlete_pr_history
+    for select to authenticated
+    using (club_id = (select public.current_club_id()));
+  -- Escrita: só pelo gatilho acima (nenhuma política de escrita para o clube).
+
+  revoke execute on function public.athlete_pr_history_set_club() from public, anon, authenticated;
+  revoke execute on function public.athlete_prs_log_history() from public, anon, authenticated;
+
+  -- Exercícios com PR e os PRs do atleta, agora com o histórico de cada exercício
+  create or replace function public.athlete_list_prs(p_token uuid)
+  returns json
+  language plpgsql
+  stable
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_me uuid := public._athlete_ready(p_token);
+    v_club uuid := (select a.club_id from public.athletes a where a.id = v_me);
+  begin
+    return json_build_object(
+      'catalog', coalesce((
+        select json_agg(json_build_object('id', e.id, 'nome', e.nome) order by lower(e.nome))
+        from public.club_exercises e
+        where e.club_id = v_club and e.exige_pr
+      ), '[]'::json),
+      'prs', coalesce((
+        select json_agg(json_build_object(
+          'id', p.id,
+          'exercicio', p.exercicio,
+          'peso_pr', p.peso_pr,
+          'updated_at', p.updated_at,
+          'history', coalesce((
+            select json_agg(json_build_object('peso_pr', h.peso_pr, 'created_at', h.created_at) order by h.created_at)
+            from (
+              select hh.peso_pr, hh.created_at
+              from public.athlete_pr_history hh
+              where hh.athlete_id = p.athlete_id
+                and lower(trim(hh.exercicio)) = lower(trim(p.exercicio))
+              order by hh.created_at desc
+              limit 50
+            ) h
+          ), '[]'::json)
+        ) order by lower(p.exercicio))
+        from public.athlete_prs p
+        where p.athlete_id = v_me
+      ), '[]'::json)
+    );
+  end;
+  $$;
+
+  revoke execute on function public.athlete_list_prs(uuid) from public;
+  grant execute on function public.athlete_list_prs(uuid) to anon, authenticated;
+
+  notify pgrst, 'reload schema';
