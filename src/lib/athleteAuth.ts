@@ -416,6 +416,45 @@ export async function completeAthleteWorkout(token: string, sessionId: string, d
   if (error) throw toAuthError(error);
 }
 
+// ---------- Conquistas e cartões para compartilhar ----------
+export interface AthleteAchievementsData {
+  today: string;
+  categoria: string | null;
+  /** Dias com alguma resposta (PSR ou PSE), do mais novo para o mais antigo (último ano) */
+  dias_respondidos: string[];
+  /** Dias com treino programado para o atleta (último ano) */
+  dias_treino: string[];
+  /** Treinos registrados (PSE sem "não treinei"), desde o começo */
+  treinos: number;
+  /** Data em que chegou a 10, 50, 100, 250 e 500 treinos */
+  marcos_treinos: Record<string, string>;
+  /** PSE do começo do mês anterior até hoje (para os resumos) */
+  pse: { date: string; training_type: string | null; rpe_score: number | null; duration_minutes: number | null; did_not_train: boolean }[];
+  pesos: { date: string; weight: number }[];
+  /** Datas de pesagem oficial das competições do atleta */
+  pesagens: string[];
+  prs: { exercicio: string; peso_pr: number; updated_at: string }[];
+}
+
+/** Sequência de dias, selos e resumos: tudo do próprio atleta, numa consulta só (só leitura). */
+export async function getAthleteAchievements(token: string): Promise<AthleteAchievementsData> {
+  const { data, error } = await client().rpc('athlete_achievements', { p_token: token });
+  if (error) throw toAuthError(error);
+  const d = (data ?? {}) as Partial<AthleteAchievementsData>;
+  return {
+    today: d.today ?? '',
+    categoria: d.categoria ?? null,
+    dias_respondidos: d.dias_respondidos ?? [],
+    dias_treino: d.dias_treino ?? [],
+    treinos: Number(d.treinos ?? 0),
+    marcos_treinos: d.marcos_treinos ?? {},
+    pse: d.pse ?? [],
+    pesos: (d.pesos ?? []).map((w) => ({ date: w.date, weight: Number(w.weight) })),
+    pesagens: d.pesagens ?? [],
+    prs: (d.prs ?? []).map((p) => ({ ...p, peso_pr: Number(p.peso_pr) })),
+  };
+}
+
 // ---------- Tela "Hoje" ----------
 export interface HomeSession extends TrainingSession {
   /** Ficha do treino físico já concluída */

@@ -4247,3 +4247,71 @@
   drop function if exists public.athlete_set_photo(uuid, text);
 
   notify pgrst, 'reload schema';
+
+  -- ############################################################
+  -- PARTE 17. CONQUISTAS E CARTÕES PARA COMPARTILHAR (ATLETA)
+  -- * Uma consulta só com o que o app precisa para a sequência de dias, os selos e os
+  --   resumos da semana e do mês. As contas ficam no app (src/lib/achievements.ts).
+  -- * Só leitura. Nada é publicado daqui: a imagem é feita no celular e quem decide
+  --   compartilhar é o atleta.
+  -- ############################################################
+  create or replace function public.athlete_achievements(p_token uuid)
+  returns json
+  language plpgsql
+  stable
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_id uuid := public._athlete_ready(p_token);
+    v_club uuid := (select a.club_id from public.athletes a where a.id = v_id);
+    v_today date := public.training_today();
+    v_from date := v_today - 400;
+    -- Resumos: do começo do mês anterior (uma semana antes, para comparar) até hoje
+    v_period date := (date_trunc('month', v_today) - interval '1 month')::date - 7;
+  begin
+    return json_build_object(
+      'today', v_today,
+      'categoria', (select a.categoria from public.athletes a where a.id = v_id),
+      -- Dias com alguma resposta (PSR ou PSE), do mais novo para o mais antigo
+      'dias_respondidos', coalesce((select json_agg(x.d order by x.d desc) from (
+          select r.date as d from public.psr_records r where r.athlete_id = v_id and r.date between v_from and v_today
+          union
+          select p.date from public.pse_records p where p.athlete_id = v_id and p.date between v_from and v_today
+        ) x), '[]'::json),
+      -- Dias com treino programado para o atleta (dia de folga não quebra a sequência)
+      'dias_treino', coalesce((select json_agg(x.d order by x.d desc) from (
+          select distinct s.date as d
+          from public.training_sessions s
+          where s.club_id = v_club and s.date between v_from and v_today and public.session_applies_to(s, v_id)
+        ) x), '[]'::json),
+      'treinos', (select count(*) from public.pse_records p where p.athlete_id = v_id and not p.did_not_train),
+      -- Data em que chegou a 10, 50, 100, 250 e 500 treinos
+      'marcos_treinos', coalesce((select json_object_agg(t.n, t.date) from (
+          select p.date, row_number() over (order by p.date, p.created_at) as n
+          from public.pse_records p
+          where p.athlete_id = v_id and not p.did_not_train
+        ) t where t.n in (10, 50, 100, 250, 500)), '{}'::json),
+      'pse', coalesce((select json_agg(json_build_object(
+            'date', p.date, 'training_type', p.training_type, 'rpe_score', p.rpe_score,
+            'duration_minutes', p.duration_minutes, 'did_not_train', p.did_not_train) order by p.date, p.created_at)
+          from public.pse_records p
+          where p.athlete_id = v_id and p.date between v_period and v_today), '[]'::json),
+      'pesos', coalesce((select json_agg(json_build_object('date', w.date, 'weight', w.weight) order by w.date, w.created_at)
+          from public.weight_records w
+          where w.athlete_id = v_id and w.date between v_from and v_today), '[]'::json),
+      -- Pesagens oficiais das competições do atleta (definem o limite de peso de cada dia)
+      'pesagens', coalesce((select json_agg(c.data_pesagem order by c.data_pesagem)
+          from public.competitions c
+          where c.club_id = v_club and c.data_pesagem >= v_from and public.competition_applies_to(c, v_id)), '[]'::json),
+      'prs', coalesce((select json_agg(json_build_object('exercicio', p.exercicio, 'peso_pr', p.peso_pr, 'updated_at', p.updated_at))
+          from public.athlete_prs p
+          where p.athlete_id = v_id), '[]'::json)
+    );
+  end;
+  $$;
+
+  revoke execute on function public.athlete_achievements(uuid) from public;
+  grant execute on function public.athlete_achievements(uuid) to anon, authenticated;
+
+  notify pgrst, 'reload schema';

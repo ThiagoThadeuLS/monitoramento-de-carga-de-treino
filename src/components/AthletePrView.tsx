@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Trophy, Plus, Trash2, Loader2, Dumbbell, AlertCircle } from 'lucide-react';
+import { Trophy, Plus, Trash2, Loader2, Dumbbell, AlertCircle, Share2 } from 'lucide-react';
 import { AthletePr, CatalogExercise, deleteAthletePr, listAthletePrs, saveAthletePr } from '../lib/athleteAuth';
 import { useDialogs } from './ui/Dialogs';
+import { useShareStory } from './athlete/ShareStory';
 
 interface AthletePrViewProps {
   /** Token da sessão do atleta: o banco descobre quem ele é */
@@ -12,6 +13,7 @@ const fmtKg = (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: 
 
 export function AthletePrView({ token }: AthletePrViewProps) {
   const { confirm, notify } = useDialogs();
+  const share = useShareStory();
   const [catalog, setCatalog] = useState<CatalogExercise[]>([]);
   const [prs, setPrs] = useState<AthletePr[]>([]);
   const [loading, setLoading] = useState(true);
@@ -53,11 +55,16 @@ export function AthletePrView({ token }: AthletePrViewProps) {
       notify('Informe uma carga maior que zero e de até 500 kg.', 'error');
       return;
     }
+    const anterior = prs.find((p) => p.exercicio.toLowerCase() === exercicioSelecionado.toLowerCase())?.peso_pr;
     setSaving(true);
     try {
       await saveAthletePr(token, exercicioSelecionado, peso);
       notify(`PR de ${exercicioSelecionado} salvo: ${fmtKg(peso)} kg.`, 'success');
       await load();
+      // Bateu o recorde: abre o cartão para compartilhar (primeiro registro não abre sozinho)
+      if (share && anterior !== undefined && peso > anterior) {
+        share.openStory({ kind: 'pr', exercicio: exercicioSelecionado, peso, ganho: Math.round((peso - anterior) * 10) / 10 });
+      }
     } catch (err) {
       notify((err as Error).message, 'error');
     } finally {
@@ -183,15 +190,28 @@ export function AthletePrView({ token }: AthletePrViewProps) {
                       </span>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(p)}
-                    className="p-2 text-slate-500 hover:text-red-400 transition-colors"
-                    title="Excluir PR"
-                    aria-label={`Excluir PR de ${p.exercicio}`}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center flex-shrink-0">
+                    {share && (
+                      <button
+                        type="button"
+                        onClick={() => share.openStory({ kind: 'pr', exercicio: p.exercicio, peso: p.peso_pr, ganho: null })}
+                        className="p-2 text-slate-500 hover:text-sky-300 transition-colors"
+                        title="Compartilhar"
+                        aria-label={`Compartilhar PR de ${p.exercicio}`}
+                      >
+                        <Share2 className="w-4 h-4" />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(p)}
+                      className="p-2 text-slate-500 hover:text-red-400 transition-colors"
+                      title="Excluir PR"
+                      aria-label={`Excluir PR de ${p.exercicio}`}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

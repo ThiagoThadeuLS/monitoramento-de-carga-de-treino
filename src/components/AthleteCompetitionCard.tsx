@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle, CalendarDays, CheckCircle2, ChevronDown, ChevronUp, Clock, MapPin,
-  Scale, ShieldCheck, Target, TrendingDown, TrendingUp, Trophy,
+  Scale, Share2, ShieldCheck, Target, TrendingDown, TrendingUp, Trophy,
 } from 'lucide-react';
+import { useShareStory } from './athlete/ShareStory';
 import { AthleteCompetition, listAthleteCompetitions } from '../lib/competitions';
 import { getAthleteHistory } from '../lib/athleteAuth';
 import { addDaysISO, todayISO } from '../lib/date';
@@ -47,6 +48,7 @@ const hhmm = (time?: string | null) => (time ? time.slice(0, 5) : '');
 /** Cartão da próxima competição na aba Peso do atleta. */
 export const AthleteCompetitionCard: React.FC<AthleteCompetitionCardProps> = ({ token, refreshKey = 0, onRegisterWeight, weighedToday, canRegisterWeight = true }) => {
   const today = todayISO();
+  const share = useShareStory();
   const [competitions, setCompetitions] = useState<AthleteCompetition[]>([]);
   const [weights, setWeights] = useState<WeightPoint[]>([]);
   const [loading, setLoading] = useState(true);
@@ -161,14 +163,36 @@ export const AthleteCompetitionCard: React.FC<AthleteCompetitionCardProps> = ({ 
               </p>
             )}
           </div>
-          <span
-            className={`flex-shrink-0 text-center px-2.5 py-2 rounded-2xl border ${
-              days <= 7 ? 'bg-amber-500/15 border-amber-500/40 text-amber-200' : 'bg-sky-500/15 border-sky-500/40 text-sky-200'
-            }`}
-          >
-            <span className="block text-xl font-black leading-none">{Math.max(0, days)}</span>
-            <span className="block text-[9px] uppercase font-bold mt-0.5">{days === 1 ? 'dia' : 'dias'}</span>
-          </span>
+          <div className="flex flex-col items-center gap-1.5 flex-shrink-0">
+            <span
+              className={`text-center px-2.5 py-2 rounded-2xl border ${
+                days <= 7 ? 'bg-amber-500/15 border-amber-500/40 text-amber-200' : 'bg-sky-500/15 border-sky-500/40 text-sky-200'
+              }`}
+              title="Dias até a pesagem"
+            >
+              <span className="block text-xl font-black leading-none">{Math.max(0, days)}</span>
+              <span className="block text-[9px] uppercase font-bold mt-0.5">{days === 1 ? 'dia' : 'dias'}</span>
+            </span>
+            {share && (
+              <button
+                type="button"
+                onClick={() =>
+                  share.openStory({
+                    kind: 'competicao',
+                    nome: next.nome,
+                    data: next.data,
+                    dias: daysBetweenISO(today, next.data),
+                    local: next.local,
+                    categoria: next.categoria,
+                  })
+                }
+                className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[10px] font-bold text-slate-200 flex items-center gap-1"
+                title="Compartilhar a contagem para a competição"
+              >
+                <Share2 className="w-3 h-3" /> Compartilhar
+              </button>
+            )}
+          </div>
         </div>
 
         {next.observacoes && (

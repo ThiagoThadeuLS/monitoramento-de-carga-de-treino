@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Flame, CheckCircle2, AlertCircle, Send, Target, Swords, Dumbbell, Timer } from 'lucide-react';
 import { PseRecord } from '../types';
 import { todayISO } from '../lib/date';
+import { PSE_SCALE } from '../data/constants';
 
 interface PseFormProps {
   athleteId: string;
@@ -30,16 +31,16 @@ const TRAINING_TYPES = [
 ];
 
 const FOSTER_SCALE_LABELS: Record<number, { text: string; color: string; desc: string; thumbColor: string; cardClass: string }> = {
-  1: { text: 'Muito, Muito Fácil', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30', desc: 'Ritmo de repouso / caminhada leve', thumbColor: '#10b981', cardClass: 'bg-emerald-950/20 border-emerald-500/40 shadow-emerald-950/20' },
-  2: { text: 'Muito Fácil', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30', desc: 'Respiração normal, conversa fácil', thumbColor: '#10b981', cardClass: 'bg-emerald-950/20 border-emerald-500/40 shadow-emerald-950/20' },
-  3: { text: 'Fácil', color: 'text-green-400 bg-green-500/10 border-green-500/30', desc: 'Aquecimento / esforço confortável', thumbColor: '#22c55e', cardClass: 'bg-green-950/20 border-green-500/40 shadow-green-950/20' },
-  4: { text: 'Moderado', color: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/30', desc: 'Começando a suar, ritmo sustentável', thumbColor: '#eab308', cardClass: 'bg-yellow-950/20 border-yellow-500/40 shadow-yellow-950/20' },
-  5: { text: 'Um Pouco Difícil', color: 'text-amber-400 bg-amber-500/10 border-amber-500/30', desc: 'Treino firme, respiração acelerada', thumbColor: '#f59e0b', cardClass: 'bg-amber-950/20 border-amber-500/40 shadow-amber-950/20' },
-  6: { text: 'Difícil', color: 'text-amber-500 bg-amber-500/10 border-amber-500/30', desc: 'Esforço considerável, conversa curta', thumbColor: '#f59e0b', cardClass: 'bg-amber-950/20 border-amber-500/40 shadow-amber-950/20' },
-  7: { text: 'Muito Difícil', color: 'text-orange-500 bg-orange-500/10 border-orange-500/30', desc: 'Treino intenso, pernas pesadas', thumbColor: '#f97316', cardClass: 'bg-orange-950/25 border-orange-500/40 shadow-orange-950/20' },
-  8: { text: 'Muito, Muito Difícil', color: 'text-rose-500 bg-rose-500/10 border-rose-500/30', desc: 'Perto do limite, manter o ritmo custa muito', thumbColor: '#f43f5e', cardClass: 'bg-rose-950/30 border-rose-500/50 shadow-rose-950/30' },
-  9: { text: 'Quase Máximo / Exaustivo', color: 'text-red-500 bg-red-500/10 border-red-500/30', desc: 'Muito perto da exaustão total', thumbColor: '#ef4444', cardClass: 'bg-red-950/35 border-red-500/60 shadow-red-950/40' },
-  10: { text: 'Máximo Absoluto', color: 'text-red-400 bg-red-600/20 border-red-500/50', desc: 'O maior esforço físico possível', thumbColor: '#dc2626', cardClass: 'bg-red-950/45 border-red-600/70 shadow-red-950/50' },
+  1: { text: PSE_SCALE[1].text, color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30', desc: 'Ritmo de repouso / caminhada leve', thumbColor: PSE_SCALE[1].color, cardClass: 'bg-emerald-950/20 border-emerald-500/40 shadow-emerald-950/20' },
+  2: { text: PSE_SCALE[2].text, color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30', desc: 'Respiração normal, conversa fácil', thumbColor: PSE_SCALE[2].color, cardClass: 'bg-emerald-950/20 border-emerald-500/40 shadow-emerald-950/20' },
+  3: { text: PSE_SCALE[3].text, color: 'text-green-400 bg-green-500/10 border-green-500/30', desc: 'Aquecimento / esforço confortável', thumbColor: PSE_SCALE[3].color, cardClass: 'bg-green-950/20 border-green-500/40 shadow-green-950/20' },
+  4: { text: PSE_SCALE[4].text, color: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/30', desc: 'Começando a suar, ritmo sustentável', thumbColor: PSE_SCALE[4].color, cardClass: 'bg-yellow-950/20 border-yellow-500/40 shadow-yellow-950/20' },
+  5: { text: PSE_SCALE[5].text, color: 'text-amber-400 bg-amber-500/10 border-amber-500/30', desc: 'Treino firme, respiração acelerada', thumbColor: PSE_SCALE[5].color, cardClass: 'bg-amber-950/20 border-amber-500/40 shadow-amber-950/20' },
+  6: { text: PSE_SCALE[6].text, color: 'text-amber-500 bg-amber-500/10 border-amber-500/30', desc: 'Esforço considerável, conversa curta', thumbColor: PSE_SCALE[6].color, cardClass: 'bg-amber-950/20 border-amber-500/40 shadow-amber-950/20' },
+  7: { text: PSE_SCALE[7].text, color: 'text-orange-500 bg-orange-500/10 border-orange-500/30', desc: 'Treino intenso, pernas pesadas', thumbColor: PSE_SCALE[7].color, cardClass: 'bg-orange-950/25 border-orange-500/40 shadow-orange-950/20' },
+  8: { text: PSE_SCALE[8].text, color: 'text-rose-500 bg-rose-500/10 border-rose-500/30', desc: 'Perto do limite, manter o ritmo custa muito', thumbColor: PSE_SCALE[8].color, cardClass: 'bg-rose-950/30 border-rose-500/50 shadow-rose-950/30' },
+  9: { text: PSE_SCALE[9].text, color: 'text-red-500 bg-red-500/10 border-red-500/30', desc: 'Muito perto da exaustão total', thumbColor: PSE_SCALE[9].color, cardClass: 'bg-red-950/35 border-red-500/60 shadow-red-950/40' },
+  10: { text: PSE_SCALE[10].text, color: 'text-red-400 bg-red-600/20 border-red-500/50', desc: 'O maior esforço físico possível', thumbColor: PSE_SCALE[10].color, cardClass: 'bg-red-950/45 border-red-600/70 shadow-red-950/50' },
 };
 
 export const PseForm: React.FC<PseFormProps> = ({

@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCircle2, ChevronRight, Clock, Dumbbell, Flame, HeartPulse, Loader2, Plus, RefreshCw, Scale } from 'lucide-react';
+import { Camera, CheckCircle2, ChevronRight, Clock, Dumbbell, Flame, HeartPulse, Loader2, Plus, RefreshCw, Scale } from 'lucide-react';
 import { AthleteHome, HomeSession } from '../../lib/athleteAuth';
 import { isPhysicalTraining } from '../../data/constants';
 import { timeOfStamp } from '../../lib/date';
@@ -8,8 +8,10 @@ import { matchPseToSessions } from '../../lib/pseMatch';
 export type TodayAction =
   | { kind: 'psr' }
   | { kind: 'peso' }
-  | { kind: 'pse'; trainingType?: string; duration?: number }
+  | { kind: 'pse'; trainingType?: string; duration?: number; /** Treino que a PSE responde (figurinha do pós-treino) */ sessionId?: string }
   | { kind: 'treino'; id: string; name: string };
+
+type HomePse = AthleteHome['pse'][number];
 
 interface Props {
   home: AthleteHome | null;
@@ -19,6 +21,10 @@ interface Props {
   onAction: (a: TodayAction) => void;
   /** Cartão da próxima competição (fica no alto quando existir) */
   competitionCard?: React.ReactNode;
+  /** Sequência de dias e avisos de conquista (para compartilhar) */
+  highlights?: React.ReactNode;
+  /** Treino com PSE enviada: postar foto com a figurinha do treino */
+  onShareTraining?: (session: HomeSession, pse: HomePse) => void;
 }
 
 const kg = (v: number) => `${v.toFixed(1).replace('.', ',')} kg`;
@@ -33,9 +39,9 @@ export function sessionMinutes(s: { start_time: string; end_time?: string | null
   return min > 0 ? min : undefined;
 }
 
-/** Quais treinos do dia já têm PSE (mesma regra do relatório do treinador). */
-function answeredSessions(home: AthleteHome): Set<string> {
-  return new Set(matchPseToSessions(home.sessions, home.pse).keys());
+/** PSE de cada treino do dia que já foi respondido (mesma regra do relatório do treinador). */
+function answeredSessions(home: AthleteHome): Map<string, HomePse> {
+  return matchPseToSessions(home.sessions, home.pse);
 }
 
 const Row: React.FC<{
@@ -78,7 +84,7 @@ const Row: React.FC<{
 );
 
 /** Tela "Hoje": o que falta responder e os treinos do dia, numa lista só. */
-export const AthleteToday: React.FC<Props> = ({ home, loading, error, onReload, onAction, competitionCard }) => {
+export const AthleteToday: React.FC<Props> = ({ home, loading, error, onReload, onAction, competitionCard, highlights, onShareTraining }) => {
   if (!home) {
     return (
       <div className="py-16 flex flex-col items-center gap-3 text-slate-400">
@@ -102,6 +108,8 @@ export const AthleteToday: React.FC<Props> = ({ home, loading, error, onReload, 
   const sessionRow = (s: HomeSession) => {
     const physical = isPhysicalTraining(s.training_type);
     const done = answered.has(s.id);
+    const pse = answered.get(s.id);
+    const canPost = !!onShareTraining && !!pse && !pse.did_not_train && !!pse.rpe_score;
     return (
       <Row
         key={s.id}
@@ -120,20 +128,34 @@ export const AthleteToday: React.FC<Props> = ({ home, loading, error, onReload, 
           </span>
         }
         extra={
-          physical ? (
-            <button
-              type="button"
-              onClick={() => onAction({ kind: 'treino', id: s.id, name: s.name || 'Treino Físico' })}
-              className="px-3.5 py-2 rounded-xl text-xs font-bold bg-violet-500/15 border border-violet-500/40 text-violet-200 hover:bg-violet-500/25"
-            >
-              {s.completed ? 'Ver ficha' : 'Abrir ficha'}
-            </button>
+          physical || canPost ? (
+            <>
+              {physical && (
+                <button
+                  type="button"
+                  onClick={() => onAction({ kind: 'treino', id: s.id, name: s.name || 'Treino Físico' })}
+                  className="px-3.5 py-2 rounded-xl text-xs font-bold bg-violet-500/15 border border-violet-500/40 text-violet-200 hover:bg-violet-500/25"
+                >
+                  {s.completed ? 'Ver ficha' : 'Abrir ficha'}
+                </button>
+              )}
+              {canPost && (
+                <button
+                  type="button"
+                  onClick={() => onShareTraining!(s, pse!)}
+                  className="px-3.5 py-2 rounded-xl text-xs font-bold bg-sky-500/15 border border-sky-500/40 text-sky-200 hover:bg-sky-500/25 flex items-center justify-center gap-1.5"
+                  title="Postar uma foto do treino com a figurinha"
+                >
+                  <Camera className="w-3.5 h-3.5" /> Postar
+                </button>
+              )}
+            </>
           ) : undefined
         }
         action={
           done
             ? undefined
-            : { label: 'PSE', onClick: () => onAction({ kind: 'pse', trainingType: s.training_type, duration: sessionMinutes(s) }) }
+            : { label: 'PSE', onClick: () => onAction({ kind: 'pse', trainingType: s.training_type, duration: sessionMinutes(s), sessionId: s.id }) }
         }
       />
     );
@@ -142,6 +164,7 @@ export const AthleteToday: React.FC<Props> = ({ home, loading, error, onReload, 
   return (
     <div className="space-y-5">
       {competitionCard}
+      {highlights}
 
       <section data-tour="athlete-today" className="space-y-2.5">
         <div className="flex items-center justify-between">

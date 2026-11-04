@@ -1,4 +1,4 @@
-import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { lazyNamed } from '../lib/lazy';
 import { ArrowLeft, CalendarDays, HelpCircle, History, Home, Loader2, LogOut, Shield, ShieldAlert, Trophy } from 'lucide-react';
 import { TERMS_VERSION, TermsGate } from './TermsGate';
@@ -18,6 +18,10 @@ import { AthleteChangePassword } from './AthleteChangePassword';
 import { AthleteToday, TodayAction, sessionMinutes } from './athlete/AthleteToday';
 import { AthleteCompetitionList } from './athlete/AthleteCompetitionList';
 import { PhotoPicker } from './ui/PhotoPicker';
+import { ShareStoryProvider } from './athlete/ShareStory';
+import { AchievementsPanel, AchievementsStrip, useAthleteAchievements } from './athlete/AthleteAchievements';
+import type { StoryPerson } from '../lib/storyCard';
+import type { TrainingStickerData } from '../lib/trainingSticker';
 import { PseRecord, PsrRecord, WeightRecord } from '../types';
 import { isSupabaseConfigured } from '../lib/supabase';
 import { uploadOwnAthletePhoto } from '../lib/photos';
@@ -27,6 +31,7 @@ import { nowTimeHM } from '../lib/date';
 import {
   AthleteHome,
   AthleteSession,
+  HomeSession,
   getAthleteHome,
   getAthleteSchedule,
   getTermsStatus,
@@ -60,9 +65,26 @@ type View = 'hoje' | 'agenda' | 'historico' | 'prs' | 'rivais';
 type Overlay =
   | { kind: 'psr' }
   | { kind: 'peso' }
-  | { kind: 'pse'; trainingType?: string; duration?: number }
+  | { kind: 'pse'; trainingType?: string; duration?: number; sessionId?: string }
   | { kind: 'treino'; id: string; name: string }
   | null;
+
+const hm = (t?: string | null) => (t ? t.slice(0, 5) : '');
+
+/** Dados da figurinha do pós-treino: o treino respondido (se houver) e a PSE enviada */
+function trainingStickerInfo(
+  p: { training_type?: string | null; rpe_score?: number | null; duration_minutes?: number | null },
+  s?: HomeSession
+): TrainingStickerData {
+  return {
+    titulo: s?.name || s?.training_type || p.training_type || 'Treino',
+    tipo: s?.training_type ?? p.training_type ?? null,
+    horario: s ? `${hm(s.start_time)}${s.end_time ? `–${hm(s.end_time)}` : ''}` : nowTimeHM(),
+    minutos: p.duration_minutes ?? null,
+    pse: p.rpe_score ?? 0,
+    esperada: s?.expected_pse || null,
+  };
+}
 
 const VIEWS: { id: View; label: string; icon: typeof Home }[] = [
   { id: 'hoje', label: 'Hoje', icon: Home },
@@ -205,6 +227,24 @@ export const AthleteArea: React.FC = () => {
     return () => window.clearTimeout(t);
   }, [home]);
 
+  // Conquistas (sequência, selos e resumos): recarregam junto com a tela Hoje
+  const achievements = useAthleteAchievements(readyToken, homeVersion);
+  // Foto pós-treino com a figurinha: pedida ao enviar a PSE ou pelo botão "Postar" do treino
+  const [pendingTraining, setPendingTraining] = useState<TrainingStickerData | null>(null);
+  const clearPendingTraining = useCallback(() => setPendingTraining(null), []);
+  // Quem aparece nos cartões para compartilhar (foto, nome, categoria e clube)
+  const storyPerson = useMemo<StoryPerson>(
+    () => ({
+      nome: session?.athlete.nome ?? '',
+      foto: session?.athlete.photo_url,
+      categoria: session?.athlete.categoria,
+      classe: session?.athlete.classe,
+      clube: session?.club?.nome,
+      escudo: session?.club?.escudo_url,
+    }),
+    [session]
+  );
+
   const [tutorial, setTutorial] = useState(false);
   const readyAthleteId = readyToken ? session!.athlete.id : null;
   const tutorialFlag = session?.tutorialPending;
@@ -294,7 +334,15 @@ export const AthleteArea: React.FC = () => {
     }
     return error;
   };
-  const handlePseSubmit = async (record: Omit<PseRecord, 'id' | 'created_at'>) => afterSubmit(await submitWith(submitPse, record));
+  const handlePseSubmit = async (record: Omit<PseRecord, 'id' | 'created_at'>) => {
+    const error = afterSubmit(await submitWith(submitPse, record));
+    // Treinou: oferece postar a foto do treino com a figurinha (abre quando a PSE fechar)
+    if (!error && !record.did_not_train && record.rpe_score) {
+      const sessionId = overlay?.kind === 'pse' ? overlay.sessionId : undefined;
+      setPendingTraining(trainingStickerInfo(record, home?.sessions.find((s) => s.id === sessionId)));
+    }
+    return error;
+  };
   const handlePsrSubmit = async (record: Omit<PsrRecord, 'id' | 'created_at'>) => afterSubmit(await submitWith(submitPsr, record));
   const handleWeightSubmit = async (record: Omit<WeightRecord, 'id' | 'created_at'>) => afterSubmit(await submitWith(submitWeight, record), 'peso');
 
@@ -420,7 +468,7 @@ export const AthleteArea: React.FC = () => {
           onFinishAndGoToPse={(durationMinutes: number) => {
             reloadHome();
             // Ficha concluída: abre a PSE com a duração cronometrada
-            openOverlay({ kind: 'pse', trainingType: PHYSICAL_TRAINING, duration: durationMinutes });
+            openOverlay({ kind: 'pse', trainingType: PHYSICAL_TRAINING, duration: durationMinutes, sessionId: overlay.id });
           }}
           onBack={closeOverlay}
         />
@@ -461,6 +509,12 @@ export const AthleteArea: React.FC = () => {
     ) : null;
 
   return (
+    <ShareStoryProvider
+      person={storyPerson}
+      // Só abre depois que a tela da PSE fechou (o "voltar" do celular continua certo)
+      trainingRequest={overlay ? null : pendingTraining}
+      onTrainingRequestHandled={clearPendingTraining}
+    >
     <div className="max-w-2xl mx-auto px-4 pt-6 pb-28 space-y-5">
       {tutorial && (
         <Suspense fallback={null}>
@@ -517,6 +571,8 @@ export const AthleteArea: React.FC = () => {
             error={homeError}
             onReload={reloadHome}
             onAction={onTodayAction}
+            highlights={<AchievementsStrip view={achievements} athleteId={athlete.id} />}
+            onShareTraining={(s, p) => setPendingTraining(trainingStickerInfo(p, s))}
             competitionCard={
               <Suspense fallback={null}>
                 <AthleteCompetitionCard
@@ -549,7 +605,8 @@ export const AthleteArea: React.FC = () => {
 
         {pane(
           'historico',
-          <div data-tour="athlete-history">
+          <div data-tour="athlete-history" className="space-y-4">
+            <AchievementsPanel view={achievements} />
             <AthleteHistory
               token={token}
               athleteId={athlete.id}
@@ -611,5 +668,6 @@ export const AthleteArea: React.FC = () => {
         </div>
       </nav>
     </div>
+    </ShareStoryProvider>
   );
 };
