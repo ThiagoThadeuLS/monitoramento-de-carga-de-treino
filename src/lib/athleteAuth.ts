@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import { onlyCpfDigits } from './cpf';
 import type { ClubInfo } from './club';
+import { FOLD_SITES, FoldValues, Sexo } from './bodyFat';
 import { PseRecord, PsrRecord, TrainingSession, WeightRecord } from '../types';
 
 // Login do atleta: CPF + senha, validados por funções no banco
@@ -48,6 +49,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   pr_invalido: 'Informe uma carga maior que zero e de até 500 kg.',
   exercicio_invalido: 'Esse exercício não está no catálogo do clube (ou não pede PR).',
   foto_invalida: 'Não foi possível validar a foto. Envie a imagem de novo.',
+  nome_invalido: 'Digite um nome de exibição de 2 a 60 letras.',
+  nascimento_invalido: 'Confira a data de nascimento.',
   'duplicate key': 'Esse registro já existe.',
 };
 
@@ -153,6 +156,57 @@ export async function saveAthletePhoto(token: string, url: string | null): Promi
   const { data, error } = await client().rpc('athlete_set_photo', { p_token: token, p_url: url });
   if (error) throw toAuthError(error);
   return (data ?? null) as string | null;
+}
+
+export interface AthleteProfile {
+  /** Nome do cadastro (o que a comissão técnica vê) */
+  nome: string;
+  /** Nome escolhido pelo atleta no perfil (null = usa o nome do cadastro) */
+  display_name: string | null;
+  /** AAAA-MM-DD (null = ainda não preencheu) */
+  birth_date: string | null;
+  photo_url: string | null;
+  /** O banco já tem o nome de exibição (PARTE 18 nova)? Sem isso, o nome do app é o do cadastro. */
+  displayNameSupported: boolean;
+}
+
+/** Nome, nascimento e foto do próprio atleta (o banco descobre quem é pelo token). */
+export async function getAthleteProfile(token: string): Promise<AthleteProfile> {
+  const { data, error } = await client().rpc('athlete_my_profile', { p_token: token });
+  if (error) throw toAuthError(error);
+  const d = (data ?? {}) as Partial<AthleteProfile>;
+  return {
+    nome: d.nome ?? '',
+    display_name: d.display_name ?? null,
+    birth_date: d.birth_date ?? null,
+    photo_url: d.photo_url ?? null,
+    // Banco antigo (função que ainda grava em `nome`): não oferece o nome de exibição
+    displayNameSupported: !!data && Object.prototype.hasOwnProperty.call(data, 'display_name'),
+  };
+}
+
+/**
+ * Salva o nome de exibição (só do app do atleta) e a data de nascimento.
+ * O nome do cadastro nunca muda aqui — a comissão técnica continua vendo o oficial.
+ */
+export async function updateAthleteProfile(
+  token: string,
+  input: { displayName: string; birth_date: string }
+): Promise<AthleteProfile> {
+  const { data, error } = await client().rpc('athlete_update_profile', {
+    p_token: token,
+    p_nome: input.displayName,
+    p_birth_date: input.birth_date,
+  });
+  if (error) throw toAuthError(error);
+  const d = (data ?? {}) as Partial<AthleteProfile>;
+  return {
+    nome: d.nome ?? '',
+    display_name: d.display_name ?? null,
+    birth_date: d.birth_date ?? input.birth_date,
+    photo_url: d.photo_url ?? null,
+    displayNameSupported: !!data && Object.prototype.hasOwnProperty.call(data, 'display_name'),
+  };
 }
 
 type NewRecord<T> = Omit<T, 'id' | 'created_at' | 'athlete_id'>;
@@ -403,6 +457,53 @@ export async function completeAthleteWorkout(token: string, sessionId: string, d
     p_duration_minutes: durationMinutes,
   });
   if (error) throw toAuthError(error);
+}
+
+// ---------- Composição corporal ----------
+export interface BodyCompositionPoint {
+  date: string;
+  percentual: number;
+  peso: number | null;
+  massa_magra: number | null;
+  massa_gorda: number | null;
+  /** Dobras da avaliação (mm): usadas só para o mapa de calor da silhueta. */
+  folds: FoldValues;
+}
+
+export interface AthleteBodyCompositionData {
+  /** Sexo do cadastro, para escolher a silhueta masculina/feminina */
+  sexo: Sexo;
+  history: BodyCompositionPoint[];
+}
+
+/**
+ * % de gordura ao longo do tempo + as dobras de cada avaliação (para o mapa de
+ * calor da silhueta). Os valores em milímetros não aparecem para o atleta.
+ */
+export async function getAthleteBodyComposition(token: string): Promise<AthleteBodyCompositionData> {
+  const { data, error } = await client().rpc('athlete_body_composition', { p_token: token });
+  if (error) throw toAuthError(error);
+  const d = (data ?? {}) as { sexo?: string | null; history?: Record<string, unknown>[] };
+  const history: BodyCompositionPoint[] = (d.history ?? []).map((p) => {
+    const rawFolds = (p.folds ?? {}) as Record<string, unknown>;
+    const folds: FoldValues = {};
+    FOLD_SITES.forEach(({ key }) => {
+      const v = rawFolds[key];
+      folds[key] = v === null || v === undefined || v === '' ? null : Number(v);
+    });
+    return {
+      date: p.date as string,
+      percentual: Number(p.percentual),
+      peso: p.peso === null || p.peso === undefined ? null : Number(p.peso),
+      massa_magra: p.massa_magra === null || p.massa_magra === undefined ? null : Number(p.massa_magra),
+      massa_gorda: p.massa_gorda === null || p.massa_gorda === undefined ? null : Number(p.massa_gorda),
+      folds,
+    };
+  });
+  return {
+    sexo: /^f/i.test(String(d.sexo ?? '').trim()) ? 'Feminino' : 'Masculino',
+    history,
+  };
 }
 
 // ---------- Tela "Hoje" ----------

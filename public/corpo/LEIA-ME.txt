@@ -1,0 +1,20 @@
+Imagens do corpo usadas na composição corporal
+==============================================
+
+Salve aqui as imagens com estes nomes exatos (PNG):
+
+  frente-masculino.png
+  costas-masculino.png
+  frente-feminino.png
+  costas-feminino.png
+
+O app usa a imagem que existir e, para a que faltar, mostra o desenho
+vetorial (nenhuma tela quebra).
+
+Dicas:
+- Recorte o corpo inteiro (cabeça aos pés), sem selos/siglas desenhados:
+  os selos clicáveis são posicionados pelo app por cima da imagem.
+- Use PNG com fundo transparente: o app aplica o próprio fundo escuro do painel
+  e uma sombra suave ao redor da figura.
+- Se o enquadramento mudar, ajuste as posições em
+  src/components/ui/BodySilhouette.tsx (constante IMAGE_SPOTS).

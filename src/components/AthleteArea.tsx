@@ -1,6 +1,6 @@
 import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { lazyNamed } from '../lib/lazy';
-import { ArrowLeft, CalendarDays, HelpCircle, History, Home, Loader2, LogOut, Shield, ShieldAlert, Trophy } from 'lucide-react';
+import { ArrowLeft, CalendarDays, HelpCircle, History, Home, Loader2, LogOut, Shield, ShieldAlert, Trophy, UserRound } from 'lucide-react';
 import { TERMS_VERSION, TermsGate } from './TermsGate';
 import { isPhysicalTraining, PHYSICAL_TRAINING } from '../data/constants';
 import { useDialogs } from './ui/Dialogs';
@@ -24,10 +24,15 @@ import { uploadOwnAthletePhoto } from '../lib/photos';
 import { useHistoryState } from '../lib/navigation';
 import { useTodayISO } from '../lib/useToday';
 import { nowTimeHM } from '../lib/date';
+import { ageOn, isBirthday } from '../lib/age';
+import { BirthDateGate } from './athlete/BirthDateGate';
+import { AthleteProfileTab } from './athlete/AthleteProfileTab';
 import {
   AthleteHome,
+  AthleteProfile,
   AthleteSession,
   getAthleteHome,
+  getAthleteProfile,
   getAthleteSchedule,
   getTermsStatus,
   logoutAthlete,
@@ -54,7 +59,7 @@ const AthletePhysicalWorkoutExecution = named(loadWorkout, (m) => m.AthletePhysi
 const AthleteCompetitionCard = named(loadCompetition, (m) => m.AthleteCompetitionCard);
 const Tour = named(loadTour, (m) => m.Tour);
 
-type View = 'hoje' | 'agenda' | 'historico' | 'prs' | 'rivais';
+type View = 'hoje' | 'agenda' | 'historico' | 'prs' | 'rivais' | 'perfil';
 
 /** Tela aberta por cima da área (formulário ou ficha do treino físico) */
 type Overlay =
@@ -70,6 +75,7 @@ const VIEWS: { id: View; label: string; icon: typeof Home }[] = [
   { id: 'historico', label: 'Histórico', icon: History },
   { id: 'prs', label: 'PRs', icon: Trophy },
   { id: 'rivais', label: 'Rivais', icon: Shield },
+  { id: 'perfil', label: 'Perfil', icon: UserRound },
 ];
 
 // Link dos lembretes (/?aba=...): abre direto o formulário certo
@@ -160,6 +166,33 @@ export const AthleteArea: React.FC = () => {
   }, [passwordToken, sessionTerms]);
   const termsOk = !!terms?.accepted_at && terms.version === TERMS_VERSION;
   const readyToken = passwordToken && termsOk ? passwordToken : null;
+
+  // Perfil (nome, nascimento e foto). Num banco sem a PARTE 18 a busca falha e o app segue normal.
+  const [profile, setProfile] = useState<AthleteProfile | null>(null);
+  const [profileLoaded, setProfileLoaded] = useState(false);
+  useEffect(() => {
+    if (!readyToken) {
+      setProfile(null);
+      setProfileLoaded(false);
+      return;
+    }
+    let cancelled = false;
+    setProfileLoaded(false);
+    getAthleteProfile(readyToken)
+      .then((p) => !cancelled && setProfile(p))
+      .catch(() => !cancelled && setProfile(null))
+      .finally(() => !cancelled && setProfileLoaded(true));
+    return () => {
+      cancelled = true;
+    };
+  }, [readyToken]);
+  /** Depois de salvar o perfil: atualiza a sessão (cabeçalho e saudação) também. */
+  const applyProfile = (p: AthleteProfile) => {
+    setProfile(p);
+    // O nome do cadastro não muda: a sessão só acompanha a foto
+    setSession((cur) => (cur ? { ...cur, athlete: { ...cur.athlete, photo_url: p.photo_url } } : cur));
+  };
+  const [birthdayClosed, setBirthdayClosed] = useState(false);
 
   // Tela "Hoje": uma consulta só; recarrega ao enviar algo, ao virar o dia e ao voltar para o app
   const [home, setHome] = useState<AthleteHome | null>(null);
@@ -364,6 +397,27 @@ export const AthleteArea: React.FC = () => {
     );
   }
 
+  if (!profileLoaded) {
+    return (
+      <div className="py-24 flex flex-col items-center justify-center gap-3 text-slate-400">
+        <Loader2 className="w-8 h-8 animate-spin text-emerald-400" />
+        <p className="text-sm font-medium">Carregando seu perfil...</p>
+      </div>
+    );
+  }
+
+  // Primeiro acesso: sem a data de nascimento o atleta não usa o app
+  if (profile && !profile.birth_date) {
+    return (
+      <BirthDateGate
+        token={session.token}
+        nome={profile.nome || session.athlete.nome}
+        onSaved={applyProfile}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
   if (MOBILE && pushState !== 'on') {
     if (pushState === null) {
       return (
@@ -377,6 +431,8 @@ export const AthleteArea: React.FC = () => {
 
   const { athlete } = session;
   const token = session.token;
+  // Nome de exibição do perfil (cai no nome do cadastro quando não foi trocado)
+  const displayName = (profile?.display_name ?? '').trim() || athlete.nome;
 
   // Foto do próprio atleta: reduzida no navegador (512 px) e com nome fixo no Storage
   const changePhoto = async (file: File) => {
@@ -384,6 +440,7 @@ export const AthleteArea: React.FC = () => {
     if (!clubId) throw new Error('Não foi possível identificar seu clube. Entre novamente.');
     const url = await uploadOwnAthletePhoto({ token, athleteId: athlete.id, clubId, file });
     setSession((cur) => (cur ? { ...cur, athlete: { ...cur.athlete, photo_url: url } } : cur));
+    setProfile((cur) => (cur ? { ...cur, photo_url: url } : cur));
     notify('Foto atualizada.', 'success');
   };
 
@@ -438,7 +495,7 @@ export const AthleteArea: React.FC = () => {
           {overlay.kind === 'pse' && (
             <PseForm
               athleteId={athlete.id}
-              athleteName={athlete.nome}
+              athleteName={displayName}
               onSubmit={handlePseSubmit}
               scheduledDurations={scheduledDurations}
               suggestedType={overlay.trainingType ?? autoType}
@@ -446,9 +503,9 @@ export const AthleteArea: React.FC = () => {
               initialDuration={overlay.duration}
             />
           )}
-          {overlay.kind === 'psr' && <PsrForm athleteId={athlete.id} athleteName={athlete.nome} onSubmit={handlePsrSubmit} />}
+          {overlay.kind === 'psr' && <PsrForm athleteId={athlete.id} athleteName={displayName} onSubmit={handlePsrSubmit} />}
           {overlay.kind === 'peso' && (
-            <WeightForm athleteId={athlete.id} athleteName={athlete.nome} lastWeight={home?.lastWeight?.weight ?? null} onSubmit={handleWeightSubmit} />
+            <WeightForm athleteId={athlete.id} athleteName={displayName} lastWeight={home?.lastWeight?.weight ?? null} onSubmit={handleWeightSubmit} />
           )}
         </div>
       </div>
@@ -466,13 +523,34 @@ export const AthleteArea: React.FC = () => {
     <div className="max-w-2xl mx-auto px-4 pt-6 pb-28 space-y-5">
       {tutorial && (
         <Suspense fallback={null}>
-          <Tour steps={athleteTourSteps(athlete.nome, (v) => { setOverlayRaw(null); setView(v); })} onClose={finishTutorial} />
+          <Tour steps={athleteTourSteps(displayName, (v) => { setOverlayRaw(null); setView(v); })} onClose={finishTutorial} />
         </Suspense>
+      )}
+
+      {profile && isBirthday(profile.birth_date, today) && !birthdayClosed && (
+        <div className="relative overflow-hidden rounded-2xl border border-pink-500/40 bg-gradient-to-r from-pink-500/25 via-fuchsia-500/15 to-amber-400/15 p-4 flex items-start gap-3">
+          <span className="text-2xl leading-none">🎉</span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-black text-white">Feliz aniversário, {displayName.split(' ')[0]}!</p>
+            <p className="text-[11px] text-pink-100/90 leading-relaxed">
+              {ageOn(profile.birth_date, today) !== null ? `${ageOn(profile.birth_date, today)} anos hoje — ` : ''}
+              toda a comissão técnica deseja um ótimo ano de treinos.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setBirthdayClosed(true)}
+            className="text-pink-200/70 hover:text-white text-lg leading-none px-1"
+            aria-label="Fechar mensagem de aniversário"
+          >
+            ×
+          </button>
+        </div>
       )}
 
       <div data-tour="athlete-card" className="w-full bg-slate-800/80 border border-slate-700/80 rounded-2xl p-3.5 shadow-xl backdrop-blur flex items-center gap-3">
         <PhotoPicker
-          name={athlete.nome}
+          name={displayName}
           src={athlete.photo_url}
           onPick={changePhoto}
           onError={(message) => notify(message, 'error')}
@@ -481,7 +559,7 @@ export const AthleteArea: React.FC = () => {
           textClassName="text-base"
         />
         <div className="min-w-0 flex-1">
-          <p className="font-bold text-white truncate">{athlete.nome}</p>
+          <p className="font-bold text-white truncate">{displayName}</p>
           <p className="text-xs text-slate-400">
             {[athlete.classe && `Classe ${athlete.classe}`, athlete.categoria].filter(Boolean).join(' • ') || 'Atleta'}
           </p>
@@ -578,6 +656,25 @@ export const AthleteArea: React.FC = () => {
             <AdversaryManagement athleteToken={token} />
           </div>
         )}
+
+        {pane(
+          'perfil',
+          profile ? (
+            <AthleteProfileTab
+              token={token}
+              profile={profile}
+              classe={athlete.classe}
+              categoria={athlete.categoria}
+              clubName={session.club?.nome ?? 'seu clube'}
+              onSaved={applyProfile}
+              onPhoto={changePhoto}
+            />
+          ) : (
+            <div className="py-10 px-4 text-center text-sm text-slate-400">
+              Perfil indisponível: avise a comissão técnica para atualizar o banco.
+            </div>
+          )
+        )}
       </Suspense>
 
       {/* Navegação fixa embaixo */}
@@ -586,7 +683,7 @@ export const AthleteArea: React.FC = () => {
         className="fixed bottom-0 inset-x-0 z-40 bg-slate-950/95 backdrop-blur border-t border-slate-800"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
-        <div className="max-w-2xl mx-auto grid grid-cols-5">
+        <div className="max-w-2xl mx-auto grid grid-cols-6">
           {VIEWS.map(({ id, label, icon: Icon }) => {
             const active = currentView === id && !overlay;
             return (
@@ -600,7 +697,7 @@ export const AthleteArea: React.FC = () => {
                   }
                   setView(id);
                 }}
-                className={`py-2.5 flex flex-col items-center gap-1 text-[11px] font-bold transition-colors ${
+                className={`py-2.5 flex flex-col items-center gap-1 text-[10px] sm:text-[11px] font-bold transition-colors ${
                   active ? 'text-sky-400' : 'text-slate-400 hover:text-white'
                 }`}
                 aria-current={active ? 'page' : undefined}

@@ -7,6 +7,7 @@ import { dailyLoads, formatUA, loadMetrics, sessionLoad } from '../lib/load';
 import { mean } from '../lib/stats';
 import { brDate, formatKg, localTime } from '../lib/export';
 import { TermsModal } from './TermsGate';
+import { AthleteBodyComposition } from './athlete/AthleteBodyComposition';
 
 type Kind = 'pse' | 'psr' | 'peso';
 interface Entry {
@@ -192,6 +193,8 @@ export const AthleteHistory: React.FC<{
               lines={[{ key: 'w', label: 'Peso', color: '#3987e5', shape: 'circle', values: avg(weight, (r) => r.weight) }]}
             />
           )}
+
+          <AthleteBodyComposition token={token} />
 
           <section className="bg-slate-900/90 border border-slate-800 rounded-2xl overflow-hidden">
             <header className="px-4 py-3 border-b border-slate-800">

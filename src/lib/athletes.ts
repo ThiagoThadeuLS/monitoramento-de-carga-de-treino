@@ -38,7 +38,44 @@ export function fetchClubAthletes(club: string | null | undefined, force = false
   return promise;
 }
 
+export interface AthleteBirthday {
+  id: string;
+  nome: string;
+  /** AAAA-MM-DD */
+  birth_date: string;
+}
+
+let birthdayCache: { club: string; at: number; promise: Promise<AthleteBirthday[]> } | null = null;
+
+/**
+ * Datas de nascimento dos atletas do clube (só quem já preencheu). Consulta separada
+ * e tolerante: se o banco ainda não tem a coluna, devolve lista vazia em vez de
+ * derrubar as telas que só precisam da lista de atletas.
+ */
+export function fetchAthleteBirthdays(club: string | null | undefined, force = false): Promise<AthleteBirthday[]> {
+  if (!supabase) return Promise.resolve([]);
+  const key = club ?? '';
+  if (!force && birthdayCache && birthdayCache.club === key && Date.now() - birthdayCache.at < TTL_MS) {
+    return birthdayCache.promise;
+  }
+  const promise = (async () => {
+    const { data, error } = await supabase!
+      .from('athletes')
+      .select('id, nome, birth_date')
+      .not('birth_date', 'is', null)
+      .order('nome');
+    if (error) return [];
+    return ((data ?? []) as AthleteBirthday[]).filter((a) => !!a.birth_date);
+  })();
+  birthdayCache = { club: key, at: Date.now(), promise };
+  promise.catch(() => {
+    if (birthdayCache?.promise === promise) birthdayCache = null;
+  });
+  return promise;
+}
+
 /** Depois de cadastrar, editar, inativar ou excluir atleta. */
 export function invalidateClubAthletes() {
   cache = null;
+  birthdayCache = null;
 }
