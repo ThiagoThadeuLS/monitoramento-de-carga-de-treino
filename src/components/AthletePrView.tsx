@@ -1,17 +1,27 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Trophy, Plus, Trash2, Loader2, Dumbbell, AlertCircle, Share2 } from 'lucide-react';
+import { Trophy, Plus, Trash2, Loader2, Dumbbell, AlertCircle, Share2, Sparkles, TrendingUp, X } from 'lucide-react';
 import { AthletePr, CatalogExercise, deleteAthletePr, listAthletePrs, saveAthletePr } from '../lib/athleteAuth';
 import { useDialogs } from './ui/Dialogs';
-import { useShareStory } from './athlete/ShareStory';
+import { PrShareCard, ShareAthlete } from './athlete/PrShareCard';
+import { brDate } from '../lib/export';
 
 interface AthletePrViewProps {
   /** Token da sessão do atleta: o banco descobre quem ele é */
   token: string;
+  /** Nome, foto e categoria (aparecem no card compartilhado) */
+  athlete: ShareAthlete;
 }
 
 const fmtKg = (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+const brDay = (iso?: string) => (iso ? brDate(iso.slice(0, 10)) : '');
 
-export function AthletePrView({ token }: AthletePrViewProps) {
+interface NovoPr {
+  exercicio: string;
+  peso: number;
+  anterior: number | null;
+}
+
+export function AthletePrView({ token, athlete }: AthletePrViewProps) {
   const { confirm, notify } = useDialogs();
   const share = useShareStory();
   const [catalog, setCatalog] = useState<CatalogExercise[]>([]);
@@ -22,6 +32,10 @@ export function AthletePrView({ token }: AthletePrViewProps) {
   const [exercicioSelecionado, setExercicioSelecionado] = useState('');
   const [pesoPr, setPesoPr] = useState('');
   const [saving, setSaving] = useState(false);
+
+  // PR recém-batido (destaque da tela) e card aberto para compartilhar
+  const [novoPr, setNovoPr] = useState<NovoPr | null>(null);
+  const [card, setCard] = useState<{ pr: AthletePr; novo: boolean } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -78,29 +92,83 @@ export function AthletePrView({ token }: AthletePrViewProps) {
     try {
       await deleteAthletePr(token, pr.id);
       setPrs((list) => list.filter((p) => p.id !== pr.id));
+      if (novoPr?.exercicio === pr.exercicio) setNovoPr(null);
       notify('PR removido.', 'success');
     } catch (err) {
       notify((err as Error).message, 'error');
     }
   }
 
+  const recente = [...prs].sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''))[0];
+  const prDoNovo = novoPr ? prs.find((p) => p.exercicio.toLowerCase() === novoPr.exercicio.toLowerCase()) : undefined;
+
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
       {/* Cabeçalho */}
       <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 shadow-xl flex items-center gap-3">
-        <div className="w-11 h-11 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center">
+        <div className="w-11 h-11 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center flex-shrink-0">
           <Trophy className="w-5 h-5 text-emerald-300" />
         </div>
-        <div>
+        <div className="min-w-0 flex-1">
           <h2 className="text-lg font-bold text-white">Meus Recordes Pessoais (PRs)</h2>
           <p className="text-xs text-slate-400">Atualize suas cargas máximas (100%) para o cálculo automático dos treinos</p>
         </div>
+        {recente && (
+          <button
+            type="button"
+            onClick={() => setCard({ pr: recente, novo: false })}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-bold flex-shrink-0"
+            title="Compartilhar meus recordes"
+          >
+            <Share2 className="w-4 h-4" />
+            <span className="hidden sm:inline">Compartilhar</span>
+          </button>
+        )}
       </div>
 
       {loadError && (
         <div className="p-3.5 rounded-xl border bg-red-950/60 border-red-600 text-red-300 flex items-center gap-2.5 text-sm">
           <AlertCircle className="w-4 h-4 flex-shrink-0" />
           <span>{loadError}</span>
+        </div>
+      )}
+
+      {/* Recorde novo: convite para ver o card */}
+      {novoPr && (
+        <div className="bg-gradient-to-r from-emerald-500/20 via-emerald-500/10 to-sky-500/10 border border-emerald-500/40 rounded-2xl p-4 flex items-center gap-3">
+          <div className="w-11 h-11 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center flex-shrink-0">
+            <Sparkles className="w-5 h-5 text-emerald-300" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-black text-white">Novo PR em {novoPr.exercicio}!</p>
+            <p className="text-xs text-emerald-200/90">
+              {fmtKg(novoPr.peso)} kg
+              {novoPr.anterior !== null && (
+                <span className="text-emerald-300/80">
+                  {' '}• {novoPr.peso - novoPr.anterior >= 0 ? '+' : ''}
+                  {fmtKg(novoPr.peso - novoPr.anterior)} kg desde o último registro
+                </span>
+              )}
+            </p>
+          </div>
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => prDoNovo && setCard({ pr: prDoNovo, novo: true })}
+              disabled={!prDoNovo}
+              className="px-3 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold disabled:opacity-50"
+            >
+              Ver card
+            </button>
+            <button
+              type="button"
+              onClick={() => setNovoPr(null)}
+              className="p-2 rounded-xl text-slate-400 hover:text-white"
+              aria-label="Fechar aviso"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       )}
 
@@ -160,7 +228,7 @@ export function AthletePrView({ token }: AthletePrViewProps) {
           )}
         </div>
 
-        {/* Lista de PRs do atleta */}
+        {/* Lista de PRs do atleta, com a evolução de cada um */}
         <div className="md:col-span-2 bg-slate-900/80 border border-slate-800 rounded-2xl p-4 space-y-3">
           <h3 className="text-sm font-bold text-white flex items-center justify-between">
             <span>Meus recordes atuais</span>
@@ -176,18 +244,58 @@ export function AthletePrView({ token }: AthletePrViewProps) {
               Você ainda não registrou nenhum PR. Escolha um exercício ao lado e salve sua carga máxima!
             </div>
           ) : (
-            <div className="space-y-2 max-h-[350px] overflow-y-auto pr-1">
-              {prs.map((p) => (
-                <div key={p.id} className="bg-slate-950 border border-slate-800 p-3 rounded-xl flex items-center justify-between gap-3 text-xs">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center flex-shrink-0">
-                      <Dumbbell className="w-4 h-4 text-emerald-400" />
+            <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
+              {prs.map((p) => {
+                const hist = p.history ?? [];
+                const primeiro = hist[0]?.peso_pr ?? p.peso_pr;
+                const delta = p.peso_pr - primeiro;
+                const eNovo = novoPr?.exercicio.toLowerCase() === p.exercicio.toLowerCase();
+                return (
+                  <div
+                    key={p.id}
+                    className={`border p-3 rounded-xl flex items-center justify-between gap-3 text-xs ${
+                      eNovo ? 'bg-emerald-500/10 border-emerald-500/50' : 'bg-slate-950 border-slate-800'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center flex-shrink-0">
+                        <Dumbbell className="w-4 h-4 text-emerald-400" />
+                      </div>
+                      <div className="min-w-0">
+                        <span className="font-bold text-white block truncate">
+                          {p.exercicio}
+                          {eNovo && <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-emerald-500 text-slate-950 align-middle">NOVO</span>}
+                        </span>
+                        <span className="text-emerald-400 font-semibold text-[11px]">
+                          {fmtKg(p.peso_pr)} kg <span className="text-slate-500 font-normal">(100% PR)</span>
+                        </span>
+                        {hist.length > 1 && (
+                          <span className="flex items-center gap-1 text-[11px] text-slate-400 mt-0.5">
+                            <TrendingUp className="w-3 h-3 text-emerald-400 flex-shrink-0" />
+                            {delta > 0 ? `+${fmtKg(delta)} kg` : `${fmtKg(delta)} kg`} desde {brDay(hist[0]?.created_at)}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <div>
-                      <span className="font-bold text-white block">{p.exercicio}</span>
-                      <span className="text-emerald-400 font-semibold text-[11px]">
-                        {fmtKg(p.peso_pr)} kg <span className="text-slate-500 font-normal">(100% PR)</span>
-                      </span>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setCard({ pr: p, novo: eNovo })}
+                        className="p-2 text-slate-400 hover:text-sky-300 transition-colors"
+                        title="Compartilhar este PR"
+                        aria-label={`Compartilhar PR de ${p.exercicio}`}
+                      >
+                        <Share2 className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(p)}
+                        className="p-2 text-slate-500 hover:text-red-400 transition-colors"
+                        title="Excluir PR"
+                        aria-label={`Excluir PR de ${p.exercicio}`}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
                   </div>
                   <div className="flex items-center flex-shrink-0">
@@ -218,6 +326,16 @@ export function AthletePrView({ token }: AthletePrViewProps) {
           )}
         </div>
       </div>
+
+      {card && (
+        <PrShareCard
+          athlete={athlete}
+          pr={card.pr}
+          prs={prs}
+          novo={card.novo}
+          onClose={() => setCard(null)}
+        />
+      )}
     </div>
   );
 }
