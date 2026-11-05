@@ -1,5 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { photoInitials, photoPathFromUrl } from './photos';
+import { checkPhotoFile, photoInitials, photoPathFromUrl } from './photos';
+
+describe('checkPhotoFile', () => {
+  const file = (type: string, size = 1000) => new File([new Uint8Array(size)], 'foto', { type });
+
+  it('aceita qualquer imagem (ela sai em WEBP/JPEG) e tipo vazio (ex.: HEIC em alguns aparelhos)', () => {
+    expect(checkPhotoFile(file('image/jpeg'))).toBeNull();
+    expect(checkPhotoFile(file('image/heic'))).toBeNull();
+    expect(checkPhotoFile(file(''))).toBeNull();
+  });
+
+  it('recusa o que não é imagem e arquivo maior que 12 MB', () => {
+    expect(checkPhotoFile(file('application/pdf'))).not.toBeNull();
+    expect(checkPhotoFile(file('image/png', 12 * 1024 * 1024 + 1))).not.toBeNull();
+  });
+});
 
 describe('photoInitials', () => {
   it('usa a primeira e a última palavra do nome', () => {

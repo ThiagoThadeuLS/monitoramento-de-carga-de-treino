@@ -121,6 +121,12 @@ export function phaseFor(daysToWeighIn: number) {
 
 const limitFor = (target: number, percent: number): WeightLimit => ({ percent, weight: floor1(target * (1 + percent / 100)) });
 
+/** Limite de peso de um dia conforme os dias até a pesagem (sem pesagem marcada = longe da competição). */
+export function weightLimitFor(targetWeight: number, daysToWeighIn: number | null): WeightLimit {
+  const percent = daysToWeighIn === null ? WEIGHT_PHASES[0].maxPercent : phaseFor(daysToWeighIn).maxPercent;
+  return limitFor(targetWeight, percent);
+}
+
 export function buildWeightPlan({
   currentWeight,
   currentDate,

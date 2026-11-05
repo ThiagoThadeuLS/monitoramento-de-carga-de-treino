@@ -387,7 +387,7 @@ export const CoachArea: React.FC<{ recovery?: boolean }> = ({ recovery = false }
             src={coach!.photo_url}
             onPick={async (file) => {
               if (!userId) return;
-              await uploadPhoto('coach', userId, viewClub.id, file, coach!.photo_url);
+              await uploadPhoto('coach', userId, viewClub.id, file);
               notify('Foto atualizada.', 'success');
               reloadProfile();
             }}

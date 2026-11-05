@@ -29,6 +29,7 @@ const TOKEN_KEY = 'athlete_session_token';
 
 const ERROR_MESSAGES: Record<string, string> = {
   credenciais_invalidas: 'CPF ou senha incorretos. Confira os dados ou fale com seu treinador.',
+  muitas_tentativas: 'Muitas tentativas erradas. Espere 15 minutos e tente de novo, ou fale com seu treinador.',
   sessao_invalida: 'Sua sessão expirou. Entre novamente.',
   troca_de_senha_pendente: 'Você precisa criar sua nova senha antes de enviar respostas.',
   senha_curta: 'A nova senha precisa ter pelo menos 6 caracteres.',
@@ -48,9 +49,10 @@ const ERROR_MESSAGES: Record<string, string> = {
   peso_ja_enviado: 'Você já registrou o peso hoje. Para corrigir, apague o registro de hoje no Histórico e envie de novo.',
   pr_invalido: 'Informe uma carga maior que zero e de até 500 kg.',
   exercicio_invalido: 'Esse exercício não está no catálogo do clube (ou não pede PR).',
-  foto_invalida: 'Não foi possível validar a foto. Envie a imagem de novo.',
-  nome_invalido: 'Digite um nome de exibição de 2 a 60 letras.',
-  nascimento_invalido: 'Confira a data de nascimento.',
+  foto_invalida: 'Não foi possível ler a foto. Tente outra imagem (JPG, PNG ou WEBP).',
+  foto_grande: 'A foto ficou grande demais. Tente outra imagem.',
+  foto_sem_servidor: 'O envio de fotos ainda não foi ativado no servidor. Avise a comissão técnica.',
+  falha_servidor: 'Não foi possível salvar a foto agora. Tente de novo em instantes.',
   'duplicate key': 'Esse registro já existe.',
 };
 
@@ -115,6 +117,9 @@ export async function loginAthlete(cpf: string, password: string): Promise<Athle
     p_password: password,
   });
   if (error || !data) throw toAuthError(error);
+  // Senha errada e bloqueio por tentativas vêm como resposta { erro } (o banco registra a tentativa)
+  const erro = (data as { erro?: string }).erro;
+  if (erro) throw toAuthError({ message: erro });
   const session = parseSession(data);
   writeToken(session.token);
   return session;
@@ -149,13 +154,31 @@ export async function logoutAthlete(token: string): Promise<void> {
 }
 
 /**
- * Foto do próprio atleta (p_url null = sem foto). O banco descobre o atleta pelo
- * token e só aceita o endereço da pasta dele no Storage.
+ * Foto do próprio atleta. O atleta não usa o Supabase Auth, então a foto passa pela
+ * Edge Function "foto-atleta": ela confere a sessão (token) no banco e grava na pasta
+ * dele. Devolve o endereço público da foto nova.
  */
-export async function saveAthletePhoto(token: string, url: string | null): Promise<string | null> {
-  const { data, error } = await client().rpc('athlete_set_photo', { p_token: token, p_url: url });
-  if (error) throw toAuthError(error);
-  return (data ?? null) as string | null;
+export async function sendAthletePhoto(token: string, photo: Blob): Promise<string> {
+  const { data, error } = await client().functions.invoke('foto-atleta', {
+    body: photo,
+    headers: { 'x-athlete-token': token },
+  });
+  if (error) {
+    // A função responde { erro }; 404 = função ainda não publicada no Supabase
+    const res = (error as { context?: unknown }).context;
+    let code = '';
+    if (res instanceof Response) {
+      code = await res.json().then(
+        (j: { erro?: string }) => j?.erro ?? '',
+        () => ''
+      );
+      if (!code && res.status === 404) code = 'foto_sem_servidor';
+    }
+    throw toAuthError({ message: code || error.message });
+  }
+  const url = (data as { url?: string } | null)?.url;
+  if (!url) throw toAuthError({ message: 'falha_servidor' });
+  return url;
 }
 
 export interface AthleteProfile {
@@ -459,50 +482,42 @@ export async function completeAthleteWorkout(token: string, sessionId: string, d
   if (error) throw toAuthError(error);
 }
 
-// ---------- Composição corporal ----------
-export interface BodyCompositionPoint {
-  date: string;
-  percentual: number;
-  peso: number | null;
-  massa_magra: number | null;
-  massa_gorda: number | null;
-  /** Dobras da avaliação (mm): usadas só para o mapa de calor da silhueta. */
-  folds: FoldValues;
+// ---------- Conquistas e cartões para compartilhar ----------
+export interface AthleteAchievementsData {
+  today: string;
+  categoria: string | null;
+  /** Dias com alguma resposta (PSR ou PSE), do mais novo para o mais antigo (último ano) */
+  dias_respondidos: string[];
+  /** Dias com treino programado para o atleta (último ano) */
+  dias_treino: string[];
+  /** Treinos registrados (PSE sem "não treinei"), desde o começo */
+  treinos: number;
+  /** Data em que chegou a 10, 50, 100, 250 e 500 treinos */
+  marcos_treinos: Record<string, string>;
+  /** PSE do começo do mês anterior até hoje (para os resumos) */
+  pse: { date: string; training_type: string | null; rpe_score: number | null; duration_minutes: number | null; did_not_train: boolean }[];
+  pesos: { date: string; weight: number }[];
+  /** Datas de pesagem oficial das competições do atleta */
+  pesagens: string[];
+  prs: { exercicio: string; peso_pr: number; updated_at: string }[];
 }
 
-export interface AthleteBodyCompositionData {
-  /** Sexo do cadastro, para escolher a silhueta masculina/feminina */
-  sexo: Sexo;
-  history: BodyCompositionPoint[];
-}
-
-/**
- * % de gordura ao longo do tempo + as dobras de cada avaliação (para o mapa de
- * calor da silhueta). Os valores em milímetros não aparecem para o atleta.
- */
-export async function getAthleteBodyComposition(token: string): Promise<AthleteBodyCompositionData> {
-  const { data, error } = await client().rpc('athlete_body_composition', { p_token: token });
+/** Sequência de dias, selos e resumos: tudo do próprio atleta, numa consulta só (só leitura). */
+export async function getAthleteAchievements(token: string): Promise<AthleteAchievementsData> {
+  const { data, error } = await client().rpc('athlete_achievements', { p_token: token });
   if (error) throw toAuthError(error);
-  const d = (data ?? {}) as { sexo?: string | null; history?: Record<string, unknown>[] };
-  const history: BodyCompositionPoint[] = (d.history ?? []).map((p) => {
-    const rawFolds = (p.folds ?? {}) as Record<string, unknown>;
-    const folds: FoldValues = {};
-    FOLD_SITES.forEach(({ key }) => {
-      const v = rawFolds[key];
-      folds[key] = v === null || v === undefined || v === '' ? null : Number(v);
-    });
-    return {
-      date: p.date as string,
-      percentual: Number(p.percentual),
-      peso: p.peso === null || p.peso === undefined ? null : Number(p.peso),
-      massa_magra: p.massa_magra === null || p.massa_magra === undefined ? null : Number(p.massa_magra),
-      massa_gorda: p.massa_gorda === null || p.massa_gorda === undefined ? null : Number(p.massa_gorda),
-      folds,
-    };
-  });
+  const d = (data ?? {}) as Partial<AthleteAchievementsData>;
   return {
-    sexo: /^f/i.test(String(d.sexo ?? '').trim()) ? 'Feminino' : 'Masculino',
-    history,
+    today: d.today ?? '',
+    categoria: d.categoria ?? null,
+    dias_respondidos: d.dias_respondidos ?? [],
+    dias_treino: d.dias_treino ?? [],
+    treinos: Number(d.treinos ?? 0),
+    marcos_treinos: d.marcos_treinos ?? {},
+    pse: d.pse ?? [],
+    pesos: (d.pesos ?? []).map((w) => ({ date: w.date, weight: Number(w.weight) })),
+    pesagens: d.pesagens ?? [],
+    prs: (d.prs ?? []).map((p) => ({ ...p, peso_pr: Number(p.peso_pr) })),
   };
 }
 

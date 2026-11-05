@@ -167,12 +167,3 @@ export async function enablePush(token: string): Promise<PushState> {
   }
   return 'on';
 }
-
-/** Desativa os lembretes neste aparelho (também usado ao sair do app). */
-export async function disablePush(token: string | null): Promise<void> {
-  if (!('serviceWorker' in navigator)) return;
-  const sub = await currentSubscription().catch(() => null);
-  if (!sub) return;
-  if (token && supabase) await supabase.rpc('athlete_remove_push', { p_token: token, p_endpoint: sub.endpoint });
-  await sub.unsubscribe().catch(() => undefined);
-}

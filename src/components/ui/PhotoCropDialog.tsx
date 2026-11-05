@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Loader2, ZoomIn } from 'lucide-react';
-import { PHOTO_SIZE } from '../../lib/photos';
+import { PHOTO_SIZE, encodePhoto } from '../../lib/photos';
 
 /**
  * Ajuste da foto antes de enviar: o atleta/treinador arrasta a imagem e usa o zoom
@@ -101,11 +101,8 @@ export const PhotoCropDialog: React.FC<PhotoCropDialogProps> = ({ file, name, on
       ctx.drawImage(image, -image.naturalWidth / 2, -image.naturalHeight / 2);
       ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-      const blob =
-        (await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/webp', 0.9))) ??
-        (await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.9)));
-      if (!blob) throw new Error('Não foi possível preparar a imagem.');
-
+      // WEBP ou, no Safari (não gera WEBP), JPEG: a foto já sai pronta para subir
+      const blob = await encodePhoto(canvas);
       const ext = blob.type === 'image/webp' ? 'webp' : 'jpg';
       onConfirm(new File([blob], `perfil.${ext}`, { type: blob.type }));
     } catch (err: any) {
@@ -141,6 +138,8 @@ export const PhotoCropDialog: React.FC<PhotoCropDialogProps> = ({ file, name, on
                 setZoom(1);
                 setOffset({ x: 0, y: 0 });
               }}
+              // Formato que este navegador não abre (ex.: HEIC no Android) ou arquivo com defeito
+              onError={() => setError('Não foi possível abrir esta imagem. Tente outra foto (JPG ou PNG).')}
               className="absolute left-1/2 top-1/2 max-w-none select-none pointer-events-none"
               style={{
                 width: image ? image.naturalWidth * scale : BOX,
@@ -149,7 +148,7 @@ export const PhotoCropDialog: React.FC<PhotoCropDialogProps> = ({ file, name, on
               }}
             />
           )}
-          {!image && <Loader2 className="w-7 h-7 animate-spin text-slate-500 absolute inset-0 m-auto" />}
+          {!image && !error && <Loader2 className="w-7 h-7 animate-spin text-slate-500 absolute inset-0 m-auto" />}
         </div>
 
         <label className="flex items-center gap-3 text-slate-400">

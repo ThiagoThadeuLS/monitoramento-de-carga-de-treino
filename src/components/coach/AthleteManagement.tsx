@@ -9,7 +9,7 @@ import { invalidateClubAthletes } from '../../lib/athletes';
 import { useClub } from '../../lib/club';
 import { Avatar } from '../ui/Avatar';
 import { PhotoPicker } from '../ui/PhotoPicker';
-import { removePhoto, uploadPhoto } from '../../lib/photos';
+import { removePhoto, removePhotoFolder, uploadPhoto } from '../../lib/photos';
 
 interface AthleteManagementProps {
   athleteToEdit?: Athlete | null;
@@ -155,7 +155,7 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
   const changeAthletePhoto = async (athlete: Athlete, file: File) => {
     if (!club) throw new Error('Clube não carregado. Recarregue a página.');
     setModalError('');
-    const url = await uploadPhoto('athlete', athlete.id, club.id, file, athlete.photo_url);
+    const url = await uploadPhoto('athlete', athlete.id, club.id, file);
     const updated = { ...athlete, photo_url: url };
     setAthletes((list) => list.map((a) => (a.id === athlete.id ? { ...a, photo_url: url } : a)));
     setEditingAthlete((cur) => (cur && cur.id === athlete.id ? updated : cur));
@@ -174,7 +174,7 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
     if (!ok) return;
     setModalError('');
     try {
-      await removePhoto('athlete', athlete.id, club.id, athlete.photo_url);
+      await removePhoto('athlete', athlete.id, club.id);
       setAthletes((list) => list.map((a) => (a.id === athlete.id ? { ...a, photo_url: null } : a)));
       setEditingAthlete((cur) => (cur && cur.id === athlete.id ? { ...cur, photo_url: null } : cur));
       invalidateClubAthletes();
@@ -308,6 +308,8 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
 
     try {
       await deleteById('athletes', id);
+      // A foto fica num endereço público: sai junto com o cadastro (LGPD)
+      if (club) await removePhotoFolder('athlete', id, club.id).catch(() => undefined);
       setFeedbackMsg({ type: 'success', text: `Atleta "${athleteName}" removido com sucesso.` });
       invalidateClubAthletes();
       await loadAthletes();
@@ -610,7 +612,7 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-semibold uppercase tracking-wider text-slate-300">Foto do atleta</p>
                     <p className="text-[11px] text-slate-500 mt-0.5">
-                      PNG, JPG ou WEBP. A imagem é reduzida automaticamente antes de subir.
+                      Qualquer foto do celular ou do computador. Ela é recortada e reduzida antes de subir.
                     </p>
                     {editingAthlete.photo_url && (
                       <button

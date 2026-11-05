@@ -4,7 +4,8 @@ import { acceptTerms } from '../lib/athleteAuth';
 import { brDateOfStamp } from '../lib/date';
 
 /** Versão do termo: ao mudar o texto, troque a versão e todos aceitam de novo. */
-export const TERMS_VERSION = '2026-11';
+// Mudar a versão faz cada atleta aceitar de novo (2026-11-04: inclui a foto de perfil)
+export const TERMS_VERSION = '2026-11-04';
 
 /** Texto do termo de consentimento para uso dos dados (LGPD). */
 export const TermsText: React.FC<{ clubName: string }> = ({ clubName }) => {
@@ -18,7 +19,8 @@ export const TermsText: React.FC<{ clubName: string }> = ({ clubName }) => {
       </p>
       <H>2. Quais dados</H>
       <p>
-        Nome, CPF, celular, sexo, classe e categoria; suas respostas de <strong className="text-white">PSE</strong> (esforço, duração e observações),{' '}
+        Nome, CPF, celular, sexo, classe e categoria; <strong className="text-white">foto de perfil</strong> (opcional, enviada por você ou pela
+        comissão técnica); suas respostas de <strong className="text-white">PSE</strong> (esforço, duração e observações),{' '}
         <strong className="text-white">PSR</strong> (recuperação, fadiga, sono, dor muscular, estresse e humor), <strong className="text-white">peso</strong>,
         motivos de ausência e dados técnicos do aparelho para enviar notificações.
       </p>
