@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Flame, HeartPulse, Scale, AlertTriangle, RefreshCw, Loader2, CheckCircle2, Edit3 } from 'lucide-react';
+import { Calendar, Cake, Flame, HeartPulse, Scale, AlertTriangle, RefreshCw, Loader2, CheckCircle2, Edit3 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Athlete, PseRecord, PsrRecord, WeightRecord } from '../../types';
 import { stampInAppZone, todayISO } from '../../lib/date';
 import { useClub } from '../../lib/club';
-import { fetchClubAthletes } from '../../lib/athletes';
+import { AthleteBirthday, fetchAthleteBirthdays, fetchClubAthletes } from '../../lib/athletes';
+import { ageOn, isBirthday } from '../../lib/age';
+import { brDate } from '../../lib/export';
 import { useClubGroups } from '../../lib/groups';
 import { AthleteSelection, EMPTY_SELECTION, GroupFilter, resolveSelection } from './GroupFilter';
 import { Avatar } from '../ui/Avatar';
@@ -37,6 +39,18 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({ onEditAthlete, onO
   const [loadError, setLoadError] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
   const loadDailyData = () => setReloadKey((k) => k + 1);
+
+  // Aniversariantes do dia (consulta separada: banco antigo devolve lista vazia)
+  const [birthdays, setBirthdays] = useState<AthleteBirthday[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    fetchAthleteBirthdays(clubId)
+      .then((list) => !cancelled && setBirthdays(list))
+      .catch(() => !cancelled && setBirthdays([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [clubId]);
 
   useEffect(() => {
     if (!supabase) return;
@@ -113,6 +127,8 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({ onEditAthlete, onO
     ? (validPsrScores.reduce((a, b) => a + b, 0) / validPsrScores.length).toFixed(1)
     : '—';
 
+  const birthdayPeople = birthdays.filter((b) => isBirthday(b.birth_date, selectedDate));
+
   return (
     <div className="space-y-6">
       {/* Top Bar: Seletor de Data + Botão Atualizar */}
@@ -149,6 +165,27 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({ onEditAthlete, onO
           <span>Atualizar Dados</span>
         </button>
       </div>
+
+      {/* Aniversariantes do dia */}
+      {birthdayPeople.length > 0 && (
+        <div className="flex items-start gap-3 rounded-2xl border border-pink-500/30 bg-gradient-to-r from-pink-500/15 via-fuchsia-500/10 to-amber-400/10 p-4">
+          <Cake className="w-5 h-5 text-pink-300 flex-shrink-0 mt-0.5" />
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-pink-200/90">
+              Aniversariantes de {brDate(selectedDate)}
+            </p>
+            <p className="text-sm text-white font-semibold mt-1">
+              {birthdayPeople
+                .map((b) => {
+                  const idade = ageOn(b.birth_date, selectedDate);
+                  return idade !== null ? `${b.nome} (${idade} anos)` : b.nome;
+                })
+                .join(' • ')}
+            </p>
+            <p className="text-[11px] text-slate-400 mt-0.5">Mande um parabéns para a equipe! 🎉</p>
+          </div>
+        </div>
+      )}
 
       {/* Cards de Resumo Rápido */}
       <div data-tour="daily-cards" className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">

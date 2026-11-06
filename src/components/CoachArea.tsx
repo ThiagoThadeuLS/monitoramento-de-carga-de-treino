@@ -1,7 +1,7 @@
 import React, { Suspense, useEffect, useRef, useState } from 'react';
 import {
   LogOut, BarChart3, Users, Loader2, LineChart, CalendarDays, Shield, AlertTriangle, UserCog, Settings2, UsersRound, Palette, Gauge,
-  Dumbbell, Trophy, Home,
+  Dumbbell, Trophy, Home, Activity,
 } from 'lucide-react';
 import { exitSupport } from '../lib/platform';
 import { HelpButton } from './tour/HelpButton';
@@ -26,6 +26,7 @@ const PeriodAnalysis = lazyNamed(() => import('./coach/PeriodAnalysis'), (m) => 
 const LoadAnalysis = lazyNamed(() => import('./coach/LoadAnalysis'), (m) => m.LoadAnalysis);
 const TrainingSchedule = lazyNamed(() => import('./coach/TrainingSchedule'), (m) => m.TrainingSchedule);
 const PhysicalWorkoutBuilder = lazyNamed(() => import('./coach/PhysicalWorkoutBuilder'), (m) => m.PhysicalWorkoutBuilder);
+const BodyComposition = lazyNamed(() => import('./coach/BodyComposition'), (m) => m.BodyComposition);
 const CompetitionManagement = lazyNamed(() => import('./coach/CompetitionManagement'), (m) => m.CompetitionManagement);
 const AthleteManagement = lazyNamed(() => import('./coach/AthleteManagement'), (m) => m.AthleteManagement);
 const GroupManagement = lazyNamed(() => import('./coach/GroupManagement'), (m) => m.GroupManagement);
@@ -125,6 +126,10 @@ export const CoachArea: React.FC<{ recovery?: boolean }> = ({ recovery = false }
   const [athleteToEdit, setAthleteToEdit] = useState<Athlete | null>(null);
   const [profileId, setProfileId] = useState<string | null>(null);
   const [workoutSession, setWorkoutSession] = useState<string | null>(null);
+  /** Prep. física: fichas dos treinos × composição corporal (avaliação das dobras) */
+  const [fisicaTab, setFisicaTab] = useState<'fichas' | 'corpo'>('fichas');
+  const corpoVisited = useRef(false);
+  if (fisicaTab === 'corpo') corpoVisited.current = true;
   const today = useTodayISO();
 
   // Área e seção ficam no histórico: o "voltar" do navegador volta para a tela anterior
@@ -479,8 +484,41 @@ export const CoachArea: React.FC<{ recovery?: boolean }> = ({ recovery = false }
         {pane('analises/periodo', <PeriodAnalysis />)}
         {pane('analises/carga', <LoadAnalysis onOpenProfile={setProfileId} />)}
         {pane('analises/relatorio', <ReportBuilder coachName={coach!.nome} />)}
-        {pane('planejamento/agenda', <TrainingSchedule onOpenWorkout={(id: string) => { setWorkoutSession(id); go('planejamento', 'fisica'); }} />)}
-        {pane('planejamento/fisica', <PhysicalWorkoutBuilder sessionId={workoutSession} />)}
+        {pane('planejamento/agenda', <TrainingSchedule onOpenWorkout={(id: string) => { setWorkoutSession(id); setFisicaTab('fichas'); go('planejamento', 'fisica'); }} />)}
+        {pane(
+          'planejamento/fisica',
+          <div className="space-y-4">
+            <div role="tablist" aria-label="Preparação física" className="grid grid-cols-2 gap-1 p-1 bg-slate-900/90 border border-slate-800 rounded-2xl">
+              {([
+                { id: 'fichas' as const, label: 'Fichas dos treinos', Icon: Dumbbell },
+                { id: 'corpo' as const, label: 'Composição corporal', Icon: Activity },
+              ]).map(({ id, label, Icon }) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  aria-selected={fisicaTab === id}
+                  onClick={() => setFisicaTab(id)}
+                  className={`flex items-center justify-center gap-1.5 px-2 py-2 rounded-xl text-[11px] sm:text-xs font-bold transition-colors ${
+                    fisicaTab === id ? 'bg-slate-100 text-slate-950' : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                  }`}
+                >
+                  <Icon className="w-4 h-4" /> {label}
+                </button>
+              ))}
+            </div>
+            <div hidden={fisicaTab !== 'fichas'}>
+              <PhysicalWorkoutBuilder sessionId={workoutSession} />
+            </div>
+            {corpoVisited.current && (
+              <div hidden={fisicaTab !== 'corpo'}>
+                <Suspense fallback={<Spinner />}>
+                  <BodyComposition />
+                </Suspense>
+              </div>
+            )}
+          </div>
+        )}
         {pane('planejamento/competicoes', <CompetitionManagement />)}
         {pane(
           'elenco/atletas',

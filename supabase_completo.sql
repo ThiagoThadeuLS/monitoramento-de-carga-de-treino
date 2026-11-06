@@ -4356,3 +4356,343 @@
     for delete to authenticated using (club_id = (select public.current_club_id()) and (select public.support_club_id()) is null);
 
   notify pgrst, 'reload schema';
+
+
+  -- ############################################################
+  -- PARTE 16. EVOLUÇÃO DOS PRs E CARD COMPARTILHÁVEL
+  -- * athlete_prs guarda só o PR atual; aqui cada mudança de carga vira um ponto
+  --   de histórico, o que permite mostrar a evolução e destacar o "novo PR".
+  -- * Nada é apagado: o histórico só cresce (o PR atual continua em athlete_prs).
+  -- ############################################################
+
+  create table if not exists public.athlete_pr_history (
+    id uuid primary key default gen_random_uuid(),
+    club_id uuid references public.clubs(id) on delete cascade,
+    athlete_id uuid not null references public.athletes(id) on delete cascade,
+    exercicio text not null,
+    peso_pr numeric(6,2) not null check (peso_pr > 0 and peso_pr <= 500),
+    created_at timestamp with time zone default now() not null
+  );
+
+  create index if not exists athlete_pr_history_athlete_idx
+    on public.athlete_pr_history (athlete_id, created_at);
+
+  -- Clube do histórico = clube do atleta (mesma regra das respostas)
+  create or replace function public.athlete_pr_history_set_club()
+  returns trigger
+  language plpgsql
+  security definer
+  set search_path = ''
+  as $$
+  begin
+    if new.club_id is null then
+      select a.club_id into new.club_id from public.athletes a where a.id = new.athlete_id;
+    end if;
+    return new;
+  end;
+  $$;
+
+  drop trigger if exists athlete_pr_history_set_club on public.athlete_pr_history;
+  create trigger athlete_pr_history_set_club before insert on public.athlete_pr_history
+    for each row execute function public.athlete_pr_history_set_club();
+
+  -- Cada PR criado ou alterado entra no histórico (só quando a carga muda)
+  create or replace function public.athlete_prs_log_history()
+  returns trigger
+  language plpgsql
+  security definer
+  set search_path = ''
+  as $$
+  begin
+    if tg_op = 'INSERT' then
+      insert into public.athlete_pr_history (club_id, athlete_id, exercicio, peso_pr)
+      values (new.club_id, new.athlete_id, new.exercicio, new.peso_pr);
+    elsif new.peso_pr is distinct from old.peso_pr
+       or lower(trim(new.exercicio)) is distinct from lower(trim(old.exercicio)) then
+      insert into public.athlete_pr_history (club_id, athlete_id, exercicio, peso_pr)
+      values (new.club_id, new.athlete_id, new.exercicio, new.peso_pr);
+    end if;
+    return new;
+  end;
+  $$;
+
+  drop trigger if exists athlete_prs_log_history on public.athlete_prs;
+  create trigger athlete_prs_log_history after insert or update on public.athlete_prs
+    for each row execute function public.athlete_prs_log_history();
+
+  -- PRs que já existiam ganham o primeiro ponto (só se ainda não tiverem nenhum)
+  insert into public.athlete_pr_history (club_id, athlete_id, exercicio, peso_pr, created_at)
+  select p.club_id, p.athlete_id, p.exercicio, p.peso_pr, coalesce(p.updated_at, p.created_at, now())
+  from public.athlete_prs p
+  where not exists (
+    select 1 from public.athlete_pr_history h
+    where h.athlete_id = p.athlete_id
+      and lower(trim(h.exercicio)) = lower(trim(p.exercicio))
+  );
+
+  alter table public.athlete_pr_history enable row level security;
+  revoke all on public.athlete_pr_history from anon;
+  grant select on public.athlete_pr_history to authenticated;
+
+  drop policy if exists "Clube: leitura do histórico de PRs" on public.athlete_pr_history;
+  create policy "Clube: leitura do histórico de PRs" on public.athlete_pr_history
+    for select to authenticated
+    using (club_id = (select public.current_club_id()));
+  -- Escrita: só pelo gatilho acima (nenhuma política de escrita para o clube).
+
+  revoke execute on function public.athlete_pr_history_set_club() from public, anon, authenticated;
+  revoke execute on function public.athlete_prs_log_history() from public, anon, authenticated;
+
+  -- Exercícios com PR e os PRs do atleta, agora com o histórico de cada exercício
+  create or replace function public.athlete_list_prs(p_token uuid)
+  returns json
+  language plpgsql
+  stable
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_me uuid := public._athlete_ready(p_token);
+    v_club uuid := (select a.club_id from public.athletes a where a.id = v_me);
+  begin
+    return json_build_object(
+      'catalog', coalesce((
+        select json_agg(json_build_object('id', e.id, 'nome', e.nome) order by lower(e.nome))
+        from public.club_exercises e
+        where e.club_id = v_club and e.exige_pr
+      ), '[]'::json),
+      'prs', coalesce((
+        select json_agg(json_build_object(
+          'id', p.id,
+          'exercicio', p.exercicio,
+          'peso_pr', p.peso_pr,
+          'updated_at', p.updated_at,
+          'history', coalesce((
+            select json_agg(json_build_object('peso_pr', h.peso_pr, 'created_at', h.created_at) order by h.created_at)
+            from (
+              select hh.peso_pr, hh.created_at
+              from public.athlete_pr_history hh
+              where hh.athlete_id = p.athlete_id
+                and lower(trim(hh.exercicio)) = lower(trim(p.exercicio))
+              order by hh.created_at desc
+              limit 50
+            ) h
+          ), '[]'::json)
+        ) order by lower(p.exercicio))
+        from public.athlete_prs p
+        where p.athlete_id = v_me
+      ), '[]'::json)
+    );
+  end;
+  $$;
+
+  revoke execute on function public.athlete_list_prs(uuid) from public;
+  grant execute on function public.athlete_list_prs(uuid) to anon, authenticated;
+
+  notify pgrst, 'reload schema';
+
+  -- ############################################################
+  -- PARTE 17. COMPOSIÇÃO CORPORAL (DOBRAS CUTÂNEAS)
+  -- * O treinador mede as 7 dobras de Jackson & Pollock (1978); o app calcula o %G,
+  --   a massa magra e a massa de gordura e guarda o resultado aqui.
+  -- * O atleta vê o percentual, a evolução e um mapa de calor relativo das dobras
+  --   (os valores em milímetros continuam na tela da comissão técnica).
+  -- ############################################################
+
+  create table if not exists public.body_compositions (
+    id uuid primary key default gen_random_uuid(),
+    club_id uuid not null default public.current_club_id() references public.clubs(id) on delete cascade,
+    athlete_id uuid not null references public.athletes(id) on delete cascade,
+    date date not null default public.training_today(),
+    idade integer not null check (idade between 5 and 100),
+    sexo text not null default 'Masculino' check (sexo in ('Masculino', 'Feminino')),
+    peso numeric(5,1) check (peso between 20 and 250),
+    -- Dobras em milímetros (as 7 do protocolo + as 2 extras da planilha)
+    dobra_peitoral numeric(4,1) not null check (dobra_peitoral between 1 and 90),
+    dobra_axilar numeric(4,1) not null check (dobra_axilar between 1 and 90),
+    dobra_triceps numeric(4,1) not null check (dobra_triceps between 1 and 90),
+    dobra_subescapular numeric(4,1) not null check (dobra_subescapular between 1 and 90),
+    dobra_abdominal numeric(4,1) not null check (dobra_abdominal between 1 and 90),
+    dobra_suprailiaca numeric(4,1) not null check (dobra_suprailiaca between 1 and 90),
+    dobra_coxa numeric(4,1) not null check (dobra_coxa between 1 and 90),
+    dobra_bicipital numeric(4,1) check (dobra_bicipital is null or dobra_bicipital between 1 and 90),
+    dobra_panturrilha numeric(4,1) check (dobra_panturrilha is null or dobra_panturrilha between 1 and 90),
+    -- Resultado calculado pelo app (soma das 7 dobras, densidade e Siri)
+    soma_dobras numeric(5,1) not null check (soma_dobras between 7 and 630),
+    densidade numeric(6,4) not null check (densidade > 0),
+    percentual numeric(5,2) not null check (percentual between 1 and 70),
+    massa_magra numeric(5,1) check (massa_magra is null or massa_magra between 1 and 250),
+    massa_gorda numeric(5,1) check (massa_gorda is null or massa_gorda between 0 and 250),
+    observacoes text,
+    created_by uuid default auth.uid() references auth.users(id) on delete set null,
+    created_at timestamp with time zone default now() not null
+  );
+
+  create index if not exists body_compositions_club_idx on public.body_compositions (club_id);
+  create index if not exists body_compositions_athlete_idx on public.body_compositions (athlete_id, date);
+
+  -- Uma avaliação por atleta por dia (nada é apagado: o app edita a do dia)
+  do $$
+  begin
+    if not exists (select 1 from public.body_compositions group by athlete_id, date having count(*) > 1) then
+      create unique index if not exists body_compositions_um_por_dia
+        on public.body_compositions (athlete_id, date);
+    else
+      raise notice 'Avaliações repetidas no mesmo dia: índice único não criado (nada foi apagado).';
+    end if;
+  end $$;
+
+  -- Clube da avaliação = clube do atleta (mesma regra das respostas)
+  drop trigger if exists body_compositions_set_club on public.body_compositions;
+  create trigger body_compositions_set_club before insert or update of athlete_id on public.body_compositions
+    for each row execute function public.records_set_club();
+
+  -- Regras de acesso: o clube (modo suporte: só leitura), igual às outras tabelas
+  alter table public.body_compositions enable row level security;
+  revoke all on public.body_compositions from anon;
+  grant select, insert, update, delete on public.body_compositions to authenticated;
+
+  drop policy if exists "Clube: leitura" on public.body_compositions;
+  drop policy if exists "Clube: inclusão" on public.body_compositions;
+  drop policy if exists "Clube: alteração" on public.body_compositions;
+  drop policy if exists "Clube: exclusão" on public.body_compositions;
+  create policy "Clube: leitura" on public.body_compositions
+    for select to authenticated using (club_id = (select public.current_club_id()));
+  create policy "Clube: inclusão" on public.body_compositions
+    for insert to authenticated
+    with check (club_id = (select public.current_club_id()) and (select public.support_club_id()) is null);
+  create policy "Clube: alteração" on public.body_compositions
+    for update to authenticated
+    using (club_id = (select public.current_club_id()) and (select public.support_club_id()) is null)
+    with check (club_id = (select public.current_club_id()));
+  create policy "Clube: exclusão" on public.body_compositions
+    for delete to authenticated
+    using (club_id = (select public.current_club_id()) and (select public.support_club_id()) is null);
+
+  -- Atleta: percentual, evolução e dobras (estas para o mapa de calor da silhueta)
+  create or replace function public.athlete_body_composition(p_token uuid)
+  returns json
+  language plpgsql
+  stable
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_me uuid := public._athlete_ready(p_token);
+    v_sexo text;
+  begin
+    select a.sexo into v_sexo from public.athletes a where a.id = v_me;
+    return json_build_object(
+      'sexo', v_sexo,
+      'history', coalesce((
+        select json_agg(json_build_object(
+                 'date', b.date,
+                 'percentual', b.percentual,
+                 'peso', b.peso,
+                 'massa_magra', b.massa_magra,
+                 'massa_gorda', b.massa_gorda,
+                 'folds', json_build_object(
+                   'peitoral', b.dobra_peitoral,
+                   'axilar', b.dobra_axilar,
+                   'triceps', b.dobra_triceps,
+                   'subescapular', b.dobra_subescapular,
+                   'abdominal', b.dobra_abdominal,
+                   'suprailiaca', b.dobra_suprailiaca,
+                   'coxa', b.dobra_coxa,
+                   'bicipital', b.dobra_bicipital,
+                   'panturrilha', b.dobra_panturrilha
+                 )
+               ) order by b.date)
+        from public.body_compositions b
+        where b.athlete_id = v_me
+      ), '[]'::json)
+    );
+  end;
+  $$;
+
+  revoke execute on function public.athlete_body_composition(uuid) from public;
+  grant execute on function public.athlete_body_composition(uuid) to anon, authenticated;
+
+  -- ------------------------------------------------------------
+  -- PARTE 18. DATA DE NASCIMENTO DO ATLETA
+  --   Serve para a idade correta no % de gordura e para o app lembrar
+  --   do aniversário. Nada muda nas regras de acesso já existentes:
+  --   o treinador continua lendo a tabela athletes pelas políticas do clube,
+  --   e o atleta lê/grava o próprio perfil por funções que conferem o token.
+  -- ------------------------------------------------------------
+  alter table public.athletes add column if not exists birth_date date;
+  -- Nome de exibição escolhido pelo atleta no perfil. NULL = usa o nome do cadastro.
+  -- É só do app do atleta: o cadastro (e o que a comissão técnica vê) não muda.
+  alter table public.athletes add column if not exists display_name text;
+
+  -- Perfil do atleta: nome do cadastro, nome de exibição, nascimento e foto.
+  create or replace function public.athlete_my_profile(p_token uuid)
+  returns json
+  language plpgsql
+  stable
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_athlete public.athletes;
+  begin
+    v_athlete := public._athlete_from_token(p_token);
+
+    return json_build_object(
+      'nome', v_athlete.nome,
+      'display_name', v_athlete.display_name,
+      'birth_date', v_athlete.birth_date,
+      'photo_url', v_athlete.photo_url
+    );
+  end;
+  $$;
+
+  -- Atualiza o nome de exibição e a data de nascimento do próprio atleta.
+  -- O cadastro do clube (public.athletes.nome) nunca é alterado por esta função.
+  create or replace function public.athlete_update_profile(p_token uuid, p_nome text, p_birth_date date)
+  returns json
+  language plpgsql
+  volatile
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_athlete public.athletes;
+    v_nome text;
+    v_display text;
+  begin
+    v_athlete := public._athlete_from_token(p_token);
+    v_nome := btrim(coalesce(p_nome, ''));
+
+    if length(v_nome) < 2 or length(v_nome) > 60 then
+      raise exception 'nome_invalido';
+    end if;
+
+    if p_birth_date is null
+      or p_birth_date < date '1900-01-01'
+      or p_birth_date > public.training_today() then
+      raise exception 'nascimento_invalido';
+    end if;
+
+    -- Igual ao nome do cadastro = limpa o apelido (volta a usar o nome oficial)
+    v_display := case when lower(v_nome) = lower(btrim(v_athlete.nome)) then null else v_nome end;
+
+    update public.athletes a
+      set display_name = v_display, birth_date = p_birth_date
+      where a.id = v_athlete.id;
+
+    return json_build_object(
+      'nome', v_athlete.nome,
+      'display_name', v_display,
+      'birth_date', p_birth_date,
+      'photo_url', v_athlete.photo_url
+    );
+  end;
+  $$;
+
+  revoke execute on function public.athlete_my_profile(uuid) from public;
+  grant execute on function public.athlete_my_profile(uuid) to anon, authenticated;
+  revoke execute on function public.athlete_update_profile(uuid, text, date) from public;
+  grant execute on function public.athlete_update_profile(uuid, text, date) to anon, authenticated;
+
+  notify pgrst, 'reload schema';
