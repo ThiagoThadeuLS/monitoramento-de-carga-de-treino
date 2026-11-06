@@ -3,6 +3,7 @@ import { Trophy, Plus, Trash2, Loader2, Dumbbell, AlertCircle, Share2, Sparkles,
 import { AthletePr, CatalogExercise, deleteAthletePr, listAthletePrs, saveAthletePr } from '../lib/athleteAuth';
 import { useDialogs } from './ui/Dialogs';
 import { PrShareCard, ShareAthlete } from './athlete/PrShareCard';
+import { useShareStory } from './athlete/ShareStory';
 import { brDate } from '../lib/export';
 
 interface AthletePrViewProps {
@@ -298,30 +299,8 @@ export function AthletePrView({ token, athlete }: AthletePrViewProps) {
                       </button>
                     </div>
                   </div>
-                  <div className="flex items-center flex-shrink-0">
-                    {share && (
-                      <button
-                        type="button"
-                        onClick={() => share.openStory({ kind: 'pr', exercicio: p.exercicio, peso: p.peso_pr, ganho: null })}
-                        className="p-2 text-slate-500 hover:text-sky-300 transition-colors"
-                        title="Compartilhar"
-                        aria-label={`Compartilhar PR de ${p.exercicio}`}
-                      >
-                        <Share2 className="w-4 h-4" />
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(p)}
-                      className="p-2 text-slate-500 hover:text-red-400 transition-colors"
-                      title="Excluir PR"
-                      aria-label={`Excluir PR de ${p.exercicio}`}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

@@ -521,6 +521,53 @@ export async function getAthleteAchievements(token: string): Promise<AthleteAchi
   };
 }
 
+// ---------- Composição corporal ----------
+export interface BodyCompositionPoint {
+  date: string;
+  percentual: number;
+  peso: number | null;
+  massa_magra: number | null;
+  massa_gorda: number | null;
+  /** Dobras da avaliação (mm): usadas só para o mapa de calor da silhueta. */
+  folds: FoldValues;
+}
+
+export interface AthleteBodyCompositionData {
+  /** Sexo do cadastro, para escolher a silhueta masculina/feminina */
+  sexo: Sexo;
+  history: BodyCompositionPoint[];
+}
+
+/**
+ * % de gordura ao longo do tempo + as dobras de cada avaliação (para o mapa de
+ * calor da silhueta). Os valores em milímetros não aparecem para o atleta.
+ */
+export async function getAthleteBodyComposition(token: string): Promise<AthleteBodyCompositionData> {
+  const { data, error } = await client().rpc('athlete_body_composition', { p_token: token });
+  if (error) throw toAuthError(error);
+  const d = (data ?? {}) as { sexo?: string | null; history?: Record<string, unknown>[] };
+  const history: BodyCompositionPoint[] = (d.history ?? []).map((p) => {
+    const rawFolds = (p.folds ?? {}) as Record<string, unknown>;
+    const folds: FoldValues = {};
+    FOLD_SITES.forEach(({ key }) => {
+      const v = rawFolds[key];
+      folds[key] = v === null || v === undefined || v === '' ? null : Number(v);
+    });
+    return {
+      date: p.date as string,
+      percentual: Number(p.percentual),
+      peso: p.peso === null || p.peso === undefined ? null : Number(p.peso),
+      massa_magra: p.massa_magra === null || p.massa_magra === undefined ? null : Number(p.massa_magra),
+      massa_gorda: p.massa_gorda === null || p.massa_gorda === undefined ? null : Number(p.massa_gorda),
+      folds,
+    };
+  });
+  return {
+    sexo: /^f/i.test(String(d.sexo ?? '').trim()) ? 'Feminino' : 'Masculino',
+    history,
+  };
+}
+
 // ---------- Tela "Hoje" ----------
 export interface HomeSession extends TrainingSession {
   /** Ficha do treino físico já concluída */
