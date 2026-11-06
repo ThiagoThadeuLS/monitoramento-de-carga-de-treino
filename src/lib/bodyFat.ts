@@ -90,6 +90,17 @@ export function filledFolds(folds: FoldValues): number {
   return PROTOCOL_FOLDS.length - missingFolds(folds).length;
 }
 
+/**
+ * Dobras preenchidas fora da faixa aceita pelo banco (1 a 90 mm).
+ * Inclui as extras (bicipital e panturrilha), que também são gravadas.
+ */
+export function foldsOutOfRange(folds: FoldValues): FoldKey[] {
+  return FOLD_SITES.filter(({ key }) => {
+    const v = folds[key];
+    return typeof v === 'number' && Number.isFinite(v) && (v < DOBRA_MIN || v > DOBRA_MAX);
+  }).map(({ key }) => key);
+}
+
 /** Soma das 7 dobras em mm (null enquanto faltar alguma). */
 export function sumFolds(folds: FoldValues): number | null {
   if (missingFolds(folds).length > 0) return null;
@@ -128,8 +139,9 @@ export interface BodyCompositionResult {
 }
 
 /**
- * Resultado completo. `null` quando falta alguma das 7 dobras, a idade está fora da
- * faixa ou o resultado sai impossível (densidade fora de 1,00–1,12).
+ * Resultado completo. `null` quando falta alguma das 7 dobras, alguma medida está
+ * fora de 1–90 mm, a idade está fora da faixa ou o resultado sai impossível
+ * (densidade fora de 1,00–1,12).
  */
 export function bodyComposition(input: {
   folds: FoldValues;
@@ -140,6 +152,7 @@ export function bodyComposition(input: {
   const soma = sumFolds(input.folds);
   const idade = Number(input.idade);
   if (soma === null || !Number.isFinite(idade) || idade < IDADE_MIN || idade > IDADE_MAX) return null;
+  if (foldsOutOfRange(input.folds).length > 0) return null;
 
   const densidade = pollockDensity(soma, idade, input.sexo);
   if (!(densidade > 0)) return null;
