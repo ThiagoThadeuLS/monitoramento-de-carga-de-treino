@@ -3,6 +3,7 @@ import { Trophy, Plus, Trash2, Loader2, Dumbbell, AlertCircle, Share2, Sparkles,
 import { AthletePr, CatalogExercise, deleteAthletePr, listAthletePrs, saveAthletePr } from '../lib/athleteAuth';
 import { useDialogs } from './ui/Dialogs';
 import { PrShareCard, ShareAthlete } from './athlete/PrShareCard';
+import { AthletePrProgress } from './athlete/AthletePrProgress';
 import { useShareStory } from './athlete/ShareStory';
 import { brDate } from '../lib/export';
 
@@ -305,6 +306,8 @@ export function AthletePrView({ token, athlete }: AthletePrViewProps) {
           )}
         </div>
       </div>
+
+      {!loading && prs.length > 0 && <AthletePrProgress prs={prs} initial={novoPr?.exercicio} />}
 
       {card && (
         <PrShareCard

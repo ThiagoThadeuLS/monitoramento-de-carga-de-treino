@@ -535,6 +535,9 @@
 
   create index if not exists training_sessions_date_idx on public.training_sessions (date, start_time);
 
+  -- "Esconder anotações": o treinador vê as anotações; os atletas não recebem o texto
+  alter table public.training_sessions add column if not exists hide_notes boolean not null default false;
+
   -- Mantém updated_at atualizado em cada edição
   create or replace function public.training_sessions_touch()
   returns trigger
@@ -646,7 +649,8 @@
     perform public._athlete_ready(p_token);
 
     return query
-      select s.id, s.date, s.start_time, s.end_time, s.name, s.training_type, s.expected_pse, s.notes
+      select s.id, s.date, s.start_time, s.end_time, s.name, s.training_type, s.expected_pse,
+             case when s.hide_notes then null else s.notes end
       from public.training_sessions s
       where s.date between p_from and p_to
         and s.date >= public.training_week_start(public.training_today()) - 7
@@ -1035,7 +1039,8 @@
     select a.club_id into v_club from public.athletes a where a.id = public._athlete_ready(p_token);
 
     return query
-      select s.id, s.date, s.start_time, s.end_time, s.name, s.training_type, s.expected_pse, s.notes
+      select s.id, s.date, s.start_time, s.end_time, s.name, s.training_type, s.expected_pse,
+             case when s.hide_notes then null else s.notes end
       from public.training_sessions s
       where s.club_id = v_club
         and s.date between p_from and p_to
@@ -2072,7 +2077,7 @@
   set search_path = ''
   as $$
   begin
-    if new.audience = 'todos' then
+    if new.audience in ('todos', 'ninguem') then
       new.target_group_ids := '{}';
       new.target_athlete_ids := '{}';
       return new;
@@ -2151,7 +2156,8 @@
     select a.club_id into v_club from public.athletes a where a.id = v_athlete;
 
     return query
-      select s.id, s.date, s.start_time, s.end_time, s.name, s.training_type, s.expected_pse, s.notes
+      select s.id, s.date, s.start_time, s.end_time, s.name, s.training_type, s.expected_pse,
+             case when s.hide_notes then null else s.notes end
       from public.training_sessions s
       where s.club_id = v_club
         and s.date between p_from and p_to
@@ -3180,6 +3186,11 @@
 
   create index if not exists competitions_club_date_idx on public.competitions (club_id, data_pesagem);
 
+  -- "Ninguém": competição cadastrada antes da convocação (não aparece para nenhum atleta)
+  alter table public.competitions drop constraint if exists competitions_audience_check;
+  alter table public.competitions
+    add constraint competitions_audience_check check (audience in ('todos', 'incluir', 'exceto', 'ninguem'));
+
   drop trigger if exists competitions_touch on public.competitions;
   create trigger competitions_touch before update on public.competitions
     for each row execute function public.training_sessions_touch();
@@ -3199,6 +3210,7 @@
   as $$
     select case p_competition.audience
       when 'todos' then true
+      when 'ninguem' then false
       else (
         p_athlete = any(p_competition.target_athlete_ids)
         or exists (
@@ -3680,7 +3692,8 @@
   begin
     return json_build_object(
       'session', json_build_object('id', v_session.id, 'name', v_session.name, 'date', v_session.date,
-                                   'start_time', v_session.start_time, 'end_time', v_session.end_time, 'notes', v_session.notes),
+                                   'start_time', v_session.start_time, 'end_time', v_session.end_time,
+                                   'notes', case when v_session.hide_notes then null else v_session.notes end),
       'prescriptions', coalesce((
         select json_agg(json_build_object(
                  'id', w.id, 'bloco', w.bloco, 'exercicio', w.exercicio, 'series', w.series, 'repeticoes', w.repeticoes,
@@ -3913,7 +3926,8 @@
       'sessions', coalesce((
         select json_agg(json_build_object(
                  'id', s.id, 'date', s.date, 'start_time', s.start_time, 'end_time', s.end_time, 'name', s.name,
-                 'training_type', s.training_type, 'expected_pse', s.expected_pse, 'notes', s.notes,
+                 'training_type', s.training_type, 'expected_pse', s.expected_pse,
+                 'notes', case when s.hide_notes then null else s.notes end,
                  'completed', exists (
                    select 1 from public.workout_completions c
                    where c.athlete_id = v_me and c.training_session_id = s.id

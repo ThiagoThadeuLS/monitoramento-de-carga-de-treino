@@ -1,6 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { BellRing, Bell, BellOff, Loader2, Share, PlusSquare, LogOut, RefreshCw, Smartphone, Download, MoreVertical } from 'lucide-react';
-import { PushState, canPromptInstall, enablePush, getPushState, isIOS, onInstallChange, promptInstall } from '../lib/push';
+import {
+  IOS_PUSH_FAILED,
+  PushState,
+  canPromptInstall,
+  enablePush,
+  getPushState,
+  iosTooOld,
+  isIOS,
+  isStandalone,
+  onInstallChange,
+  promptInstall,
+} from '../lib/push';
 
 interface NotificationGateProps {
   token: string;
@@ -51,6 +62,32 @@ export const NotificationGate: React.FC<NotificationGateProps> = ({ token, state
       <span className="w-6 h-6 rounded-full bg-sky-500/20 text-sky-300 text-xs font-bold flex items-center justify-center flex-shrink-0">{n}</span>
       <span className="text-sm text-slate-200 pt-0.5">{children}</span>
     </li>
+  );
+
+  // iPhone com o app instalado, mas sem conseguir ativar: passo a passo para destravar
+  const iosPushHelp = (title: string, retry: () => void) => (
+    <div className="space-y-3">
+      <p className="text-sm text-amber-300">{title} Tente nesta ordem:</p>
+      <ol className="space-y-2.5">
+        {step(1, <>Confira se o iPhone está com internet e <strong>reinicie o celular</strong>; depois abra o app e tente de novo</>)}
+        {step(
+          2,
+          <>
+            Em <strong>Ajustes</strong> → <strong>Apps</strong> → <strong>Safari</strong> → <strong>Avançado</strong> →{' '}
+            <strong>Feature Flags</strong>, ligue <strong>Notifications</strong> e <strong>Push API</strong>
+          </>
+        )}
+        {step(3, <>Se ainda falhar: apague o ícone do app, adicione de novo pelo <strong>Safari</strong> e entre outra vez</>)}
+      </ol>
+      <button
+        type="button"
+        onClick={retry}
+        disabled={busy}
+        className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold disabled:opacity-50"
+      >
+        {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />} Tentar de novo
+      </button>
+    </div>
   );
 
   return (
@@ -152,14 +189,30 @@ export const NotificationGate: React.FC<NotificationGateProps> = ({ token, state
           </div>
         )}
 
-        {state === 'unsupported' && (
+        {state === 'unsupported' && isIOS() && isStandalone() ? (
+          iosTooOld() ? (
+            <div className="space-y-3">
+              <p className="text-sm text-amber-300">
+                Este iPhone precisa de atualização: as notificações do app só funcionam no <strong>iOS 16.4 ou mais novo</strong>.
+              </p>
+              <ol className="space-y-2.5">
+                {step(1, <>Abra <strong>Ajustes</strong> → <strong>Geral</strong> → <strong>Atualização de Software</strong></>)}
+                {step(2, <>Depois de atualizar, abra o app pelo ícone e entre de novo</>)}
+              </ol>
+            </div>
+          ) : (
+            iosPushHelp('O iPhone está com as notificações de apps da web desligadas.', recheck)
+          )
+        ) : state === 'unsupported' ? (
           <p className="text-sm text-amber-300">
             Este navegador não aceita notificações. Abra o link no <strong>{isIOS() ? 'Safari' : 'Google Chrome'}</strong> (não pelo navegador
             do WhatsApp ou Instagram) e entre de novo.
           </p>
-        )}
+        ) : null}
 
-        {error && <p className="text-sm text-red-300 text-center">{error}</p>}
+        {error === IOS_PUSH_FAILED
+          ? iosPushHelp('O iPhone não conseguiu ligar as notificações.', activate)
+          : error && <p className="text-sm text-red-300 text-center">{error}</p>}
 
         <button type="button" onClick={onLogout} className="w-full flex items-center justify-center gap-2 text-xs text-slate-400 hover:text-white">
           <LogOut className="w-3.5 h-3.5" /> Sair

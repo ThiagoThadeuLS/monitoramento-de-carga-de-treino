@@ -13,6 +13,18 @@ export type PushState =
 export const isIOS = () =>
   /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
+/** Versão do iOS (ex.: 16.3 → [16, 3]); null fora do iPhone/iPad ou se o navegador não informar. */
+export function iosVersion(): [number, number] | null {
+  const m = navigator.userAgent.match(/OS (\d+)_(\d+)/);
+  return isIOS() && m ? [Number(m[1]), Number(m[2])] : null;
+}
+
+/** iPhone com iOS antigo demais para notificações de app web (precisa do 16.4 ou mais novo). */
+export const iosTooOld = () => {
+  const v = iosVersion();
+  return !!v && (v[0] < 16 || (v[0] === 16 && v[1] < 4));
+};
+
 /** Celular ou tablet (no computador as notificações são opcionais). */
 export const isMobileDevice = () =>
   isIOS() || /Android|Mobi|iPhone|iPod/i.test(navigator.userAgent);
@@ -125,6 +137,9 @@ export async function relinkPush(token: string): Promise<'ok' | 'expired'> {
   return 'ok';
 }
 
+/** Erro do iPhone ao criar a assinatura: a tela mostra o passo a passo. */
+export const IOS_PUSH_FAILED = 'ios_push_falhou';
+
 /** Pede permissão, cria a assinatura neste aparelho e salva para o atleta logado. */
 export async function enablePush(token: string): Promise<PushState> {
   const permission = await Notification.requestPermission();
@@ -149,7 +164,13 @@ export async function enablePush(token: string): Promise<PushState> {
     await sub.unsubscribe().catch(() => undefined);
     sub = null;
   }
-  sub = sub ?? (await subscribe());
+  try {
+    sub = sub ?? (await subscribe());
+  } catch (err: any) {
+    // iPhone: o serviço de notificações do aparelho não respondeu ("Push service initialization failed")
+    if (isIOS() && /push service|initiali[sz]/i.test(err?.message ?? '')) throw new Error(IOS_PUSH_FAILED);
+    throw err;
+  }
 
   let error = await saveSubscription(token, sub);
   // O servidor já recusou esta assinatura: cria outra e salva de novo

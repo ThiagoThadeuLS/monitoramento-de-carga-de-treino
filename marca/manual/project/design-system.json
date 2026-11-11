@@ -1,0 +1,262 @@
+{
+  "v": 3,
+  "layout": "files",
+  "createdOnFiles": {
+    "v": 1,
+    "at": "2026-11-10T23:42:01.976Z"
+  },
+  "title": "Carga",
+  "namespace": "Carga",
+  "libraries": [],
+  "sections": {},
+  "groups": [
+    "Logos",
+    "Instagram"
+  ],
+  "assetGroups": {
+    "Logos": {
+      "name": "Logos",
+      "tile": "l",
+      "order": [
+        "carga-horizontal-escuro.svg",
+        "carga-horizontal-claro.svg",
+        "carga-horizontal-branco.svg",
+        "carga-horizontal-preto.svg",
+        "carga-vertical-escuro.svg",
+        "carga-vertical-claro.svg",
+        "carga-simbolo-azul.svg",
+        "carga-simbolo-branco.svg",
+        "carga-simbolo-preto.svg",
+        "carga-palavra-gelo.svg",
+        "carga-palavra-noite.svg",
+        "carga-icone-app.svg",
+        "carga-icone-azul.svg"
+      ],
+      "files": {
+        "carga-horizontal-escuro.svg": {
+          "name": "carga-horizontal-escuro.svg",
+          "blob": "a98b0e0ea8947e3546dc83c8e38e941a",
+          "size": 888,
+          "type": "image/svg+xml"
+        },
+        "carga-horizontal-claro.svg": {
+          "name": "carga-horizontal-claro.svg",
+          "blob": "0c00c75cd3756ba677cbf63c7e2d3a53",
+          "size": 888,
+          "type": "image/svg+xml"
+        },
+        "carga-horizontal-branco.svg": {
+          "name": "carga-horizontal-branco.svg",
+          "blob": "fa2bba34203fe6ceeaa32e03a56db6fb",
+          "size": 888,
+          "type": "image/svg+xml"
+        },
+        "carga-horizontal-preto.svg": {
+          "name": "carga-horizontal-preto.svg",
+          "blob": "13751e2321aca60a6a157cd2445a18c0",
+          "size": 888,
+          "type": "image/svg+xml"
+        },
+        "carga-vertical-escuro.svg": {
+          "name": "carga-vertical-escuro.svg",
+          "blob": "7a57dfa27c2a7030cbb12044c631b5e8",
+          "size": 887,
+          "type": "image/svg+xml"
+        },
+        "carga-vertical-claro.svg": {
+          "name": "carga-vertical-claro.svg",
+          "blob": "b7590e28e54aef2fd76cc88654f524c2",
+          "size": 887,
+          "type": "image/svg+xml"
+        },
+        "carga-simbolo-azul.svg": {
+          "name": "carga-simbolo-azul.svg",
+          "blob": "b422fb2c476f85fc8542e4877907b2ea",
+          "size": 389,
+          "type": "image/svg+xml"
+        },
+        "carga-simbolo-branco.svg": {
+          "name": "carga-simbolo-branco.svg",
+          "blob": "21d9f4fc4c366ea6e0687038de0ce756",
+          "size": 389,
+          "type": "image/svg+xml"
+        },
+        "carga-simbolo-preto.svg": {
+          "name": "carga-simbolo-preto.svg",
+          "blob": "11b83a3dc94d5e1815918ff7a5e93628",
+          "size": 389,
+          "type": "image/svg+xml"
+        },
+        "carga-palavra-gelo.svg": {
+          "name": "carga-palavra-gelo.svg",
+          "blob": "8fa159d13932fabd81a278bfb02cedb7",
+          "size": 482,
+          "type": "image/svg+xml"
+        },
+        "carga-palavra-noite.svg": {
+          "name": "carga-palavra-noite.svg",
+          "blob": "7b6b84730607879c5d3889c3d37cb5c6",
+          "size": 482,
+          "type": "image/svg+xml"
+        },
+        "carga-icone-app.svg": {
+          "name": "carga-icone-app.svg",
+          "blob": "07af96907046b8ea0b80538f21afb18c",
+          "size": 499,
+          "type": "image/svg+xml"
+        },
+        "carga-icone-azul.svg": {
+          "name": "carga-icone-azul.svg",
+          "blob": "f915cb3d6153b8581bd9cfe785f2d2b9",
+          "size": 499,
+          "type": "image/svg+xml"
+        }
+      }
+    },
+    "Instagram": {
+      "name": "Instagram",
+      "tile": "m",
+      "order": [
+        "perfil.png",
+        "previa-grade.png",
+        "post-01-treine-com-medida.png",
+        "post-02-escala-pse.png",
+        "post-03-carga.png",
+        "post-04-acwr.png",
+        "post-05-lembrete.png",
+        "post-06-comissao.png",
+        "post-07-recuperacao.png",
+        "post-08-instalar.png",
+        "post-09-seu-clube.png",
+        "story-dica.png",
+        "story-aviso.png",
+        "destaque-como-usar.png",
+        "destaque-atletas.png",
+        "destaque-comissao.png",
+        "destaque-ciencia.png",
+        "destaque-novidades.png"
+      ],
+      "files": {
+        "perfil.png": {
+          "name": "perfil.png",
+          "blob": "90d18d02f463dc2959e593a8ebd8447c",
+          "size": 368072,
+          "type": "image/png"
+        },
+        "previa-grade.png": {
+          "name": "previa-grade.png",
+          "blob": "6e34193a441135cd553afe51c33cb76b",
+          "size": 324058,
+          "type": "image/png"
+        },
+        "post-01-treine-com-medida.png": {
+          "name": "post-01-treine-com-medida.png",
+          "blob": "9a686fe4eeea494a83cbc9f8f937e6dc",
+          "size": 98510,
+          "type": "image/png"
+        },
+        "post-02-escala-pse.png": {
+          "name": "post-02-escala-pse.png",
+          "blob": "15ab9cecc29f4892a41c5ba245c09485",
+          "size": 119523,
+          "type": "image/png"
+        },
+        "post-03-carga.png": {
+          "name": "post-03-carga.png",
+          "blob": "a59f534f8bd291d95798346b1845e98d",
+          "size": 120810,
+          "type": "image/png"
+        },
+        "post-04-acwr.png": {
+          "name": "post-04-acwr.png",
+          "blob": "5d54c6e0d970c4be300d5fa927ec6499",
+          "size": 128695,
+          "type": "image/png"
+        },
+        "post-05-lembrete.png": {
+          "name": "post-05-lembrete.png",
+          "blob": "64b8079598e71a9f423aa56aca1db313",
+          "size": 133330,
+          "type": "image/png"
+        },
+        "post-06-comissao.png": {
+          "name": "post-06-comissao.png",
+          "blob": "c0da6562e8795a9da92375b8308cf0a0",
+          "size": 127773,
+          "type": "image/png"
+        },
+        "post-07-recuperacao.png": {
+          "name": "post-07-recuperacao.png",
+          "blob": "bb482cb51514d79f0e94bd77113aaed7",
+          "size": 123768,
+          "type": "image/png"
+        },
+        "post-08-instalar.png": {
+          "name": "post-08-instalar.png",
+          "blob": "df224360cd086b7a7619521285afe74b",
+          "size": 144847,
+          "type": "image/png"
+        },
+        "post-09-seu-clube.png": {
+          "name": "post-09-seu-clube.png",
+          "blob": "ca426540fe18e291d9a8343726c8a4d6",
+          "size": 117573,
+          "type": "image/png"
+        },
+        "story-dica.png": {
+          "name": "story-dica.png",
+          "blob": "fc06628ebdecb77b3646bb82f460c9ec",
+          "size": 135141,
+          "type": "image/png"
+        },
+        "story-aviso.png": {
+          "name": "story-aviso.png",
+          "blob": "7a55c8a5770efd7163c5ac31be07593b",
+          "size": 109270,
+          "type": "image/png"
+        },
+        "destaque-como-usar.png": {
+          "name": "destaque-como-usar.png",
+          "blob": "990bf2f14cd6865ca81aacf0ee65e9d3",
+          "size": 26838,
+          "type": "image/png"
+        },
+        "destaque-atletas.png": {
+          "name": "destaque-atletas.png",
+          "blob": "9e44918b16f0f9fab425f0f985d5e787",
+          "size": 28297,
+          "type": "image/png"
+        },
+        "destaque-comissao.png": {
+          "name": "destaque-comissao.png",
+          "blob": "aa8e459b45dea3efca555eaaf444db58",
+          "size": 23804,
+          "type": "image/png"
+        },
+        "destaque-ciencia.png": {
+          "name": "destaque-ciencia.png",
+          "blob": "e36236d442bea0e1151e82f637c5312f",
+          "size": 20784,
+          "type": "image/png"
+        },
+        "destaque-novidades.png": {
+          "name": "destaque-novidades.png",
+          "blob": "b2f96a787dda52a831d96581a97cc843",
+          "size": 27894,
+          "type": "image/png"
+        }
+      }
+    }
+  },
+  "blobs": {},
+  "docs": {
+    "readme": "project/README.md",
+    "sections": []
+  },
+  "lastChange": {
+    "by": "Thiago Thadeu",
+    "at": "2026-11-10T23:42:01.976Z",
+    "via": "Claude Code",
+    "note": "Identidade da marca Carga: logo, cores, tipografia, voz e kit do Instagram."
+  }
+}

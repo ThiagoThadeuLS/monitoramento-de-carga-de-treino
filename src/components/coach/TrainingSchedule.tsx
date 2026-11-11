@@ -9,7 +9,7 @@ import { TRAINING_TYPES, isPhysicalTraining } from '../../data/constants';
 import { WeightReminderSettings } from './WeightReminderSettings';
 import { TrainingSession } from '../../types';
 import { AthleteGroup, AthleteRef, audienceLabel, groupError, listActiveAthletes, listGroups } from '../../lib/groups';
-import { Users as UsersIcon, Search } from 'lucide-react';
+import { Users as UsersIcon, Search, EyeOff } from 'lucide-react';
 import { PushStatusCard } from './PushStatusCard';
 
 // Mesma escala de Foster da PSE do atleta
@@ -39,13 +39,14 @@ interface FormState {
   training_type: string;
   expected_pse: number | null;
   notes: string;
+  hide_notes: boolean;
   audience: 'todos' | 'incluir' | 'exceto';
   group_ids: string[];
   athlete_ids: string[];
 }
 
 const emptyForm = (date: string): FormState => ({
-  date, start_time: '', end_time: '', name: '', training_type: TRAINING_TYPES[0], expected_pse: null, notes: '',
+  date, start_time: '', end_time: '', name: '', training_type: TRAINING_TYPES[0], expected_pse: null, notes: '', hide_notes: false,
   audience: 'todos', group_ids: [], athlete_ids: [],
 });
 
@@ -175,6 +176,7 @@ export const TrainingSchedule: React.FC<TrainingScheduleProps> = ({ readOnly = f
       training_type: s.training_type,
       expected_pse: s.expected_pse,
       notes: s.notes ?? '',
+      hide_notes: !!s.hide_notes,
       audience: s.audience ?? 'todos',
       group_ids: s.target_group_ids ?? [],
       athlete_ids: s.target_athlete_ids ?? [],
@@ -205,6 +207,10 @@ export const TrainingSchedule: React.FC<TrainingScheduleProps> = ({ readOnly = f
       audience: form.audience,
       target_group_ids: form.audience === 'todos' ? [] : form.group_ids,
       target_athlete_ids: form.audience === 'todos' ? [] : form.athlete_ids,
+      // Só manda o campo quando precisa: o treino continua salvando mesmo antes de rodar o SQL novo
+      ...(form.hide_notes || sessions.some((x) => x.id === form.id && x.hide_notes !== undefined)
+        ? { hide_notes: form.hide_notes }
+        : {}),
     };
 
     setSaving(true);
@@ -282,6 +288,7 @@ export const TrainingSchedule: React.FC<TrainingScheduleProps> = ({ readOnly = f
         <p className="text-[11px] font-semibold text-amber-300 flex items-center gap-1">
           <StickyNote className="w-3 h-3 flex-shrink-0" />
           Ver anotações
+          {!readOnly && s.hide_notes && <EyeOff className="w-3 h-3 flex-shrink-0" aria-label="Escondidas dos atletas" />}
           <Chevron className="w-3 h-3" />
         </p>
       )}
@@ -512,6 +519,11 @@ export const TrainingSchedule: React.FC<TrainingScheduleProps> = ({ readOnly = f
               <div>
                 <p className="text-[10px] uppercase font-bold text-slate-500 mb-1.5 flex items-center gap-1">
                   <StickyNote className="w-3.5 h-3.5" /> Anotações do treinador
+                  {!readOnly && viewing.hide_notes && viewing.notes && (
+                    <span className="ml-1 normal-case font-semibold text-amber-300 flex items-center gap-1">
+                      <EyeOff className="w-3 h-3" /> escondidas dos atletas
+                    </span>
+                  )}
                 </p>
                 {viewing.notes ? (
                   <p className="text-sm text-slate-200 whitespace-pre-wrap break-words bg-slate-950 border border-slate-800 rounded-xl p-3">
@@ -800,6 +812,28 @@ export const TrainingSchedule: React.FC<TrainingScheduleProps> = ({ readOnly = f
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 resize-y"
                 />
               </label>
+
+              {/* Esconder anotações: só a comissão vê o texto */}
+              <button
+                type="button"
+                role="switch"
+                aria-checked={form.hide_notes}
+                onClick={() => setForm({ ...form, hide_notes: !form.hide_notes })}
+                className={`w-full flex items-center gap-3 p-3 rounded-xl border text-left transition-colors ${
+                  form.hide_notes ? 'bg-amber-500/10 border-amber-500/40' : 'bg-slate-950 border-slate-700 hover:bg-slate-800/60'
+                }`}
+              >
+                <EyeOff className={`w-4 h-4 flex-shrink-0 ${form.hide_notes ? 'text-amber-300' : 'text-slate-500'}`} />
+                <span className="flex-1 min-w-0">
+                  <span className="block text-sm font-semibold text-white">Esconder anotações</span>
+                  <span className="block text-[11px] text-slate-400">
+                    {form.hide_notes ? 'Só a comissão técnica vê as anotações deste treino.' : 'Os atletas veem as anotações deste treino.'}
+                  </span>
+                </span>
+                <span className={`relative w-10 h-6 rounded-full flex-shrink-0 transition-colors ${form.hide_notes ? 'bg-amber-500' : 'bg-slate-700'}`}>
+                  <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${form.hide_notes ? 'left-[18px]' : 'left-0.5'}`} />
+                </span>
+              </button>
 
               {formError && (
                 <div className="p-3 rounded-xl bg-red-950/60 border border-red-700 flex items-center gap-2.5 text-xs text-red-300">

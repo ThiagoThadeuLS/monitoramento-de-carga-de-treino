@@ -1,15 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React from 'react';
+import { TrendLine } from './TrendLine';
 
 export interface BodyFatPoint {
   date: string; // AAAA-MM-DD
   percentual: number;
 }
 
-const surface = '#0f172a';
-const day = (iso: string) => Date.UTC(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10))) / 86400000;
-const shortDate = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
-const longDate = (iso: string) =>
-  new Date(`${iso}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
 const pct = (v: number) => `${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
 
 /** Linha do tempo do % de gordura (medidas esparsas, eixo pela data real). */
@@ -17,135 +13,13 @@ export const BodyFatTrend: React.FC<{
   points: BodyFatPoint[];
   color?: string;
   height?: number;
-  /** Altura mínima e máxima do eixo (padrão: automático em volta dos valores) */
   domain?: [number, number];
   className?: string;
-}> = ({ points, color = '#0ea5e9', height = 170, domain, className = '' }) => {
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(560);
-  const [hover, setHover] = useState<number | null>(null);
-
-  useEffect(() => {
-    const el = wrapRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(([entry]) => setWidth(Math.max(240, entry.contentRect.width)));
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-  useEffect(() => setHover(null), [points.length]);
-
-  const series = useMemo(
-    () => [...points].sort((a, b) => a.date.localeCompare(b.date)).map((p) => ({ ...p, t: day(p.date) })),
-    [points]
-  );
-
-  const margin = { top: 14, right: 16, bottom: 22, left: 34 };
-  const innerW = width - margin.left - margin.right;
-  const innerH = height - margin.top - margin.bottom;
-
-  const values = series.map((p) => p.percentual);
-  const autoLo = values.length ? Math.min(...values) : 0;
-  const autoHi = values.length ? Math.max(...values) : 10;
-  const pad = Math.max(0.6, (autoHi - autoLo) * 0.25);
-  const [lo, hi] = domain ?? [autoLo - pad, autoHi + pad];
-
-  const t0 = series.length ? series[0].t : 0;
-  const t1 = series.length ? series[series.length - 1].t : 1;
-  const x = (t: number) => margin.left + (t1 === t0 ? innerW / 2 : ((t - t0) / (t1 - t0)) * innerW);
-  const y = (v: number) => margin.top + innerH - ((v - lo) / (hi - lo || 1)) * innerH;
-
-  const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => lo + (hi - lo) * f);
-  const path = series.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(p.t).toFixed(1)},${y(p.percentual).toFixed(1)}`).join('');
-  const area = series.length > 1 ? `${path}L${x(t1).toFixed(1)},${y(lo).toFixed(1)}L${x(t0).toFixed(1)},${y(lo).toFixed(1)}Z` : '';
-
-  // Datas no eixo: no máximo 5, sempre incluindo a primeira e a última
-  const labelIdx = series.length <= 5
-    ? series.map((_, i) => i)
-    : [0, Math.floor((series.length - 1) / 2), series.length - 1];
-
-  const onMove = (e: React.PointerEvent<SVGRectElement>) => {
-    if (!series.length) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const px = ((e.clientX - rect.left) / rect.width) * innerW + margin.left;
-    let best = 0;
-    for (let i = 1; i < series.length; i++) {
-      if (Math.abs(x(series[i].t) - px) < Math.abs(x(series[best].t) - px)) best = i;
-    }
-    setHover(best);
-  };
-
-  const hovered = hover !== null ? series[hover] : null;
-  const tipLeft = hovered ? Math.min(Math.max(x(hovered.t), 76), width - 76) : 0;
-  const gradId = `bf-${color.replace('#', '')}`;
-
-  return (
-    <div ref={wrapRef} className={`relative w-full ${className}`}>
-      <svg width={width} height={height} className="block select-none" role="img" aria-label="Evolução do percentual de gordura">
-        <defs>
-          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity="0.35" />
-            <stop offset="100%" stopColor={color} stopOpacity="0.02" />
-          </linearGradient>
-        </defs>
-
-        {ticks.map((t, i) => (
-          <g key={i}>
-            <line x1={margin.left} x2={width - margin.right} y1={y(t)} y2={y(t)} stroke="#1e293b" strokeWidth={1} />
-            <text x={margin.left - 8} y={y(t)} dy="0.32em" textAnchor="end" className="fill-slate-500" fontSize={10}>
-              {t.toFixed(2).replace('.', ',')}
-            </text>
-          </g>
-        ))}
-
-        {area && <path d={area} fill={`url(#${gradId})`} />}
-        {series.length > 1 && (
-          <path d={path} fill="none" stroke={color} strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
-        )}
-
-        {series.map((p, i) => (
-          <g key={p.date}>
-            <circle
-              cx={x(p.t)}
-              cy={y(p.percentual)}
-              r={hover === i ? 5.5 : 3.5}
-              fill={hover === i ? color : surface}
-              stroke={color}
-              strokeWidth={2.5}
-            />
-            {labelIdx.includes(i) && (
-              <text x={x(p.t)} y={height - 6} textAnchor="middle" className="fill-slate-500" fontSize={10}>
-                {shortDate(p.date)}
-              </text>
-            )}
-          </g>
-        ))}
-
-        {hovered && (
-          <line x1={x(hovered.t)} x2={x(hovered.t)} y1={margin.top} y2={margin.top + innerH} stroke="#475569" strokeWidth={1} />
-        )}
-
-        <rect
-          x={margin.left}
-          y={margin.top}
-          width={innerW}
-          height={innerH}
-          fill="transparent"
-          style={{ touchAction: 'pan-y' }}
-          onPointerMove={onMove}
-          onPointerDown={onMove}
-          onPointerLeave={() => setHover(null)}
-        />
-      </svg>
-
-      {hovered && (
-        <div
-          className="absolute top-0 -translate-x-1/2 pointer-events-none bg-slate-950/95 border border-slate-700 rounded-lg px-2.5 py-1.5 shadow-xl text-[11px] whitespace-nowrap z-10"
-          style={{ left: tipLeft }}
-        >
-          <p className="text-slate-400 capitalize">{longDate(hovered.date)}</p>
-          <p className="text-white font-bold">{pct(hovered.percentual)}</p>
-        </div>
-      )}
-    </div>
-  );
-};
+}> = ({ points, ...rest }) => (
+  <TrendLine
+    {...rest}
+    points={points.map((p) => ({ date: p.date, value: p.percentual }))}
+    format={pct}
+    ariaLabel="Evolução do percentual de gordura"
+  />
+);

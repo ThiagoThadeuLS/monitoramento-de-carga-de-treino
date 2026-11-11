@@ -1,0 +1,945 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Carga</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Carga: o atleta registra o esforço de cada treino em 10 segundos e a comissão técnica acompanha a carga do elenco. PSE, PSR, peso, ACWR e lembretes no celular.">
+<meta name="theme-color" content="#050B18">
+<meta property="og:title" content="Carga · Treine com medida.">
+<meta property="og:description" content="O atleta conta como foi o treino. A comissão vê a carga do elenco antes que ela vire lesão.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=Martian+Mono:wdth,wght@75..112.5,300..800&display=swap">
+<style>
+/* Layout: página escura de ginásio à noite, faixas largas alternando "noite" e "gelo"; a escala de esforço (0 a 10) é a única fonte de cor quente. */
+:root {
+  --noite: #050B18;
+  --profundo: #0B1426;
+  --placa: #101C33;
+  --linha: #1B2A44;
+  --gelo: #EAF2FA;
+  --texto: #C7D5E6;
+  --nevoa: #8DA2BF;
+  --azul: #38BDF8;
+  --azul-forte: #0369A1;
+  /* escala de esforço CR-10 */
+  --p0: #38BDF8; --p2: #2DD4BF; --p4: #A3E635; --p6: #FACC15; --p8: #FB923C; --p10: #F43F5E;
+  /* faixa clara */
+  --claro-fundo: #EAF2FA; --claro-texto: #0B1426; --claro-suave: #42536B; --claro-linha: #C9D7E7;
+
+  --f-display: "Archivo", "Segoe UI", system-ui, sans-serif;
+  --f-texto: "Archivo", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "Martian Mono", ui-monospace, Consolas, monospace;
+
+  --largura: 1180px;
+  --raio: 22px;
+  --gutter-l: max(16px, env(safe-area-inset-left, 0px));
+  --gutter-r: max(16px, env(safe-area-inset-right, 0px));
+  color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 84px; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body {
+  margin: 0; background: var(--noite); color: var(--texto);
+  font-family: var(--f-texto); font-size: 17px; line-height: 1.6;
+  -webkit-font-smoothing: antialiased; overflow-x: hidden;
+}
+img, svg { max-width: 100%; }
+a { color: inherit; }
+:focus-visible { outline: 3px solid var(--azul); outline-offset: 3px; border-radius: 6px; }
+h1, h2, h3 { font-family: var(--f-display); color: var(--gelo); margin: 0; text-wrap: balance; letter-spacing: -0.02em; }
+h2 { font-weight: 850; font-stretch: 118%; font-size: clamp(34px, 5.2vw, 64px); line-height: 1; }
+h3 { font-weight: 750; font-stretch: 108%; font-size: 22px; line-height: 1.2; letter-spacing: -0.01em; }
+h2 em, h1 em { font-style: normal; color: var(--azul); }
+p { margin: 0; }
+.mono { font-family: var(--f-mono); font-stretch: 87.5%; font-size: 12.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--nevoa); }
+.num { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+
+.wrap { width: 100%; max-width: calc(var(--largura) + 32px); margin-inline: auto; padding-left: var(--gutter-l); padding-right: var(--gutter-r); }
+.secao { padding-block: clamp(72px, 11vw, 140px); }
+.cabeca { display: grid; gap: 18px; max-width: 760px; margin-bottom: clamp(36px, 6vw, 64px); }
+.cabeca p:not(.mono) { font-size: clamp(17px, 1.6vw, 20px); color: var(--texto); max-width: 62ch; }
+
+/* ---------- botões ---------- */
+.btn {
+  display: inline-flex; align-items: center; gap: 10px; padding: 15px 24px; border-radius: 999px;
+  font-weight: 750; font-size: 16px; text-decoration: none; border: 0; cursor: pointer; font-family: var(--f-texto);
+  transition: transform .25s cubic-bezier(.2,.8,.2,1), background-color .2s, box-shadow .25s;
+}
+.btn svg { width: 18px; height: 18px; transition: transform .25s cubic-bezier(.2,.8,.2,1); }
+.btn:hover svg { transform: translateX(4px); }
+.btn-azul { background: var(--azul); color: var(--noite); box-shadow: 0 0 0 0 rgba(56,189,248,.5); }
+.btn-azul:hover { transform: translateY(-2px); box-shadow: 0 12px 34px -10px rgba(56,189,248,.7); }
+.btn-linha { color: var(--gelo); box-shadow: inset 0 0 0 1.5px var(--linha); background: transparent; }
+.btn-linha:hover { box-shadow: inset 0 0 0 1.5px var(--nevoa); }
+
+/* ---------- topo ---------- */
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 60; background: var(--noite); }
+.topo {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 50;
+  transition: background-color .3s, border-color .3s, backdrop-filter .3s;
+  border-bottom: 1px solid transparent;
+}
+.topo.rolou { background: rgba(5, 11, 24, .82); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-bottom-color: var(--linha); }
+.topo .wrap { display: flex; align-items: center; justify-content: space-between; gap: 20px; height: 72px; }
+.marca { display: inline-flex; align-items: center; text-decoration: none; }
+.marca { gap: 10px; }
+.logo-ic { width: 34px; height: 34px; display: block; flex: none; }
+.logo-nome { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-weight: 900; font-size: 21px; letter-spacing: .04em; color: var(--gelo); line-height: 1; }
+@media (prefers-reduced-motion: no-preference) { .logo-ic.anima .pulso { stroke-dasharray: 1; animation: pulso 1.4s cubic-bezier(.6,0,.2,1) .2s both; } }
+@keyframes pulso { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+.nav { display: flex; align-items: center; gap: 28px; }
+.nav a:not(.btn) { text-decoration: none; font-size: 15px; color: var(--texto); font-weight: 550; position: relative; }
+.nav a:not(.btn)::after { content: ""; position: absolute; left: 0; right: 0; bottom: -6px; height: 2px; background: var(--azul); transform: scaleX(0); transform-origin: left; transition: transform .3s; }
+.nav a:not(.btn):hover { color: var(--gelo); }
+.nav a:not(.btn):hover::after { transform: scaleX(1); }
+.nav .btn { padding: 11px 18px; font-size: 14.5px; }
+.menu-btn { display: none; background: none; border: 0; color: var(--gelo); padding: 8px; cursor: pointer; }
+.menu-btn svg { width: 26px; height: 26px; display: block; }
+@media (max-width: 900px) {
+  .menu-btn { display: block; }
+  .nav {
+    position: fixed; inset: calc(72px + env(safe-area-inset-top, 0px)) 0 auto 0; flex-direction: column; align-items: stretch; gap: 0;
+    padding: 8px var(--gutter-r) 24px var(--gutter-l); background: var(--noite); border-bottom: 1px solid var(--linha);
+    transform: translateY(-8px); opacity: 0; pointer-events: none; transition: opacity .25s, transform .25s;
+  }
+  .nav.aberto { opacity: 1; transform: none; pointer-events: auto; }
+  .nav a:not(.btn) { padding: 16px 0; border-bottom: 1px solid var(--linha); font-size: 17px; }
+  .nav a:not(.btn)::after { display: none; }
+  .nav .btn { margin-top: 18px; justify-content: center; padding: 15px; }
+  .topo.menu-aberto { background: var(--noite); border-bottom-color: var(--linha); }
+}
+
+/* ---------- abertura ---------- */
+.hero { position: relative; padding-block: clamp(36px, 7vw, 96px) clamp(64px, 9vw, 120px); overflow: hidden; }
+.hero::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .55;
+  background-image: linear-gradient(var(--linha) 1px, transparent 1px), linear-gradient(90deg, var(--linha) 1px, transparent 1px);
+  background-size: 64px 64px;
+  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 60% 40%, #000 20%, transparent 75%);
+  mask-image: radial-gradient(ellipse 70% 60% at 60% 40%, #000 20%, transparent 75%);
+}
+.hero .wrap { position: relative; display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr); gap: clamp(32px, 5vw, 72px); align-items: center; }
+.hero-texto { display: grid; gap: 28px; min-width: 0; }
+.selo-topo { display: inline-flex; align-items: center; gap: 10px; justify-self: start; padding: 7px 14px 7px 8px; border-radius: 999px; background: var(--profundo); box-shadow: inset 0 0 0 1px var(--linha); font-size: 14px; color: var(--texto); }
+.selo-topo b { background: var(--azul); color: var(--noite); border-radius: 999px; padding: 2px 10px; font-size: 12px; font-family: var(--f-mono); font-stretch: 87.5%; letter-spacing: .06em; }
+.hero h1 { font-weight: 900; font-stretch: 125%; font-size: clamp(50px, 9.4vw, 128px); line-height: .9; letter-spacing: -0.035em; }
+.hero h1 .linha { display: block; overflow: hidden; padding-bottom: .06em; }
+.hero h1 .linha > span { display: inline-block; }
+.hero-sub { font-size: clamp(18px, 1.9vw, 22px); line-height: 1.5; max-width: 34ch; color: var(--texto); }
+.hero-acoes { display: flex; flex-wrap: wrap; gap: 12px; }
+.hero-nota { display: flex; flex-wrap: wrap; gap: 8px 20px; }
+.hero-nota span { display: inline-flex; align-items: center; gap: 8px; }
+.hero-nota span::before { content: ""; width: 6px; height: 6px; border-radius: 2px; background: var(--azul); }
+
+/* símbolo animado: as anilhas entram na barra */
+.simbolo-anim rect { transform-box: fill-box; transform-origin: center; }
+@media (prefers-reduced-motion: no-preference) {
+  .simbolo-anim .barra { animation: barra .7s cubic-bezier(.2,.8,.2,1) both; transform-origin: left center; }
+  .simbolo-anim .anilha { animation: anilha .6s cubic-bezier(.3,1.5,.5,1) both; }
+  .simbolo-anim .a1 { animation-delay: .35s; } .simbolo-anim .a2 { animation-delay: .45s; } .simbolo-anim .a3 { animation-delay: .55s; } .simbolo-anim .a4 { animation-delay: .7s; }
+  .hero h1 .linha > span { animation: sobe .9s cubic-bezier(.2,.8,.2,1) both; }
+  .hero h1 .linha:nth-child(2) > span { animation-delay: .12s; }
+  .hero .entra { animation: aparece .8s cubic-bezier(.2,.8,.2,1) both; animation-delay: .3s; }
+  .hero .entra-2 { animation-delay: .45s; } .hero .entra-3 { animation-delay: .6s; }
+}
+@keyframes barra { from { transform: scaleX(0); } }
+@keyframes anilha { from { transform: scaleY(0); } }
+@keyframes sobe { from { transform: translateY(105%); } }
+@keyframes aparece { from { opacity: 0; transform: translateY(18px); } }
+
+/* ---------- celular ---------- */
+.celular {
+  position: relative; justify-self: center; width: min(340px, 100%); aspect-ratio: 9 / 18.5; border-radius: 46px; padding: 12px;
+  background: linear-gradient(160deg, #22324F, #0B1426 40%, #16233B); box-shadow: 0 40px 90px -30px rgba(56,189,248,.35), 0 0 0 1px #2A3B5C inset;
+}
+.celular::before { content: ""; position: absolute; top: 22px; left: 50%; width: 92px; height: 26px; border-radius: 99px; background: #000; transform: translateX(-50%); z-index: 2; }
+.tela {
+  height: 100%; border-radius: 36px; background: var(--noite); overflow: hidden; display: flex; flex-direction: column; gap: 14px;
+  padding: 58px 18px 18px; font-size: 13px; color: var(--texto); position: relative;
+}
+.tela-topo { display: flex; justify-content: space-between; align-items: center; }
+.tela-topo svg { height: 16px; width: auto; }
+.tela h4 { margin: 0; font-family: var(--f-display); font-stretch: 112%; font-weight: 800; color: var(--gelo); font-size: 21px; line-height: 1.1; letter-spacing: -0.01em; }
+.tela .cartao { background: var(--profundo); border: 1px solid var(--linha); border-radius: 16px; padding: 14px; display: grid; gap: 10px; }
+.notas { display: grid; grid-template-columns: repeat(11, 1fr); gap: 3px; }
+.notas span {
+  aspect-ratio: 1 / 1.6; border-radius: 6px; display: grid; place-items: end center; padding-bottom: 3px;
+  font-family: var(--f-mono); font-size: 9.5px; color: var(--nevoa); background: var(--linha); transition: background-color .15s, color .15s, transform .15s;
+}
+.notas span.on { color: var(--noite); font-weight: 700; }
+.notas span.atual { transform: translateY(-4px); }
+.rotulo-pse { display: flex; justify-content: space-between; align-items: baseline; }
+.rotulo-pse b { font-family: var(--f-display); font-stretch: 110%; color: var(--gelo); font-size: 15px; }
+.duracao { display: flex; justify-content: space-between; align-items: center; }
+.duracao .num { color: var(--gelo); font-size: 15px; }
+.enviar { background: var(--azul); color: var(--noite); font-weight: 800; text-align: center; border-radius: 12px; padding: 12px; transition: transform .15s, filter .15s; }
+.enviar.apertou { transform: scale(.96); filter: brightness(1.15); }
+.resultado { position: absolute; left: 18px; right: 18px; bottom: 18px; background: #0F2240; border: 1px solid #1E4A7A; border-radius: 18px; padding: 16px; display: grid; gap: 6px; transform: translateY(130%); transition: transform .5s cubic-bezier(.2,.8,.2,1); }
+.resultado.mostra { transform: none; }
+.resultado .grande { font-family: var(--f-mono); font-size: 30px; font-weight: 700; color: var(--gelo); line-height: 1; }
+.resultado .grande small { font-size: 13px; color: var(--nevoa); margin-left: 6px; }
+
+/* ---------- fotos reais do app dentro das molduras ---------- */
+.hero-app { margin: 0; display: grid; justify-items: center; gap: 18px; min-width: 0; }
+.celular { aspect-ratio: 9 / 20.2; }
+.tela-foto { padding: 0; gap: 0; position: relative; }
+.status { flex: none; height: 40px; display: flex; align-items: center; justify-content: space-between; padding: 6px 26px 0; font-size: 12px; font-weight: 700; color: var(--gelo); font-variant-numeric: tabular-nums; }
+.status-ic { display: inline-flex; align-items: flex-end; gap: 2px; }
+.status-ic i { width: 3px; border-radius: 1px; background: var(--gelo); }
+.status-ic i:nth-child(1) { height: 5px; } .status-ic i:nth-child(2) { height: 7px; } .status-ic i:nth-child(3) { height: 9px; }
+.status-ic b { width: 20px; height: 10px; border-radius: 3px; margin-left: 5px; box-shadow: inset 0 0 0 1.5px var(--gelo); position: relative; }
+.status-ic b::after { content: ""; position: absolute; inset: 2.5px 6px 2.5px 2.5px; border-radius: 1px; background: var(--gelo); }
+.slides { position: relative; flex: 1; min-height: 0; }
+.slide { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: top; opacity: 0; transform: scale(1.03); transition: opacity .9s ease, transform 1.4s cubic-bezier(.2,.8,.2,1); }
+.slide.ativo { opacity: 1; transform: none; }
+.legenda-slides { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+.legenda-slides span { font-size: 12.5px; padding: 6px 12px; border-radius: 99px; color: var(--nevoa); box-shadow: inset 0 0 0 1px var(--linha); transition: background-color .4s, color .4s, box-shadow .4s; }
+.legenda-slides span.on { background: var(--azul); color: var(--noite); box-shadow: none; font-weight: 700; }
+.tela-foto > img.painel-tela { width: 100%; flex: 1; min-height: 0; object-fit: cover; object-position: top; }
+.tela-foto > img.painel-tela.ativo { display: block; }
+@media (prefers-reduced-motion: no-preference) { .tela-foto > img.painel-tela.ativo { animation: aparece .45s cubic-bezier(.2,.8,.2,1) both; } }
+.janela-abas { display: flex; gap: 4px; padding: 8px 10px; background: var(--profundo); border-bottom: 1px solid var(--linha); overflow-x: auto; scrollbar-width: none; }
+.janela-aba { flex: none; font: inherit; font-size: 13.5px; font-weight: 650; color: var(--nevoa); background: none; border: 0; border-radius: 10px; padding: 9px 14px; cursor: pointer; transition: background-color .2s, color .2s; }
+.janela-aba:hover { color: var(--gelo); }
+.janela-aba[aria-selected="true"] { background: var(--noite); color: var(--gelo); box-shadow: inset 0 -2px 0 var(--azul); }
+.janela-fotos { position: relative; aspect-ratio: 16 / 10; background: var(--noite); }
+.janela-foto { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: top; opacity: 0; transition: opacity .5s ease; }
+.janela-foto.ativo { opacity: 1; }
+.nota-exemplo { margin-top: 14px; font-size: 13.5px; color: var(--claro-suave); }
+
+/* ---------- faixa que corre ---------- */
+.faixa { border-block: 1px solid var(--linha); background: var(--profundo); overflow: hidden; padding-block: 18px; }
+.faixa-trilho { display: flex; width: max-content; }
+.faixa-grupo { display: flex; align-items: center; gap: 36px; padding-right: 36px; }
+.faixa-grupo span { font-family: var(--f-display); font-weight: 800; font-stretch: 120%; font-size: clamp(20px, 2.6vw, 30px); color: var(--gelo); white-space: nowrap; letter-spacing: -0.01em; }
+.faixa-grupo i { width: 10px; height: 10px; border-radius: 3px; background: var(--azul); flex-shrink: 0; }
+.faixa-grupo span.vazado { color: transparent; -webkit-text-stroke: 1.2px var(--nevoa); }
+@media (prefers-reduced-motion: no-preference) { .faixa-trilho { animation: corre 38s linear infinite; } .faixa:hover .faixa-trilho { animation-play-state: paused; } }
+@keyframes corre { to { transform: translateX(-50%); } }
+
+/* ---------- como funciona ---------- */
+.mini-foto { width: 100%; height: 190px; object-fit: cover; object-position: left top; border-radius: 14px; border: 1px solid var(--linha); background: var(--noite); display: block; }
+.mini-foto-celular { object-position: center top; }
+.passos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; position: relative; counter-reset: passo; }
+.passo { background: var(--profundo); border: 1px solid var(--linha); border-radius: var(--raio); padding: 28px; display: grid; gap: 16px; align-content: start; transition: transform .35s cubic-bezier(.2,.8,.2,1), border-color .3s; }
+.passo:hover { transform: translateY(-6px); border-color: #2C4166; }
+.passo-num { display: flex; align-items: center; justify-content: space-between; }
+.passo-num b { font-family: var(--f-mono); font-size: 13px; color: var(--azul); letter-spacing: .08em; }
+.passo-num span { font-size: 13px; color: var(--nevoa); }
+.passo p { color: var(--texto); font-size: 16px; }
+.passo .mini { height: 120px; border-radius: 14px; background: var(--noite); border: 1px solid var(--linha); padding: 14px; display: grid; align-content: end; gap: 8px; overflow: hidden; }
+.mini-semana { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; align-items: end; height: 90px; }
+.mini-semana i { border-radius: 5px; background: var(--linha); position: relative; }
+.mini-semana i.planejado { background: none; border: 1.5px dashed var(--nevoa); }
+.mini-notif { background: #16223A; border-radius: 12px; padding: 10px 12px; display: grid; grid-template-columns: 30px 1fr; gap: 10px; align-items: center; font-size: 12.5px; line-height: 1.35; }
+.mini-notif svg { width: 30px; height: 30px; }
+.mini-notif b { color: var(--gelo); display: block; font-size: 12px; }
+.mini-compara { display: grid; gap: 10px; }
+.mini-compara div { display: grid; grid-template-columns: 74px 1fr 26px; gap: 10px; align-items: center; font-size: 12px; }
+.mini-compara em { font-style: normal; height: 10px; border-radius: 4px; display: block; }
+.trilho-passos { height: 2px; background: var(--linha); margin-bottom: 28px; position: relative; overflow: hidden; border-radius: 2px; }
+.trilho-passos::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, var(--p0), var(--p4), var(--p8)); transform-origin: left; }
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .trilho-passos::after { animation: enche linear both; animation-timeline: view(); animation-range: entry 20% cover 55%; }
+  }
+}
+@keyframes enche { from { transform: scaleX(0); } }
+
+/* ---------- atleta ---------- */
+.atleta-grade { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: clamp(32px, 6vw, 80px); align-items: center; }
+.abas { display: grid; gap: 4px; }
+.aba {
+  display: grid; grid-template-columns: 44px 1fr; gap: 16px; align-items: start; padding: 18px; border-radius: 18px; border: 1px solid transparent;
+  background: none; text-align: left; color: inherit; font: inherit; cursor: pointer; transition: background-color .25s, border-color .25s;
+}
+.aba:hover { background: var(--profundo); }
+.aba[aria-selected="true"] { background: var(--profundo); border-color: var(--linha); }
+.aba .ic { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; background: var(--linha); color: var(--nevoa); transition: background-color .25s, color .25s; }
+.aba[aria-selected="true"] .ic { background: var(--azul); color: var(--noite); }
+.aba .ic svg { width: 22px; height: 22px; }
+.aba b { display: block; color: var(--gelo); font-family: var(--f-display); font-stretch: 108%; font-size: 19px; margin-bottom: 2px; }
+.aba span { font-size: 15px; color: var(--nevoa); display: block; line-height: 1.5; }
+.aba[aria-selected="true"] span { color: var(--texto); }
+.celular-2 { width: min(320px, 100%); }
+.painel-tela { display: none; flex-direction: column; gap: 10px; }
+.painel-tela.ativo { display: flex; }
+@media (prefers-reduced-motion: no-preference) { .painel-tela.ativo > * { animation: aparece .45s cubic-bezier(.2,.8,.2,1) both; } .painel-tela.ativo > *:nth-child(2) { animation-delay: .05s; } .painel-tela.ativo > *:nth-child(3) { animation-delay: .1s; } .painel-tela.ativo > *:nth-child(4) { animation-delay: .15s; } }
+.item { display: grid; grid-template-columns: 34px 1fr auto; gap: 10px; align-items: center; background: var(--profundo); border: 1px solid var(--linha); border-radius: 14px; padding: 11px 12px; }
+.item .bola { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--linha); }
+.item .bola svg { width: 18px; height: 18px; }
+.item b { color: var(--gelo); font-size: 13.5px; display: block; line-height: 1.25; }
+.item small { color: var(--nevoa); font-size: 11.5px; }
+.chip { font-size: 10.5px; font-weight: 750; border-radius: 99px; padding: 4px 9px; color: var(--noite); white-space: nowrap; }
+.sequencia { background: linear-gradient(135deg, #0F2240, #0B1426); border: 1px solid #1E4A7A; border-radius: 16px; padding: 14px; display: grid; gap: 10px; }
+.sequencia .dias { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
+.sequencia .dias i { aspect-ratio: 1; border-radius: 7px; background: var(--azul); }
+.sequencia .dias i.nao { background: var(--linha); }
+.pr-linha { display: flex; align-items: end; gap: 6px; height: 90px; }
+.pr-linha i { flex: 1; border-radius: 5px 5px 2px 2px; background: var(--linha); }
+.pr-linha i:last-child { background: var(--azul); }
+
+/* ---------- comissão (faixa clara) ---------- */
+.claro { background: var(--claro-fundo); color: var(--claro-suave); }
+.claro h2, .claro h3 { color: var(--claro-texto); }
+.claro h2 em { color: var(--azul-forte); }
+.claro .mono { color: var(--claro-suave); }
+.claro .cabeca p:not(.mono) { color: var(--claro-suave); }
+.janela { border-radius: 20px; background: var(--noite); box-shadow: 0 50px 100px -40px rgba(11,20,38,.55), 0 0 0 1px #0B1426; overflow: hidden; color: var(--texto); }
+.janela-barra { display: flex; align-items: center; gap: 8px; padding: 12px 16px; background: var(--profundo); border-bottom: 1px solid var(--linha); }
+.janela-barra i { width: 11px; height: 11px; border-radius: 50%; background: var(--linha); }
+.janela-barra span { margin-left: 10px; font-family: var(--f-mono); font-size: 11.5px; color: var(--nevoa); background: var(--noite); border-radius: 8px; padding: 4px 12px; flex: 1; max-width: 320px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.janela-corpo { display: grid; grid-template-columns: 190px minmax(0, 1fr); min-height: 420px; }
+.janela-menu { border-right: 1px solid var(--linha); padding: 16px 12px; display: grid; align-content: start; gap: 4px; }
+.janela-menu span { padding: 10px 12px; border-radius: 10px; font-size: 14px; color: var(--nevoa); }
+.janela-menu span.on { background: var(--profundo); color: var(--gelo); box-shadow: inset 2px 0 0 var(--azul); }
+.janela-conteudo { padding: 22px; display: grid; gap: 16px; min-width: 0; align-content: start; }
+.kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.kpi { background: var(--profundo); border: 1px solid var(--linha); border-radius: 14px; padding: 14px; display: grid; gap: 4px; }
+.kpi b { font-family: var(--f-mono); font-size: 24px; color: var(--gelo); font-weight: 700; }
+.kpi small { font-size: 12.5px; color: var(--nevoa); }
+.grafico-carga { background: var(--profundo); border: 1px solid var(--linha); border-radius: 14px; padding: 16px; display: grid; gap: 12px; }
+.grafico-carga .legenda { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; font-size: 12.5px; }
+.grafico-carga .legenda span { display: inline-flex; align-items: center; gap: 6px; color: var(--nevoa); }
+.grafico-carga .legenda span i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.barras { display: flex; align-items: flex-end; gap: 6px; height: 150px; }
+.barras i { flex: 1; border-radius: 5px 5px 2px 2px; background: #1E4A7A; transform-origin: bottom; }
+.barras i.alto { background: var(--p8); }
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .barras i { animation: cresce linear both; animation-timeline: view(); animation-range: entry 10% cover 40%; }
+  }
+}
+@keyframes cresce { from { transform: scaleY(.08); } }
+.recursos { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 28px 24px; margin-top: clamp(40px, 6vw, 72px); }
+.recurso { display: grid; gap: 10px; align-content: start; border-top: 2px solid var(--claro-linha); padding-top: 18px; }
+.recurso .mono { color: var(--azul-forte); }
+.recurso ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; font-size: 15.5px; }
+.recurso li { display: grid; grid-template-columns: 14px 1fr; gap: 8px; }
+.recurso li::before { content: ""; width: 8px; height: 8px; border-radius: 2px; background: var(--azul-forte); margin-top: 8px; }
+
+/* ---------- ciência ---------- */
+.ciencia-grade { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.lab { background: var(--profundo); border: 1px solid var(--linha); border-radius: var(--raio); padding: clamp(22px, 3vw, 34px); display: grid; gap: 22px; align-content: start; min-width: 0; }
+.lab-topo { display: grid; gap: 8px; }
+.lab-topo p:not(.mono) { font-size: 15.5px; color: var(--texto); }
+.controle { display: grid; gap: 10px; }
+.controle label { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-size: 14.5px; color: var(--texto); }
+.controle output { font-family: var(--f-mono); color: var(--gelo); font-size: 15px; font-weight: 600; }
+input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 30px; background: transparent; cursor: pointer; margin: 0; }
+input[type="range"]::-webkit-slider-runnable-track { height: 8px; border-radius: 99px; background: var(--trilho, var(--linha)); }
+input[type="range"]::-moz-range-track { height: 8px; border-radius: 99px; background: var(--trilho, var(--linha)); }
+input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 26px; height: 26px; margin-top: -9px; border-radius: 50%; background: var(--gelo); border: 5px solid var(--cor, var(--azul)); box-shadow: 0 4px 14px rgba(0,0,0,.4); transition: transform .15s; }
+input[type="range"]::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: var(--gelo); border: 5px solid var(--cor, var(--azul)); }
+input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.15); }
+#pse { --trilho: linear-gradient(90deg, var(--p0), var(--p2) 25%, var(--p4) 45%, var(--p6) 65%, var(--p8) 82%, var(--p10)); }
+.conta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; font-family: var(--f-mono); font-weight: 700; color: var(--gelo); padding: 20px; background: var(--noite); border-radius: 16px; border: 1px solid var(--linha); }
+.conta .op { color: var(--nevoa); font-size: 22px; }
+.conta .v { font-size: clamp(30px, 4vw, 44px); line-height: 1; }
+.conta .ua { font-size: clamp(38px, 5.4vw, 60px); color: var(--azul); line-height: 1; }
+.conta small { font-size: 14px; color: var(--nevoa); }
+.medidor-wrap { display: grid; justify-items: center; gap: 6px; }
+.medidor { width: min(360px, 100%); height: auto; display: block; }
+.medidor .ponteiro { transform-origin: 150px 150px; transition: transform .6s cubic-bezier(.3,1.4,.5,1); }
+.zona { font-weight: 750; font-size: 17px; color: var(--gelo); display: flex; align-items: center; gap: 10px; text-align: center; }
+.zona i { width: 12px; height: 12px; border-radius: 4px; background: var(--p4); flex-shrink: 0; transition: background-color .3s; }
+.semanas { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; align-items: end; height: 110px; }
+.semanas div { display: flex; flex-direction: column; justify-content: flex-end; gap: 6px; height: 100%; text-align: center; min-height: 0; }
+.semanas div i { flex: none; }
+.semanas i { display: block; border-radius: 6px 6px 2px 2px; background: #1E4A7A; transition: height .4s cubic-bezier(.2,.8,.2,1), background-color .3s; }
+.semanas small { font-size: 11.5px; color: var(--nevoa); }
+.fonte { font-size: 13px; color: var(--nevoa); }
+
+/* ---------- confiança ---------- */
+.confia { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; border: 1px solid var(--linha); border-radius: var(--raio); overflow: hidden; }
+.confia div { padding: 28px; display: grid; gap: 10px; align-content: start; border-right: 1px solid var(--linha); }
+.confia div:last-child { border-right: 0; }
+.confia svg { width: 28px; height: 28px; color: var(--azul); }
+.confia p { font-size: 15.5px; }
+.piloto { margin-top: 20px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; padding: 22px 28px; border-radius: var(--raio); background: var(--profundo); border: 1px solid var(--linha); }
+.piloto p { color: var(--gelo); font-size: 17px; }
+.piloto .vivo { display: inline-flex; align-items: center; gap: 10px; }
+.piloto .vivo i { width: 10px; height: 10px; border-radius: 50%; background: var(--p4); box-shadow: 0 0 0 0 rgba(163,230,53,.6); }
+@media (prefers-reduced-motion: no-preference) { .piloto .vivo i { animation: pulsa 2s infinite; } }
+@keyframes pulsa { 70% { box-shadow: 0 0 0 10px rgba(163,230,53,0); } 100% { box-shadow: 0 0 0 0 rgba(163,230,53,0); } }
+
+/* ---------- perguntas ---------- */
+.perguntas-grade { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); gap: clamp(32px, 6vw, 80px); align-items: start; }
+.perguntas { display: grid; }
+.perguntas details { border-bottom: 1px solid var(--linha); }
+.perguntas summary { list-style: none; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 22px 0; font-family: var(--f-display); font-stretch: 105%; font-weight: 700; font-size: 19px; color: var(--gelo); }
+.perguntas summary::-webkit-details-marker { display: none; }
+.perguntas summary i { width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0; box-shadow: inset 0 0 0 1.5px var(--linha); position: relative; transition: transform .3s, background-color .3s; }
+.perguntas summary i::before, .perguntas summary i::after { content: ""; position: absolute; left: 50%; top: 50%; width: 12px; height: 2px; background: var(--gelo); transform: translate(-50%, -50%); }
+.perguntas summary i::after { transform: translate(-50%, -50%) rotate(90deg); transition: transform .3s; }
+.perguntas details[open] summary i { background: var(--azul); }
+.perguntas details[open] summary i::before, .perguntas details[open] summary i::after { background: var(--noite); }
+.perguntas details[open] summary i::after { transform: translate(-50%, -50%) rotate(0deg); }
+.perguntas details p { padding: 0 0 22px; max-width: 62ch; }
+
+/* ---------- contato ---------- */
+.contato { position: relative; overflow: hidden; }
+.contato-grade { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: clamp(32px, 6vw, 80px); align-items: start; position: relative; }
+.contato h2 { font-size: clamp(40px, 6.4vw, 84px); font-stretch: 125%; }
+.contato-texto { display: grid; gap: 24px; }
+.form { background: var(--profundo); border: 1px solid var(--linha); border-radius: var(--raio); padding: clamp(22px, 3vw, 34px); display: grid; gap: 16px; }
+.campos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.campo { display: grid; gap: 8px; min-width: 0; }
+.campo.largo { grid-column: 1 / -1; }
+.campo label { font-size: 14px; color: var(--texto); font-weight: 600; }
+.campo input, .campo select, .campo textarea {
+  width: 100%; font: inherit; font-size: 16px; color: var(--gelo); background: var(--noite); border: 1.5px solid var(--linha); border-radius: 12px; padding: 13px 14px; transition: border-color .2s;
+}
+.campo textarea { resize: vertical; min-height: 96px; }
+.campo input:focus, .campo select:focus, .campo textarea:focus { outline: none; border-color: var(--azul); }
+.form .btn { justify-content: center; }
+.pronto { display: grid; gap: 12px; }
+.pronto pre { margin: 0; white-space: pre-wrap; font-family: var(--f-mono); font-size: 13px; line-height: 1.6; color: var(--gelo); background: var(--noite); border: 1px solid var(--linha); border-radius: 12px; padding: 16px; max-height: 260px; overflow: auto; }
+.pronto-acoes { display: flex; flex-wrap: wrap; gap: 10px; }
+.aviso-form { font-size: 14px; color: var(--nevoa); }
+.simbolo-fundo { position: absolute; right: -4%; bottom: -14%; width: min(620px, 80vw); opacity: .07; pointer-events: none; }
+
+/* ---------- rodapé ---------- */
+.rodape { border-top: 1px solid var(--linha); padding-block: 40px; }
+.rodape .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 20px; }
+.rodape nav { display: flex; flex-wrap: wrap; gap: 8px 24px; }
+.rodape a { font-size: 14.5px; text-decoration: none; color: var(--nevoa); }
+.rodape a:hover { color: var(--gelo); }
+.rodape .logo-ic { width: 28px; height: 28px; } .rodape .logo-nome { font-size: 18px; }
+
+/* ---------- aparecer ao rolar ---------- */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .rv { animation: rv linear both; animation-timeline: view(); animation-range: entry 0% entry 55%; }
+  }
+}
+@keyframes rv { from { opacity: .3; transform: translateY(48px) scale(.98); } }
+
+/* ---------- celular e tablet ---------- */
+@media (max-width: 1000px) {
+  .recursos { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .confia { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .confia div:nth-child(2) { border-right: 0; }
+  .confia div:nth-child(-n+2) { border-bottom: 1px solid var(--linha); }
+}
+@media (max-width: 900px) {
+  .hero .wrap, .atleta-grade, .perguntas-grade, .contato-grade, .ciencia-grade { grid-template-columns: minmax(0, 1fr); }
+  .passos { grid-template-columns: minmax(0, 1fr); }
+  .trilho-passos { display: none; }
+  .janela-corpo { grid-template-columns: minmax(0, 1fr); }
+  .janela-menu { display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--linha); padding: 10px; }
+  .janela-menu span { white-space: nowrap; }
+  .janela-menu span.on { box-shadow: inset 0 -2px 0 var(--azul); }
+  .celular { width: min(320px, 100%); }
+}
+@media (max-width: 560px) {
+  body { font-size: 16px; }
+  .recursos, .confia, .campos { grid-template-columns: minmax(0, 1fr); }
+  .confia div { border-right: 0; border-bottom: 1px solid var(--linha); }
+  .confia div:last-child { border-bottom: 0; }
+  .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .kpi { padding: 10px; } .kpi b { font-size: 18px; } .kpi small { font-size: 11px; }
+  .janela-conteudo { padding: 14px; }
+  .hero-acoes .btn { flex: 1 1 100%; justify-content: center; }
+  .aba { padding: 14px 10px; grid-template-columns: 40px 1fr; gap: 12px; }
+}
+</style>
+</head>
+<body>
+
+<header class="topo" id="topo">
+  <div class="wrap">
+    <a class="marca" href="#inicio" aria-label="Carga, início">
+      <svg class="logo-ic anima" viewBox="0 0 512 512" aria-hidden="true"><rect width="512" height="512" rx="112" fill="#0b1426"/><rect x="24" y="24" width="464" height="464" rx="96" fill="none" stroke="#0ea5e9" stroke-opacity=".35" stroke-width="8"/><path class="pulso" d="M104 268h70l38-104 64 196 46-128 26 36h60" pathLength="1" fill="none" stroke="#38bdf8" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="logo-nome">Carga</span>
+    </a>
+    <button class="menu-btn" id="menu-btn" type="button" aria-label="Abrir menu" aria-expanded="false" aria-controls="nav">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
+    </button>
+    <nav class="nav" id="nav" aria-label="Principal">
+      <a href="#como-funciona">Como funciona</a>
+      <a href="#atletas">Atletas</a>
+      <a href="#comissao">Comissão técnica</a>
+      <a href="#ciencia">Ciência</a>
+      <a href="#perguntas">Perguntas</a>
+      <a class="btn btn-azul" href="#contato">Levar para o meu clube</a>
+    </nav>
+  </div>
+</header>
+
+<main id="inicio">
+
+  <!-- Abertura -->
+  <section class="hero">
+    <div class="wrap">
+      <div class="hero-texto">
+        <span class="selo-topo entra"><b>PSE</b> O esforço de cada treino, medido</span>
+        <h1><span class="linha"><span>Treine com</span></span><span class="linha"><span><em>medida.</em></span></span></h1>
+        <p class="hero-sub entra entra-2">O atleta conta como foi o treino em 10 segundos. A comissão técnica vê a carga do elenco antes que ela vire lesão.</p>
+        <div class="hero-acoes entra entra-3">
+          <a class="btn btn-azul" href="#contato">Levar para o meu clube <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+          <a class="btn btn-linha" href="#como-funciona">Ver como funciona</a>
+        </div>
+        <div class="hero-nota mono entra entra-3"><span>Sem loja de apps</span><span>iPhone e Android</span><span>Dados só do seu clube</span></div>
+      </div>
+
+      <figure class="hero-app entra entra-2">
+        <div class="celular" aria-label="Telas do app Carga: a lista do dia, a resposta da PSE e a agenda da semana">
+          <div class="tela tela-foto">
+            <div class="status" aria-hidden="true"><span>19:40</span><span class="status-ic"><i></i><i></i><i></i><b></b></span></div>
+            <div class="slides" id="slides">
+              <img class="slide ativo" src="img/atleta-hoje.jpg" alt="Tela Hoje do app: bem-estar respondido e o treino de randori esperando a PSE" width="780" height="1688">
+              <img class="slide" src="img/atleta-pse.jpg" alt="Formulário da PSE com o treino de randori, 105 minutos e esforço 7 de 10" width="780" height="1688">
+              <img class="slide" src="img/atleta-agenda.jpg" alt="Agenda da semana com os treinos e a PSE esperada de cada um" width="780" height="1688">
+            </div>
+          </div>
+        </div>
+        <figcaption class="legenda-slides" id="legenda-slides" aria-hidden="true">
+          <span class="on">Hoje</span><span>Responder a PSE</span><span>Agenda</span>
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- Faixa -->
+  <div class="faixa" aria-hidden="true">
+    <div class="faixa-trilho">
+      <div class="faixa-grupo"><span>PSE</span><i></i><span class="vazado">Bem-estar</span><i></i><span>Peso</span><i></i><span class="vazado">Carga interna</span><i></i><span>ACWR</span><i></i><span class="vazado">Monotonia</span><i></i><span>Lembretes</span><i></i><span class="vazado">Agenda</span><i></i><span>PRs</span><i></i></div>
+      <div class="faixa-grupo"><span>PSE</span><i></i><span class="vazado">Bem-estar</span><i></i><span>Peso</span><i></i><span class="vazado">Carga interna</span><i></i><span>ACWR</span><i></i><span class="vazado">Monotonia</span><i></i><span>Lembretes</span><i></i><span class="vazado">Agenda</span><i></i><span>PRs</span><i></i></div>
+    </div>
+  </div>
+
+  <!-- Como funciona -->
+  <section class="secao" id="como-funciona">
+    <div class="wrap">
+      <div class="cabeca rv">
+        <p class="mono">Como funciona</p>
+        <h2>Do planejado ao <em>percebido</em>, todo dia.</h2>
+        <p>A comissão diz como o treino deveria ser. O atleta diz como foi. O Carga junta os dois e mostra onde eles não batem.</p>
+      </div>
+      <div class="trilho-passos" aria-hidden="true"></div>
+      <ol class="passos" style="list-style:none;margin:0;padding:0">
+        <li class="passo rv">
+          <div class="passo-num"><b>PASSO 1</b><span>Comissão</span></div>
+          <img class="mini-foto" src="img/passo-planejar.jpg" alt="Agenda da comissão: os treinos de segunda a quarta com horário e PSE esperada" width="960" height="705" loading="lazy">
+          <h3>Planeja a semana</h3>
+          <p>Monte o cronograma com horário, duração, PSE esperada e quem treina: o elenco todo, um grupo ou só alguns atletas.</p>
+        </li>
+        <li class="passo rv">
+          <div class="passo-num"><b>PASSO 2</b><span>Atleta</span></div>
+          <img class="mini-foto mini-foto-celular" src="img/passo-responder.jpg" alt="Lista do dia no app do atleta: bem-estar respondido e o randori esperando a PSE" width="780" height="544" loading="lazy">
+          <h3>Responde no celular</h3>
+          <p>O lembrete chega na hora certa: bem-estar antes do treino, PSE depois e peso no dia da pesagem. Leva 10 segundos.</p>
+        </li>
+        <li class="passo rv">
+          <div class="passo-num"><b>PASSO 3</b><span>Comissão</span></div>
+          <img class="mini-foto" src="img/passo-comparar.jpg" alt="Acompanhamento individual: PSE, minutos, carga em UA e bem-estar de cada atleta" width="1050" height="495" loading="lazy">
+          <h3>Compara e ajusta</h3>
+          <p>Veja quem treinou acima do planejado, quem não respondeu e como a carga de cada atleta evolui nas semanas.</p>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- Atletas -->
+  <section class="secao" id="atletas" style="padding-top:0">
+    <div class="wrap">
+      <div class="atleta-grade">
+        <div>
+          <div class="cabeca rv" style="margin-bottom:28px">
+            <p class="mono">Para o atleta</p>
+            <h2>Tudo do treino <em>no bolso.</em></h2>
+            <p>Um app simples, feito para responder rápido e voltar a treinar.</p>
+          </div>
+          <div class="abas" role="tablist" aria-label="Telas do atleta">
+            <button class="aba" role="tab" id="aba-hoje" aria-selected="true" aria-controls="tela-hoje" type="button">
+              <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></span>
+              <span><b>Hoje</b><span>O que falta responder, a próxima competição e o peso em relação à categoria.</span></span>
+            </button>
+            <button class="aba" role="tab" id="aba-agenda" aria-selected="false" aria-controls="tela-agenda" type="button">
+              <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="3"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></span>
+              <span><b>Agenda</b><span>Os treinos da semana, com horário e local, e a ficha da preparação física.</span></span>
+            </button>
+            <button class="aba" role="tab" id="aba-prs" aria-selected="false" aria-controls="tela-prs" type="button">
+              <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4v16M18 4v16M2 9v6M22 9v6M6 12h12"/></svg></span>
+              <span><b>PRs</b><span>Recordes pessoais com a evolução e a montagem da barra pronta.</span></span>
+            </button>
+            <button class="aba" role="tab" id="aba-stories" aria-selected="false" aria-controls="tela-stories" type="button">
+              <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor"/></svg></span>
+              <span><b>Conquistas</b><span>Sequência de dias e selos, prontos para postar nos Stories.</span></span>
+            </button>
+          </div>
+        </div>
+
+        <div class="celular celular-2 rv">
+          <div class="tela tela-foto">
+            <div class="status" aria-hidden="true"><span>07:52</span><span class="status-ic"><i></i><i></i><i></i><b></b></span></div>
+            <img class="painel-tela ativo" id="tela-hoje" role="tabpanel" aria-labelledby="aba-hoje" src="img/atleta-inicio.jpg" alt="Tela Hoje: próxima competição, peso atual e limite da categoria" width="780" height="1688" loading="lazy">
+            <img class="painel-tela" id="tela-agenda" role="tabpanel" aria-labelledby="aba-agenda" src="img/atleta-agenda.jpg" alt="Agenda da semana com horário, tipo de treino e PSE esperada" width="780" height="1688" loading="lazy">
+            <img class="painel-tela" id="tela-prs" role="tabpanel" aria-labelledby="aba-prs" src="img/atleta-prs.jpg" alt="Evolução do recorde no agachamento: de 95 kg para 120 kg" width="780" height="1688" loading="lazy">
+            <img class="painel-tela" id="tela-stories" role="tabpanel" aria-labelledby="aba-stories" src="img/atleta-conquistas.jpg" alt="Conquistas: 48 dias seguidos respondendo, selos de sequência e de treinos" width="780" height="1688" loading="lazy">
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Comissão técnica -->
+  <section class="secao claro" id="comissao">
+    <div class="wrap">
+      <div class="cabeca rv">
+        <p class="mono">Para a comissão técnica</p>
+        <h2>O elenco inteiro <em>numa tela.</em></h2>
+        <p>Chega de planilha alimentada de memória. As respostas entram sozinhas e viram números que ajudam a decidir o treino de amanhã.</p>
+      </div>
+
+      <div class="janela rv">
+        <div class="janela-barra"><i></i><i></i><i></i><span id="janela-endereco">Análises · Carga interna</span></div>
+        <div class="janela-abas" role="tablist" aria-label="Telas da comissão técnica">
+          <button type="button" role="tab" class="janela-aba" aria-selected="true" aria-controls="foto-carga" data-titulo="Análises · Carga interna">Carga interna</button>
+          <button type="button" role="tab" class="janela-aba" aria-selected="false" aria-controls="foto-hoje" data-titulo="Hoje · Respostas do dia">Respostas do dia</button>
+          <button type="button" role="tab" class="janela-aba" aria-selected="false" aria-controls="foto-periodo" data-titulo="Análises · Período">PSE e bem-estar</button>
+          <button type="button" role="tab" class="janela-aba" aria-selected="false" aria-controls="foto-agenda" data-titulo="Planejamento · Agenda">Agenda da semana</button>
+        </div>
+        <div class="janela-fotos">
+          <img class="janela-foto ativo" id="foto-carga" role="tabpanel" src="img/treinador-carga.jpg" alt="Carga interna do elenco: carga média de 7 dias, ACWR do grupo em 1,12, 4 atletas em risco e gráficos dos últimos 28 dias" width="2160" height="1350" loading="lazy">
+          <img class="janela-foto" id="foto-hoje" role="tabpanel" src="img/treinador-hoje.jpg" alt="Painel do dia: questionários de PSE e PSR respondidos e o acompanhamento de cada atleta" width="2160" height="1350" loading="lazy">
+          <img class="janela-foto" id="foto-periodo" role="tabpanel" src="img/treinador-periodo.jpg" alt="Média de PSE e de PSR do grupo por dia nas últimas duas semanas" width="2160" height="1350" loading="lazy">
+          <img class="janela-foto" id="foto-agenda" role="tabpanel" src="img/treinador-agenda.jpg" alt="Cronograma da semana com 9 treinos, horários, PSE esperada e público de cada treino" width="2160" height="1350" loading="lazy">
+        </div>
+      </div>
+      <p class="nota-exemplo">Telas reais do app com atletas fictícios.</p>
+
+      <div class="recursos">
+        <div class="recurso rv"><span class="mono">Hoje</span><h3>Quem respondeu</h3><ul><li>Respostas do dia em tempo real</li><li>Quem está sem resposta no prazo</li><li>Dor e bem-estar em destaque</li></ul></div>
+        <div class="recurso rv"><span class="mono">Análises</span><h3>Carga e risco</h3><ul><li>Carga interna, ACWR, monotonia e strain</li><li>Ficha individual do atleta</li><li>Exportação para Excel</li></ul></div>
+        <div class="recurso rv"><span class="mono">Planejamento</span><h3>Semana e físico</h3><ul><li>Cronograma com PSE esperada</li><li>Fichas de preparação física</li><li>Pesagem e plano até a categoria</li></ul></div>
+        <div class="recurso rv"><span class="mono">Elenco</span><h3>Atletas e grupos</h3><ul><li>Cadastro, grupos e cores do clube</li><li>Adversários e competições</li><li>Vários treinadores por clube</li></ul></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Ciência -->
+  <section class="secao" id="ciencia">
+    <div class="wrap">
+      <div class="cabeca rv">
+        <p class="mono">A ciência por trás</p>
+        <h2>Métodos que a <em>preparação física</em> já usa.</h2>
+        <p>Nada de fórmula inventada. O Carga aplica os métodos mais usados no monitoramento de carga e faz as contas por você. Mexa para ver.</p>
+      </div>
+
+      <div class="ciencia-grade">
+        <div class="lab rv">
+          <div class="lab-topo">
+            <p class="mono">Carga interna do treino</p>
+            <h3>Esforço × minutos</h3>
+            <p>O atleta dá uma nota de 0 a 10 para o treino (escala CR-10). Multiplicada pela duração, vira a carga da sessão em unidades arbitrárias (UA).</p>
+          </div>
+          <div class="controle">
+            <label for="pse">PSE do treino <output id="pse-saida" for="pse">7 · Muito difícil</output></label>
+            <input type="range" id="pse" min="0" max="10" step="1" value="7">
+          </div>
+          <div class="controle">
+            <label for="minutos">Duração <output id="min-saida" for="minutos">90 min</output></label>
+            <input type="range" id="minutos" min="15" max="180" step="5" value="90">
+          </div>
+          <div class="conta" aria-live="polite">
+            <span class="v" id="c-pse">7</span><span class="op">×</span><span class="v" id="c-min">90</span><span class="op">=</span><span class="ua" id="c-ua">630</span><small>UA</small>
+          </div>
+          <p class="fonte">Método da PSE da sessão (Foster e colaboradores, 2001).</p>
+        </div>
+
+        <div class="lab rv">
+          <div class="lab-topo">
+            <p class="mono">Razão aguda:crônica (ACWR)</p>
+            <h3>A carga subiu rápido demais?</h3>
+            <p>Compara a carga desta semana com a média das quatro anteriores. Subidas bruscas aparecem antes de virarem lesão.</p>
+          </div>
+          <div class="semanas" aria-hidden="true">
+            <div><i style="height:73%"></i><small>S-4</small></div>
+            <div><i style="height:83%"></i><small>S-3</small></div>
+            <div><i style="height:77%"></i><small>S-2</small></div>
+            <div><i style="height:87%"></i><small>S-1</small></div>
+            <div><i id="semana-barra" style="height:90%"></i><small style="color:var(--gelo)">Esta</small></div>
+          </div>
+          <div class="controle">
+            <label for="semana">Carga desta semana <output id="semana-saida" for="semana">2.700 UA</output></label>
+            <input type="range" id="semana" min="600" max="4800" step="50" value="2700">
+          </div>
+          <div class="medidor-wrap">
+            <svg class="medidor" viewBox="0 0 300 172" role="img" aria-labelledby="medidor-titulo">
+              <title id="medidor-titulo">Medidor do ACWR de 0 a 2, com a zona segura entre 0,8 e 1,3</title>
+              <path d="M30 150A120 120 0 0 1 270 150" fill="none" stroke="#1B2A44" stroke-width="26"/>
+              <path d="M30 150A120 120 0 0 1 112.92 35.87" fill="none" stroke="#38BDF8" stroke-opacity=".5" stroke-width="26"/>
+              <path d="M112.92 35.87A120 120 0 0 1 204.48 43.08" fill="none" stroke="#A3E635" stroke-width="26"/>
+              <path d="M204.48 43.08A120 120 0 0 1 234.85 65.15" fill="none" stroke="#FACC15" stroke-width="26"/>
+              <path d="M234.85 65.15A120 120 0 0 1 270 150" fill="none" stroke="#F43F5E" stroke-width="26"/>
+              <g class="ponteiro" id="ponteiro"><line x1="150" y1="150" x2="150" y2="48" stroke="#EAF2FA" stroke-width="6" stroke-linecap="round"/></g>
+              <circle cx="150" cy="150" r="11" fill="#EAF2FA"/>
+              <text x="30" y="170" fill="#8DA2BF" font-family="Martian Mono, monospace" font-size="11" text-anchor="middle">0</text>
+              <text x="270" y="170" fill="#8DA2BF" font-family="Martian Mono, monospace" font-size="11" text-anchor="middle">2,0</text>
+            </svg>
+            <span class="num" style="font-size:34px;color:var(--gelo);font-weight:700" id="acwr-valor">1,13</span>
+            <span class="zona" aria-live="polite"><i id="zona-cor"></i><span id="zona-texto">Zona segura</span></span>
+          </div>
+          <p class="fonte">Média crônica do exemplo: 2.400 UA. Zona segura de 0,8 a 1,3 (Gabbett, 2016).</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Confiança -->
+  <section class="secao" style="padding-top:0">
+    <div class="wrap">
+      <div class="cabeca rv">
+        <p class="mono">Segurança</p>
+        <h2>Os dados do atleta <em>ficam no clube.</em></h2>
+      </div>
+      <div class="confia rv">
+        <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V10l7-5 7 5v11M10 21v-6h4v6"/></svg><h3>Cada clube no seu espaço</h3><p>Um clube nunca vê atletas, treinos ou respostas de outro.</p></div>
+        <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg><h3>Entrada com senha</h3><p>O atleta entra com CPF e senha própria, com limite de tentativas.</p></div>
+        <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13l2 2 4-4"/></svg><h3>Termo de uso (LGPD)</h3><p>No primeiro acesso o atleta lê e aceita como os dados dele são usados.</p></div>
+        <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/></svg><h3>Suporte só olha</h3><p>Quando a equipe do Carga ajuda o clube, o acesso é só de leitura e fica registrado.</p></div>
+      </div>
+      <div class="piloto rv">
+        <p class="vivo"><i></i>Em uso diário por uma equipe de judô de alto rendimento em Belo Horizonte.</p>
+        <span class="mono">Piloto 2026</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Perguntas -->
+  <section class="secao" id="perguntas" style="padding-top:0">
+    <div class="wrap perguntas-grade">
+      <div class="cabeca rv">
+        <p class="mono">Perguntas</p>
+        <h2>Antes de <em>começar.</em></h2>
+        <p>Não achou sua dúvida? Mande pelo formulário no fim da página.</p>
+      </div>
+      <div class="perguntas rv">
+        <details open><summary>Preciso baixar na App Store ou no Google Play?<i aria-hidden="true"></i></summary><p>Não. O atleta abre o link do clube no navegador e adiciona o Carga à tela de início. O ícone fica junto dos outros apps e os lembretes chegam como notificação.</p></details>
+        <details><summary>Funciona no iPhone?<i aria-hidden="true"></i></summary><p>Sim, no iPhone com iOS 16.4 ou mais novo. É preciso adicionar o app à tela de início pelo Safari para as notificações funcionarem.</p></details>
+        <details><summary>Serve para outras modalidades além do judô?<i aria-hidden="true"></i></summary><p>Serve. A PSE, o bem-estar e o peso valem para qualquer esporte. O clube cria os próprios tipos de treino, grupos de atletas e horários dos lembretes.</p></details>
+        <details><summary>O que é PSE e PSR?<i aria-hidden="true"></i></summary><p>PSE é a percepção subjetiva de esforço: uma nota de 0 a 10 para o quanto o treino pesou. PSR é a percepção de recuperação: de 0 a 10, o quanto o atleta chega recuperado ao treino.</p></details>
+        <details><summary>Consigo levar os dados para o Excel?<i aria-hidden="true"></i></summary><p>Sim. A comissão exporta as respostas e a carga do período em um arquivo que o Excel abre direto.</p></details>
+        <details><summary>Quanto custa?<i aria-hidden="true"></i></summary><p>O valor depende do tamanho do elenco. Conte um pouco sobre o seu clube no formulário e respondemos com uma proposta.</p></details>
+      </div>
+    </div>
+  </section>
+
+  <!-- Contato -->
+  <section class="secao contato" id="contato" style="background:linear-gradient(180deg, var(--noite), #071226)">
+    <svg class="simbolo-fundo" viewBox="0 0 512 512" aria-hidden="true"><path d="M104 268h70l38-104 64 196 46-128 26 36h60" fill="none" stroke="#38bdf8" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <div class="wrap contato-grade">
+      <div class="contato-texto rv">
+        <p class="mono">Contato</p>
+        <h2>Leve o Carga para o <em>seu clube.</em></h2>
+        <p style="font-size:19px;max-width:42ch">Conte quantos atletas e qual modalidade. Mostramos o app funcionando com a sua rotina de treino.</p>
+        <p class="mono" style="color:var(--texto)">Instagram <span style="color:var(--azul)">@carga.app</span></p>
+      </div>
+
+      <form class="form rv" id="form" novalidate>
+        <div class="campos" id="campos">
+          <div class="campo"><label for="f-nome">Seu nome</label><input id="f-nome" name="nome" autocomplete="name" required placeholder="Nome e sobrenome"></div>
+          <div class="campo"><label for="f-clube">Clube</label><input id="f-clube" name="clube" autocomplete="organization" required placeholder="Nome do clube"></div>
+          <div class="campo"><label for="f-modalidade">Modalidade</label><input id="f-modalidade" name="modalidade" placeholder="Ex.: judô, natação"></div>
+          <div class="campo"><label for="f-atletas">Atletas no elenco</label>
+            <select id="f-atletas" name="atletas"><option>Até 20</option><option selected>21 a 50</option><option>51 a 100</option><option>Mais de 100</option></select></div>
+          <div class="campo largo"><label for="f-contato">E-mail ou WhatsApp</label><input id="f-contato" name="contato" required placeholder="Para respondermos"></div>
+          <div class="campo largo"><label for="f-msg">Mensagem (opcional)</label><textarea id="f-msg" name="mensagem" placeholder="Como vocês controlam a carga hoje?"></textarea></div>
+        </div>
+        <p class="aviso-form" id="form-aviso" hidden></p>
+        <button class="btn btn-azul" type="submit" id="form-enviar">Montar mensagem <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+        <div class="pronto" id="pronto" hidden>
+          <p style="color:var(--gelo);font-weight:700">Mensagem pronta. Copie e envie pelo Direct do <span style="color:var(--azul)">@carga.app</span><span id="pronto-email"></span>.</p>
+          <pre id="pronto-texto"></pre>
+          <div class="pronto-acoes">
+            <button class="btn btn-azul" type="button" id="copiar">Copiar mensagem</button>
+            <a class="btn btn-linha" id="abrir-email" hidden href="#">Abrir no e-mail</a>
+            <button class="btn btn-linha" type="button" id="editar">Editar</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </section>
+</main>
+
+<footer class="rodape">
+  <div class="wrap">
+    <a class="marca" href="#inicio" aria-label="Carga, voltar ao início"><svg class="logo-ic" viewBox="0 0 512 512" aria-hidden="true"><rect width="512" height="512" rx="112" fill="#0b1426"/><rect x="24" y="24" width="464" height="464" rx="96" fill="none" stroke="#0ea5e9" stroke-opacity=".35" stroke-width="8"/><path class="pulso" d="M104 268h70l38-104 64 196 46-128 26 36h60" pathLength="1" fill="none" stroke="#38bdf8" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="logo-nome">Carga</span></a>
+    <nav aria-label="Rodapé">
+      <a href="#como-funciona">Como funciona</a>
+      <a href="#ciencia">Ciência</a>
+      <a href="#perguntas">Perguntas</a>
+      <a href="https://monitoramento-coral.vercel.app" target="_blank" rel="noopener">Entrar no app</a>
+    </nav>
+    <span class="mono">© <span id="ano">2026</span> Carga · Treine com medida.</span>
+  </div>
+</footer>
+
+<script>
+(function () {
+  // Contato: preencha para o formulário oferecer "Abrir no e-mail"
+  var CONTATO_EMAIL = '';
+
+  var calmo = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var CR10 = ['Repouso', 'Muito, muito fácil', 'Fácil', 'Moderado', 'Um pouco difícil', 'Difícil', 'Difícil', 'Muito difícil', 'Muito difícil', 'Muito, muito difícil', 'Máximo'];
+  var COR = ['#38BDF8', '#38BDF8', '#2DD4BF', '#2DD4BF', '#A3E635', '#A3E635', '#FACC15', '#FACC15', '#FB923C', '#FB923C', '#F43F5E'];
+  var milhar = function (n) { return Math.round(n).toLocaleString('pt-BR'); };
+
+  // Topo: fundo ao rolar e menu do celular
+  var topo = document.getElementById('topo');
+  var aoRolar = function () { topo.classList.toggle('rolou', window.scrollY > 8); };
+  window.addEventListener('scroll', aoRolar, { passive: true });
+  aoRolar();
+  var menuBtn = document.getElementById('menu-btn');
+  var nav = document.getElementById('nav');
+  var menu = function (abrir) {
+    nav.classList.toggle('aberto', abrir);
+    topo.classList.toggle('menu-aberto', abrir);
+    menuBtn.setAttribute('aria-expanded', String(abrir));
+    menuBtn.setAttribute('aria-label', abrir ? 'Fechar menu' : 'Abrir menu');
+  };
+  menuBtn.addEventListener('click', function () { menu(!nav.classList.contains('aberto')); });
+  nav.addEventListener('click', function (e) { if (e.target.closest('a')) menu(false); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') menu(false); });
+
+  // Celular da abertura: as telas reais se revezam
+  var slides = document.querySelectorAll('#slides .slide');
+  var legendas = document.querySelectorAll('#legenda-slides span');
+  var atual = 0;
+  var mostra = function (n) {
+    atual = n;
+    slides.forEach(function (s, k) { s.classList.toggle('ativo', k === n); });
+    legendas.forEach(function (l, k) { l.classList.toggle('on', k === n); });
+  };
+  if (!calmo && slides.length > 1) {
+    setInterval(function () { if (!document.hidden) mostra((atual + 1) % slides.length); }, 3800);
+  }
+
+  // Janela da comissão: abas com as telas reais
+  var janelaAbas = Array.prototype.slice.call(document.querySelectorAll('.janela-aba'));
+  janelaAbas.forEach(function (aba) {
+    aba.addEventListener('click', function () {
+      janelaAbas.forEach(function (a) {
+        var sel = a === aba;
+        a.setAttribute('aria-selected', String(sel));
+        document.getElementById(a.getAttribute('aria-controls')).classList.toggle('ativo', sel);
+      });
+      document.getElementById('janela-endereco').textContent = aba.dataset.titulo;
+    });
+  });
+
+  // Abas do atleta
+  var abas = Array.prototype.slice.call(document.querySelectorAll('.aba'));
+  var escolhe = function (aba, foco) {
+    abas.forEach(function (a) {
+      var sel = a === aba;
+      a.setAttribute('aria-selected', String(sel));
+      a.tabIndex = sel ? 0 : -1;
+      document.getElementById(a.getAttribute('aria-controls')).classList.toggle('ativo', sel);
+    });
+    if (foco) aba.focus();
+  };
+  abas.forEach(function (a, idx) {
+    a.tabIndex = idx === 0 ? 0 : -1;
+    a.addEventListener('click', function () { escolhe(a); });
+    a.addEventListener('keydown', function (e) {
+      var d = e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? -1 : 0;
+      if (d) { e.preventDefault(); escolhe(abas[(idx + d + abas.length) % abas.length], true); }
+    });
+  });
+
+  // Calculadora da carga
+  var pse = document.getElementById('pse');
+  var minutos = document.getElementById('minutos');
+  var calcula = function () {
+    var p = Number(pse.value), m = Number(minutos.value);
+    document.getElementById('pse-saida').textContent = p + ' · ' + CR10[p];
+    document.getElementById('min-saida').textContent = m + ' min';
+    document.getElementById('c-pse').textContent = p;
+    document.getElementById('c-pse').style.color = COR[p];
+    document.getElementById('c-min').textContent = m;
+    document.getElementById('c-ua').textContent = milhar(p * m);
+    pse.style.setProperty('--cor', COR[p]);
+  };
+  pse.addEventListener('input', calcula);
+  minutos.addEventListener('input', calcula);
+  calcula();
+
+  // ACWR
+  var CRONICA = 2400;
+  var semana = document.getElementById('semana');
+  var acwr = function () {
+    var v = Number(semana.value), r = v / CRONICA;
+    var zona = r < 0.8 ? ['Abaixo da zona: o atleta pode perder condicionamento', '#38BDF8']
+      : r <= 1.3 ? ['Zona segura', '#A3E635']
+      : r <= 1.5 ? ['Atenção: a carga subiu rápido', '#FACC15']
+      : ['Risco alto: subida brusca de carga', '#F43F5E'];
+    document.getElementById('semana-saida').textContent = milhar(v) + ' UA';
+    document.getElementById('acwr-valor').textContent = r.toFixed(2).replace('.', ',');
+    document.getElementById('zona-texto').textContent = zona[0];
+    document.getElementById('zona-cor').style.background = zona[1];
+    var barra = document.getElementById('semana-barra');
+    barra.style.height = Math.min(100, (v / 3000) * 100) + '%';
+    barra.style.background = zona[1];
+    var ang = (Math.min(2, r) / 2) * 180 - 90;
+    document.getElementById('ponteiro').style.transform = 'rotate(' + ang + 'deg)';
+  };
+  semana.addEventListener('input', acwr);
+  acwr();
+
+  // Formulário: monta a mensagem para enviar
+  var form = document.getElementById('form');
+  var campos = document.getElementById('campos');
+  var aviso = document.getElementById('form-aviso');
+  var pronto = document.getElementById('pronto');
+  var botaoEnviar = document.getElementById('form-enviar');
+  var textoPronto = document.getElementById('pronto-texto');
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var faltando = ['f-nome', 'f-clube', 'f-contato'].filter(function (id) { return !document.getElementById(id).value.trim(); });
+    if (faltando.length) {
+      aviso.hidden = false;
+      aviso.textContent = 'Preencha seu nome, o clube e um e-mail ou WhatsApp para respondermos.';
+      document.getElementById(faltando[0]).focus();
+      return;
+    }
+    aviso.hidden = true;
+    var v = function (id) { return document.getElementById(id).value.trim(); };
+    var texto = 'Olá! Quero conhecer o Carga.\n\nNome: ' + v('f-nome') + '\nClube: ' + v('f-clube') +
+      (v('f-modalidade') ? '\nModalidade: ' + v('f-modalidade') : '') + '\nAtletas: ' + v('f-atletas') +
+      '\nContato: ' + v('f-contato') + (v('f-msg') ? '\n\n' + v('f-msg') : '');
+    textoPronto.textContent = texto;
+    var email = document.getElementById('abrir-email');
+    if (CONTATO_EMAIL) {
+      document.getElementById('pronto-email').textContent = ' ou para ' + CONTATO_EMAIL;
+      email.hidden = false;
+      email.href = 'mailto:' + CONTATO_EMAIL + '?subject=' + encodeURIComponent('Carga para o ' + v('f-clube')) + '&body=' + encodeURIComponent(texto);
+    }
+    campos.hidden = true; botaoEnviar.hidden = true; pronto.hidden = false;
+  });
+  document.getElementById('editar').addEventListener('click', function () {
+    campos.hidden = false; botaoEnviar.hidden = false; pronto.hidden = true;
+  });
+  document.getElementById('copiar').addEventListener('click', function () {
+    var botao = this;
+    var feito = function () { botao.textContent = 'Copiada'; setTimeout(function () { botao.textContent = 'Copiar mensagem'; }, 2000); };
+    var seleciona = function () {
+      var r = document.createRange(); r.selectNodeContents(textoPronto);
+      var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+      botao.textContent = 'Texto selecionado: copie';
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(textoPronto.textContent).then(feito, seleciona);
+    else seleciona();
+  });
+
+  document.getElementById('ano').textContent = new Date().getFullYear();
+})();
+</script>
+</body>
+</html>

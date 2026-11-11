@@ -55,6 +55,8 @@ export interface TrainingSession {
   training_type: string;   // mesmo tipo usado na PSE do atleta
   expected_pse: number;    // 1-10
   notes?: string | null;
+  /** Anotações só para a comissão: o atleta não recebe o texto */
+  hide_notes?: boolean;
   /** Público: todos | somente (incluir) | todos exceto (exceto) */
   audience?: 'todos' | 'incluir' | 'exceto';
   target_group_ids?: string[];
@@ -74,8 +76,8 @@ export interface Competition {
   hora_pesagem?: string | null;
   local?: string | null;
   observacoes?: string | null;
-  /** Mesmo público dos treinos: todos, somente (incluir) ou todos exceto. */
-  audience?: 'todos' | 'incluir' | 'exceto';
+  /** Mesmo público dos treinos (todos, somente, todos exceto) ou ninguém (antes da convocação). */
+  audience?: 'todos' | 'incluir' | 'exceto' | 'ninguem';
   target_group_ids?: string[];
   target_athlete_ids?: string[];
   created_at?: string;

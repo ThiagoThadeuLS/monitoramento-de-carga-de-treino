@@ -26,6 +26,8 @@ export interface CompetitionSummaryRow {
 
 function competitionError(err: any): string {
   const msg = String(err?.message ?? err ?? '');
+  if (/competitions_audience_check/.test(msg))
+    return 'A opção "Ninguém" ainda não foi ativada no banco. Rode o arquivo supabase_completo.sql no Supabase.';
   if (/publico_vazio/.test(msg)) return 'Escolha pelo menos um grupo ou atleta para a competição.';
   if (/de_outro_clube/.test(msg)) return 'Grupo ou atleta inválido para este clube.';
   if (/competitions|competition_applies_to|coach_competition_summary|athlete_list_competitions/.test(msg) &&
@@ -48,6 +50,9 @@ export async function listCompetitions(): Promise<Competition[]> {
   return (data ?? []) as Competition[];
 }
 
+/** "Todos" e "Ninguém" não usam lista de grupos/atletas. */
+const semLista = (audience: Competition['audience']) => (audience ?? 'todos') === 'todos' || audience === 'ninguem';
+
 export async function saveCompetition(competition: Omit<Competition, 'id' | 'created_at' | 'updated_at'> & { id?: string }) {
   if (!supabase) throw new Error('Supabase não configurado.');
   const payload = {
@@ -58,8 +63,8 @@ export async function saveCompetition(competition: Omit<Competition, 'id' | 'cre
     local: competition.local?.trim() || null,
     observacoes: competition.observacoes?.trim() || null,
     audience: competition.audience ?? 'todos',
-    target_group_ids: (competition.audience ?? 'todos') === 'todos' ? [] : competition.target_group_ids ?? [],
-    target_athlete_ids: (competition.audience ?? 'todos') === 'todos' ? [] : competition.target_athlete_ids ?? [],
+    target_group_ids: semLista(competition.audience) ? [] : competition.target_group_ids ?? [],
+    target_athlete_ids: semLista(competition.audience) ? [] : competition.target_athlete_ids ?? [],
   };
   const { error } = competition.id
     ? await supabase.from('competitions').update(payload).eq('id', competition.id)
@@ -77,6 +82,7 @@ export async function deleteCompetition(id: string) {
 export function competitionAppliesTo(competition: Competition, athleteId: string, groups: AthleteGroup[]): boolean {
   const audience = competition.audience ?? 'todos';
   if (audience === 'todos') return true;
+  if (audience === 'ninguem') return false;
   const targeted =
     (competition.target_athlete_ids ?? []).includes(athleteId) ||
     groups.some((g) => (competition.target_group_ids ?? []).includes(g.id) && g.members.includes(athleteId));
@@ -87,6 +93,7 @@ export function competitionAppliesTo(competition: Competition, athleteId: string
 export function competitionAudienceLabel(competition: Competition, groups: AthleteGroup[], athletes: AthleteRef[]): string {
   const audience = competition.audience ?? 'todos';
   if (audience === 'todos') return 'Todos os atletas';
+  if (audience === 'ninguem') return 'Ninguém ainda (sem convocação)';
   const names = [
     ...(competition.target_group_ids ?? []).map((id) => groups.find((g) => g.id === id)?.nome ?? 'grupo removido'),
     ...(competition.target_athlete_ids ?? []).map((id) => athletes.find((a) => a.id === id)?.nome ?? 'atleta removido'),

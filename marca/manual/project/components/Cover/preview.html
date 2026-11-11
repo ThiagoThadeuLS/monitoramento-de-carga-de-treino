@@ -1,0 +1,58 @@
+<!-- @dsCard height=300 -->
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Carga</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&display=swap">
+<style>
+  html, body { margin:0; height:100%; }
+  body { background:var(--noite); color:var(--gelo); font-family:var(--font-sans); overflow:hidden; }
+  .cover { position:relative; height:300px; overflow:hidden; }
+  .art { position:absolute; top:0; left:480px; width:480px; height:300px; overflow:hidden; }
+  .art svg { display:block; width:480px; height:300px; }
+  .barra { fill:var(--gelo); }
+  .p0 { fill:var(--pse-0); }
+  .p4 { fill:var(--pse-4); }
+  .p8 { fill:var(--pse-8); }
+  .ponto { fill:var(--nevoa); }
+  .anilha { rx:var(--radius-sm); }
+  .words { position:absolute; left:var(--space-4); bottom:var(--space-4); max-width:440px; }
+  .name { margin:0; font-family:var(--font-display); font-size:100px; line-height:.9; font-weight:900; font-stretch:125%; letter-spacing:-.03em; color:var(--gelo); }
+  .tag { margin:var(--space-1) 0 0 4px; font-size:14px; line-height:20px; color:var(--nevoa); }
+</style>
+</head>
+<body>
+<div class="cover">
+<div class="art" aria-hidden="true">
+<svg viewBox="0 0 480 300" width="480" height="300">
+<!--
+  blocks      gelo barra 460×24 crossing the box and bleeding off the right edge · pse-0 anilha 64×128 · pse-4 anilha 64×208 · pse-8 anilha 72×300 bled top and bottom · gelo presilha 24×96 — about 30% of 960×300
+  arrangement the logo's own silhouette: plates rising toward the centre of a loaded bar, colours climbing the effort scale (cold to hot)
+  pattern     dot grid, from "números com cara de instrumento de medida" (mono, precise): 4 × 11 dots at a space-3 pitch past the collar, in nevoa
+  scales      plate widths space-5 and space-5 + space-1; gaps space-2; dot pitch space-3; corners radius-sm, bar rx = half its height
+-->
+<rect class="barra" x="20" y="138" width="460" height="24" rx="12"/>
+<rect class="p0 anilha" x="40" y="86" width="64" height="128" rx="6"/>
+<rect class="p4 anilha" x="120" y="46" width="64" height="208" rx="6"/>
+<rect class="p8 anilha" x="200" y="-6" width="72" height="312" rx="6"/>
+<rect class="barra anilha" x="288" y="102" width="24" height="96" rx="6"/>
+<g class="ponto">
+<circle cx="360" cy="30" r="2.5"/><circle cx="384" cy="30" r="2.5"/><circle cx="408" cy="30" r="2.5"/><circle cx="432" cy="30" r="2.5"/>
+<circle cx="360" cy="54" r="2.5"/><circle cx="384" cy="54" r="2.5"/><circle cx="408" cy="54" r="2.5"/><circle cx="432" cy="54" r="2.5"/>
+<circle cx="360" cy="78" r="2.5"/><circle cx="384" cy="78" r="2.5"/><circle cx="408" cy="78" r="2.5"/><circle cx="432" cy="78" r="2.5"/>
+<circle cx="360" cy="102" r="2.5"/><circle cx="384" cy="102" r="2.5"/><circle cx="408" cy="102" r="2.5"/><circle cx="432" cy="102" r="2.5"/>
+<circle cx="360" cy="198" r="2.5"/><circle cx="384" cy="198" r="2.5"/><circle cx="408" cy="198" r="2.5"/><circle cx="432" cy="198" r="2.5"/>
+<circle cx="360" cy="222" r="2.5"/><circle cx="384" cy="222" r="2.5"/><circle cx="408" cy="222" r="2.5"/><circle cx="432" cy="222" r="2.5"/>
+<circle cx="360" cy="246" r="2.5"/><circle cx="384" cy="246" r="2.5"/><circle cx="408" cy="246" r="2.5"/><circle cx="432" cy="246" r="2.5"/>
+<circle cx="360" cy="270" r="2.5"/><circle cx="384" cy="270" r="2.5"/><circle cx="408" cy="270" r="2.5"/><circle cx="432" cy="270" r="2.5"/>
+</g>
+</svg>
+</div>
+<div class="words">
+<h1 class="name">Carga</h1>
+<p class="tag">Treine com medida.</p>
+</div>
+</div>
+</body>
+</html>

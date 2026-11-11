@@ -25,7 +25,7 @@ interface CompetitionForm {
   hora_pesagem: string;
   local: string;
   observacoes: string;
-  audience: 'todos' | 'incluir' | 'exceto';
+  audience: NonNullable<Competition['audience']>;
   group_ids: string[];
   athlete_ids: string[];
 }
@@ -34,7 +34,11 @@ const AUDIENCE_OPTIONS: { id: CompetitionForm['audience']; label: string }[] = [
   { id: 'todos', label: 'Todos' },
   { id: 'incluir', label: 'Somente' },
   { id: 'exceto', label: 'Todos exceto' },
+  { id: 'ninguem', label: 'Ninguém' },
 ];
+
+/** Precisa escolher grupos/atletas? ("Todos" e "Ninguém" não) */
+const usesList = (audience: CompetitionForm['audience']) => audience === 'incluir' || audience === 'exceto';
 
 const STATUS_CLASS: Record<WeightPlanStatus, string> = {
   risco: 'bg-red-500/15 text-red-300 border-red-500/40',
@@ -205,7 +209,7 @@ export const CompetitionManagement: React.FC = () => {
     if (!form.nome.trim()) return setFormError('Dê um nome à competição.');
     if (!form.data || !form.data_pesagem) return setFormError('Informe a data da competição e a data da pesagem.');
     if (form.data_pesagem > form.data) return setFormError('A pesagem precisa acontecer até a data da competição.');
-    if (form.audience !== 'todos' && form.group_ids.length + form.athlete_ids.length === 0)
+    if (usesList(form.audience) && form.group_ids.length + form.athlete_ids.length === 0)
       return setFormError('Escolha pelo menos um grupo ou atleta para a competição.');
 
     setSaving(true);
@@ -220,8 +224,8 @@ export const CompetitionManagement: React.FC = () => {
         local: form.local,
         observacoes: form.observacoes,
         audience: form.audience,
-        target_group_ids: form.audience === 'todos' ? [] : form.group_ids,
-        target_athlete_ids: form.audience === 'todos' ? [] : form.athlete_ids,
+        target_group_ids: usesList(form.audience) ? form.group_ids : [],
+        target_athlete_ids: usesList(form.audience) ? form.athlete_ids : [],
       });
       const wasEditing = !!form.id;
       setForm(null);
@@ -306,7 +310,9 @@ export const CompetitionManagement: React.FC = () => {
             <p className="text-xs text-violet-300 flex items-start gap-1 mt-1.5">
               <UsersRound className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
               <span className="break-words">
-                {targeted.length} atleta{targeted.length === 1 ? '' : 's'} • {competitionAudienceLabel(competition, groups, athletes)}
+                {competition.audience === 'ninguem'
+                  ? competitionAudienceLabel(competition, groups, athletes)
+                  : `${targeted.length} atleta${targeted.length === 1 ? '' : 's'} • ${competitionAudienceLabel(competition, groups, athletes)}`}
               </span>
             </p>
           </div>
@@ -472,8 +478,17 @@ export const CompetitionManagement: React.FC = () => {
               ) : summaryRows.length === 0 ? (
                 <div className="py-10 text-center text-slate-400 space-y-1">
                   <UsersRound className="w-7 h-7 mx-auto text-slate-600" />
-                  <p className="text-sm font-semibold text-slate-300">Nenhum atleta neste público</p>
-                  <p className="text-xs">Confira os grupos e atletas escolhidos para a competição.</p>
+                  {viewing.audience === 'ninguem' ? (
+                    <>
+                      <p className="text-sm font-semibold text-slate-300">Ainda sem convocação</p>
+                      <p className="text-xs">Edite a competição e escolha os atletas quando a convocação sair.</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-sm font-semibold text-slate-300">Nenhum atleta neste público</p>
+                      <p className="text-xs">Confira os grupos e atletas escolhidos para a competição.</p>
+                    </>
+                  )}
                 </div>
               ) : (
                 <>
@@ -678,7 +693,7 @@ export const CompetitionManagement: React.FC = () => {
               {/* Para quem é a competição (mesmo modelo dos treinos) */}
               <div className="space-y-2">
                 <span className="block text-xs font-semibold uppercase tracking-wider text-slate-300">Para quem *</span>
-                <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Público da competição">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2" role="radiogroup" aria-label="Público da competição">
                   {AUDIENCE_OPTIONS.map((o) => (
                     <button
                       key={o.id}
@@ -697,7 +712,13 @@ export const CompetitionManagement: React.FC = () => {
                   ))}
                 </div>
 
-                {form.audience !== 'todos' && (
+                {form.audience === 'ninguem' && (
+                  <p className="text-[11px] text-slate-400 p-3 rounded-xl bg-slate-950/60 border border-slate-800">
+                    A competição fica guardada, mas não aparece para nenhum atleta. Depois da convocação, edite e escolha quem vai.
+                  </p>
+                )}
+
+                {usesList(form.audience) && (
                   <div className="space-y-3 p-3 rounded-xl bg-slate-950/60 border border-slate-800">
                     <p className="text-[11px] text-slate-400">
                       {form.audience === 'incluir'
