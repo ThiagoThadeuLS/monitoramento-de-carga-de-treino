@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
+  AlertTriangle,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -38,6 +39,7 @@ import {
   Sexo,
   bodyComposition,
   filledFolds,
+  foldsOutOfRange,
   formatDelta,
   missingFolds,
 } from '../../lib/bodyFat';
@@ -238,6 +240,8 @@ export const BodyComposition: React.FC = () => {
 
   const feitas = filledFolds(folds);
   const faltam = missingFolds(folds);
+  /** Medidas digitadas fora de 1–90 mm (o banco rejeitaria ao salvar). */
+  const foraDaFaixa = useMemo(() => foldsOutOfRange(folds), [folds]);
   const selectedBirth = athleteId ? birthdays[athleteId] ?? null : null;
   const idadePeloCadastro = selectedBirth ? ageOn(selectedBirth, date) : null;
 
@@ -293,6 +297,19 @@ export const BodyComposition: React.FC = () => {
 
   const handleSave = async () => {
     if (!supabase || !athleteId) return;
+    if (foraDaFaixa.length > 0) {
+      const medidas = foraDaFaixa
+        .map((k) => {
+          const site = FOLD_SITES.find((f) => f.key === k)!;
+          return `${site.sigla} (${fmt(folds[k])} mm)`;
+        })
+        .join(', ');
+      notify(
+        `Corrija ${foraDaFaixa.length === 1 ? 'a dobra' : 'as dobras'} fora da faixa de ${DOBRA_MIN} a ${DOBRA_MAX} mm: ${medidas}.`,
+        'error'
+      );
+      return;
+    }
     if (!result) {
       notify(
         faltam.length > 0
@@ -335,12 +352,28 @@ export const BodyComposition: React.FC = () => {
 
     setSaving(false);
     if (error) {
-      notify(
-        /duplicate key|unique/i.test(error.message)
-          ? 'Já existe uma avaliação nesta data. Edite a existente.'
-          : `Não foi possível salvar: ${error.message}`,
-        'error'
-      );
+      // Mensagens amigáveis para as travas do banco (mesmo se algum valor escapar da tela)
+      const foldColumn = /body_compositions_dobra_(\w+)_check/.exec(error.message);
+      const foldSite = foldColumn ? FOLD_SITES.find((f) => f.key === foldColumn[1]) : null;
+      if (/duplicate key|unique/i.test(error.message)) {
+        notify('Já existe uma avaliação nesta data. Edite a existente.', 'error');
+      } else if (foldSite) {
+        notify(`A dobra ${foldSite.nome} precisa ficar entre ${DOBRA_MIN} e ${DOBRA_MAX} mm.`, 'error');
+      } else if (/body_compositions_soma_dobras_check/.test(error.message)) {
+        notify(
+          `A soma das dobras ficou fora da faixa aceita (${DOBRA_MIN * PROTOCOL_FOLDS.length} a ${
+            DOBRA_MAX * PROTOCOL_FOLDS.length
+          } mm). Revise as medidas.`,
+          'error'
+        );
+      } else if (/violates check constraint/i.test(error.message)) {
+        notify(
+          `Algum valor ficou fora da faixa aceita. Revise as dobras (${DOBRA_MIN} a ${DOBRA_MAX} mm), a idade (${IDADE_MIN} a ${IDADE_MAX} anos) e o peso (${PESO_MIN} a ${PESO_MAX} kg).`,
+          'error'
+        );
+      } else {
+        notify(`Não foi possível salvar: ${error.message}`, 'error');
+      }
       return;
     }
     notify(targetId && sameDay && !editingId ? 'Avaliação do dia atualizada.' : 'Avaliação salva.', 'success');
@@ -524,6 +557,13 @@ export const BodyComposition: React.FC = () => {
                   </button>
                 </div>
 
+                {foraDaFaixa.includes(activeSite.key) && (
+                  <p className="flex items-center gap-1.5 text-[11px] font-bold text-red-300">
+                    <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                    Medida fora da faixa: use de {DOBRA_MIN} a {DOBRA_MAX} mm.
+                  </p>
+                )}
+
                 <div className="flex items-center justify-between">
                   <button
                     type="button"
@@ -553,6 +593,7 @@ export const BodyComposition: React.FC = () => {
               {FOLD_SITES.map((f) => {
                 const v = folds[f.key];
                 const done = typeof v === 'number' && v > 0;
+                const out = foraDaFaixa.includes(f.key);
                 const isActive = activeFold === f.key;
                 return (
                   <button
@@ -560,19 +601,25 @@ export const BodyComposition: React.FC = () => {
                     type="button"
                     onClick={() => setActiveFold(f.key)}
                     className={`rounded-xl border px-1.5 py-1.5 text-center transition-colors ${
-                      isActive
+                      out
+                        ? 'border-red-500/60 bg-red-500/10 hover:bg-red-500/15'
+                        : isActive
                         ? 'border-sky-500 bg-sky-500/15'
                         : done
                         ? 'border-emerald-700/60 bg-emerald-500/5 hover:bg-emerald-500/10'
                         : 'border-slate-700 bg-slate-950/60 hover:bg-slate-800'
                     }`}
-                    title={f.dica}
+                    title={out ? `Fora da faixa (${DOBRA_MIN} a ${DOBRA_MAX} mm)` : f.dica}
                   >
-                    <span className={`block text-[10px] font-black tracking-wide ${isActive ? 'text-sky-300' : 'text-slate-500'}`}>
+                    <span
+                      className={`block text-[10px] font-black tracking-wide ${
+                        out ? 'text-red-300' : isActive ? 'text-sky-300' : 'text-slate-500'
+                      }`}
+                    >
                       {f.sigla}
                       {!f.soma && ' *'}
                     </span>
-                    <span className={`block text-sm font-bold ${done ? 'text-white' : 'text-slate-600'}`}>
+                    <span className={`block text-sm font-bold ${out ? 'text-red-200' : done ? 'text-white' : 'text-slate-600'}`}>
                       {done ? fmt(v as number, (v as number) % 1 === 0 ? 0 : 1) : '—'}
                     </span>
                   </button>
@@ -627,11 +674,23 @@ export const BodyComposition: React.FC = () => {
             </div>
 
             {!result && (
-              <p className="text-[11px] text-slate-400 bg-slate-950/60 border border-slate-800 rounded-xl p-2.5 flex items-start gap-2">
-                <Info className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-sky-400" />
-                {faltam.length > 0
+              <p
+                className={`text-[11px] rounded-xl p-2.5 flex items-start gap-2 border ${
+                  foraDaFaixa.length > 0
+                    ? 'text-red-200 bg-red-500/10 border-red-500/40'
+                    : 'text-slate-400 bg-slate-950/60 border-slate-800'
+                }`}
+              >
+                {foraDaFaixa.length > 0 ? (
+                  <AlertTriangle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-red-400" />
+                ) : (
+                  <Info className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-sky-400" />
+                )}
+                {foraDaFaixa.length > 0
+                  ? `Corrija ${foraDaFaixa.map((k) => FOLD_SITES.find((f) => f.key === k)!.sigla).join(', ')}: use medidas entre ${DOBRA_MIN} e ${DOBRA_MAX} mm.`
+                  : faltam.length > 0
                   ? `Faltam ${faltam.length} dobra(s): ${faltam.map((k) => FOLD_SITES.find((f) => f.key === k)!.sigla).join(', ')}.`
-                  : 'Informe a idade (5 a 100 anos) para calcular.'}
+                  : `Informe a idade (${IDADE_MIN} a ${IDADE_MAX} anos) para calcular.`}
               </p>
             )}
 

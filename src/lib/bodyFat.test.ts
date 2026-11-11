@@ -3,6 +3,7 @@ import {
   bodyComposition,
   filledFolds,
   foldIntensityScale,
+  foldsOutOfRange,
   formatDelta,
   missingFolds,
   pollockDensity,
@@ -92,6 +93,32 @@ describe('dobras incompletas', () => {
     const folds = dobras([8, 8, 12, 15, 21, 19, 24]);
     expect(bodyComposition({ folds, idade: 0, sexo: 'Masculino' })).toBeNull();
     expect(bodyComposition({ folds, idade: null, sexo: 'Masculino' })).toBeNull();
+  });
+});
+
+describe('dobras fora da faixa', () => {
+  it('recusa medidas acima de 90 mm (100 em todas as dobras)', () => {
+    const folds = dobras([100, 100, 100, 100, 100, 100, 100]);
+    expect(foldsOutOfRange(folds)).toEqual([
+      'peitoral',
+      'axilar',
+      'triceps',
+      'subescapular',
+      'abdominal',
+      'suprailiaca',
+      'coxa',
+    ]);
+    expect(bodyComposition({ folds, idade: 25, sexo: 'Masculino', peso: 80 })).toBeNull();
+  });
+
+  it('recusa as extras fora da faixa mesmo com as 7 do protocolo válidas', () => {
+    const folds = { ...dobras([8, 8, 12, 15, 21, 19, 24]), bicipital: 0.5, panturrilha: 100 };
+    expect(foldsOutOfRange(folds)).toEqual(['bicipital', 'panturrilha']);
+  });
+
+  it('aceita os limites de 1 e 90 mm', () => {
+    const folds = dobras([1, 90, 1, 90, 1, 90, 1]);
+    expect(foldsOutOfRange(folds)).toEqual([]);
   });
 });
 
