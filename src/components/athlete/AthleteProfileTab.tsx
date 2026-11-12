@@ -6,6 +6,7 @@ import { useDialogs } from '../ui/Dialogs';
 import { ageOn } from '../../lib/age';
 import { brDate } from '../../lib/export';
 import { todayISO } from '../../lib/date';
+import { WhoopCard } from './WhoopCard';
 
 /**
  * Perfil do atleta: nome, data de nascimento e foto.
@@ -156,6 +157,8 @@ export const AthleteProfileTab: React.FC<{
           </button>
         </div>
       </section>
+
+      <WhoopCard token={token} />
 
       <section className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-2">
         <p className="text-[11px] uppercase tracking-wider text-slate-500 font-bold">Dados do clube</p>

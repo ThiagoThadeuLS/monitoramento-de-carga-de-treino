@@ -1,6 +1,15 @@
 import { deleteById, supabase } from './supabase';
 import { AthleteGroup, AthleteRef } from './groups';
 import { Competition } from '../types';
+import {
+  AthleteCompetitionResult,
+  CompetitionPlacement,
+  CompetitionResult,
+  CompetitionResultOverviewRow,
+  parseCompetitionPlacement,
+} from './competitionResults';
+
+export * from './competitionResults';
 
 export interface AthleteCompetition {
   id: string;
@@ -30,12 +39,41 @@ function competitionError(err: any): string {
     return 'A opção "Ninguém" ainda não foi ativada no banco. Rode o arquivo supabase_completo.sql no Supabase.';
   if (/publico_vazio/.test(msg)) return 'Escolha pelo menos um grupo ou atleta para a competição.';
   if (/de_outro_clube/.test(msg)) return 'Grupo ou atleta inválido para este clube.';
+  if (/competition_results|athlete_list_competition_results|athlete_save_competition_result|coach_competition_results_overview/.test(msg) &&
+      /(does not exist|Could not find|schema cache)/.test(msg))
+    return 'O módulo de resultados de competições ainda não foi ativado no banco. Rode o arquivo supabase_completo.sql no Supabase.';
   if (/competitions|competition_applies_to|coach_competition_summary|athlete_list_competitions/.test(msg) &&
       /(does not exist|Could not find|schema cache)/.test(msg))
     return 'O módulo de competições ainda não foi ativado no banco. Rode o arquivo supabase_completo.sql no Supabase.';
+  if (/competicao_nao_encontrada/.test(msg)) return 'Competição não encontrada.';
+  if (/competicao_futura/.test(msg)) return 'O resultado só pode ser registrado depois da competição.';
+  if (/colocacao_invalida/.test(msg)) return 'Colocação inválida.';
+  if (/estatisticas_incompletas/.test(msg)) return 'Preencha lutas, vitórias e derrotas (ou deixe os três em branco).';
+  if (/estatisticas_invalidas/.test(msg)) return 'Confira os números de lutas, vitórias e derrotas.';
+  if (/nao_autorizado/.test(msg)) return 'Sem permissão para registrar este resultado.';
   if (/duplicate key/.test(msg)) return 'Já existe uma competição com esses dados.';
   if (/row-level security/.test(msg)) return 'Sem permissão para alterar (modo somente leitura?).';
   return `Erro: ${msg}`;
+}
+
+function integerOrNull(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.trunc(n) : null;
+}
+
+function normalizeCompetitionResult(value: unknown): CompetitionResult | null {
+  if (!value || typeof value !== 'object') return null;
+  const row = value as Record<string, unknown>;
+  if (!row.id) return null;
+  return {
+    id: String(row.id),
+    colocacao: parseCompetitionPlacement(row.colocacao),
+    lutas: integerOrNull(row.lutas),
+    vitorias: integerOrNull(row.vitorias),
+    derrotas: integerOrNull(row.derrotas),
+    updated_at: row.updated_at ? String(row.updated_at) : null,
+  };
 }
 
 /** Competições do clube do treinador logado (RLS por clube). */
@@ -120,5 +158,65 @@ export async function listAthleteCompetitions(token: string): Promise<AthleteCom
   return ((data ?? []) as AthleteCompetition[]).map((row) => ({
     ...row,
     peso_atual: row.peso_atual === null || row.peso_atual === undefined ? null : Number(row.peso_atual),
+  }));
+}
+
+/** Competições do atleta com o resultado (ou null quando ainda não registrou). */
+export async function listAthleteCompetitionResults(token: string): Promise<AthleteCompetitionResult[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc('athlete_list_competition_results', { p_token: token });
+  if (error) throw new Error(competitionError(error));
+  return ((data ?? []) as Record<string, unknown>[]).map((row) => ({
+    competition_id: String(row.competition_id ?? ''),
+    nome: String(row.nome ?? ''),
+    data: String(row.data ?? ''),
+    data_pesagem: String(row.data_pesagem ?? row.data ?? ''),
+    local: (row.local as string | null | undefined) ?? null,
+    categoria: (row.categoria as string | null | undefined) ?? null,
+    result: normalizeCompetitionResult(row.result),
+  }));
+}
+
+export interface CompetitionResultInput {
+  colocacao: CompetitionPlacement | null;
+  lutas: number | null;
+  vitorias: number | null;
+  derrotas: number | null;
+}
+
+/** O atleta registra ou edita o resultado da própria competição (nunca apaga). */
+export async function saveAthleteCompetitionResult(
+  token: string,
+  competitionId: string,
+  input: CompetitionResultInput
+): Promise<void> {
+  if (!supabase) throw new Error('Supabase não configurado.');
+  const { error } = await supabase.rpc('athlete_save_competition_result', {
+    p_token: token,
+    p_competition_id: competitionId,
+    p_colocacao: input.colocacao,
+    p_lutas: input.lutas,
+    p_vitorias: input.vitorias,
+    p_derrotas: input.derrotas,
+  });
+  if (error) throw new Error(competitionError(error));
+}
+
+/** Resultados de todas as competições do clube (visão da comissão técnica). */
+export async function listCompetitionResultsOverview(): Promise<CompetitionResultOverviewRow[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc('coach_competition_results_overview');
+  if (error) throw new Error(competitionError(error));
+  return ((data ?? []) as Record<string, unknown>[]).map((row) => ({
+    athlete_id: String(row.athlete_id ?? ''),
+    athlete_nome: String(row.athlete_nome ?? ''),
+    competition_id: String(row.competition_id ?? ''),
+    competition_nome: String(row.competition_nome ?? ''),
+    competition_data: String(row.competition_data ?? ''),
+    colocacao: parseCompetitionPlacement(row.colocacao),
+    lutas: integerOrNull(row.lutas),
+    vitorias: integerOrNull(row.vitorias),
+    derrotas: integerOrNull(row.derrotas),
+    updated_at: row.updated_at ? String(row.updated_at) : null,
   }));
 }

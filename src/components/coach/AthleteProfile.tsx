@@ -8,6 +8,7 @@ import { MONOTONY_LIMIT, ZONE_INFO, dailyLoads, format2, formatUA, groupSeries, 
 import { mean } from '../../lib/stats';
 import { brDate, downloadCsv, fileSlug, formatKg, localTime, toCsv } from '../../lib/export';
 import { Avatar } from '../ui/Avatar';
+import { WhoopCard } from './WhoopCard';
 
 type ProfileAthlete = Athlete & { terms_accepted_at?: string | null };
 
@@ -242,6 +243,8 @@ export const AthleteProfile: React.FC<{ athleteId: string; onClose: () => void }
                   }
                 />
               </div>
+
+              <WhoopCard athleteId={athleteId} />
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <DailyStatsChart

@@ -38,6 +38,9 @@ coverage
 # Vercel
 .vercel
 
+# Supabase CLI (estado local do projeto vinculado)
+supabase/.temp
+
 .claude/
 # Dados fictícios gerados para teste
 dados_ficticios/

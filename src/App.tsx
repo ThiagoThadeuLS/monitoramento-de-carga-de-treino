@@ -39,8 +39,10 @@ export function App() {
     setCurrentView(view);
   };
 
+  const path = window.location.pathname.replace(/\/+$/, '') || '/';
+
   // Área Restrita dos donos: endereço próprio, sem o resto do app
-  if (window.location.pathname.replace(/\/+$/, '') === RESTRICTED_PATH) {
+  if (path === RESTRICTED_PATH) {
     return (
       <ClubProvider>
         <Suspense fallback={<Loading />}>
@@ -71,7 +73,12 @@ export function App() {
       </main>
 
       <footer className={`border-t border-slate-900 pt-6 px-4 text-center text-xs text-slate-600 ${currentView === 'athlete' && !clubInviteToken ? 'pb-24' : 'pb-6'}`}>
-        Monitoramento de Carga de Treino • Fisiologia & Preparação Física
+        <p>Monitoramento de Carga de Treino • Fisiologia & Preparação Física</p>
+        <p className="mt-1">
+          <a href="/privacidade" className="hover:text-slate-400 underline underline-offset-2">
+            Política de Privacidade
+          </a>
+        </p>
       </footer>
     </div>
     </ClubProvider>

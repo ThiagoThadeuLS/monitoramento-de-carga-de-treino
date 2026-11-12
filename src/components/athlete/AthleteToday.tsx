@@ -21,6 +21,8 @@ interface Props {
   onAction: (a: TodayAction) => void;
   /** Cartão da próxima competição (fica no alto quando existir) */
   competitionCard?: React.ReactNode;
+  /** Aviso de resultado de competição ainda não registrado */
+  resultCard?: React.ReactNode;
   /** Sequência de dias e avisos de conquista (para compartilhar) */
   highlights?: React.ReactNode;
   /** Treino com PSE enviada: postar foto com a figurinha do treino */
@@ -84,7 +86,7 @@ const Row: React.FC<{
 );
 
 /** Tela "Hoje": o que falta responder e os treinos do dia, numa lista só. */
-export const AthleteToday: React.FC<Props> = ({ home, loading, error, onReload, onAction, competitionCard, highlights, onShareTraining }) => {
+export const AthleteToday: React.FC<Props> = ({ home, loading, error, onReload, onAction, competitionCard, resultCard, highlights, onShareTraining }) => {
   if (!home) {
     return (
       <div className="py-16 flex flex-col items-center gap-3 text-slate-400">
@@ -164,6 +166,7 @@ export const AthleteToday: React.FC<Props> = ({ home, loading, error, onReload, 
   return (
     <div className="space-y-5">
       {competitionCard}
+      {resultCard}
       {highlights}
 
       <section data-tour="athlete-today" className="space-y-2.5">
