@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/privacidade",
+      "destination": "/privacidade.html"
+    },
+    {
       "source": "/((?!src/|@|node_modules/|assets/|.*\\.[a-zA-Z0-9]+$).*)",
       "destination": "/index.html"
     }

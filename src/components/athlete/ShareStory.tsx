@@ -29,6 +29,7 @@ const FILE_NAME: Record<StoryCard['kind'], string> = {
   sequencia: 'minha-sequencia',
   resumo: 'meu-resumo',
   competicao: 'contagem-competicao',
+  resultado: 'meu-resultado',
   selo: 'minha-conquista',
 };
 
@@ -37,8 +38,11 @@ export const ShareStoryProvider: React.FC<{
   /** Pedido de fora (ex.: PSE recém-enviada): abre a foto pós-treino assim que chega */
   trainingRequest?: TrainingStickerData | null;
   onTrainingRequestHandled?: () => void;
+  /** Cartão pedido de dentro de uma tela aberta: só abre depois que ela fecha */
+  storyRequest?: StoryCard | null;
+  onStoryRequestHandled?: () => void;
   children: React.ReactNode;
-}> = ({ person, trainingRequest, onTrainingRequestHandled, children }) => {
+}> = ({ person, trainingRequest, onTrainingRequestHandled, storyRequest, onStoryRequestHandled, children }) => {
   const [opened, setOpened] = useState<Opened | null>(null);
 
   const open = useCallback((next: Opened) => {
@@ -54,6 +58,12 @@ export const ShareStoryProvider: React.FC<{
     openTrainingShare(trainingRequest);
     onTrainingRequestHandled?.();
   }, [trainingRequest, openTrainingShare, onTrainingRequestHandled]);
+
+  useEffect(() => {
+    if (!storyRequest) return;
+    openStory(storyRequest);
+    onStoryRequestHandled?.();
+  }, [storyRequest, openStory, onStoryRequestHandled]);
 
   useEffect(() => {
     if (!opened) return;

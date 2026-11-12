@@ -3200,6 +3200,44 @@
   create trigger competitions_check_audience before insert or update on public.competitions
     for each row execute function public.training_sessions_check_audience();
 
+  -- ------------------------------------------------------------
+  -- 1b. Resultado do atleta em cada competição
+  -- * O atleta registra e edita pelo próprio app; não existe exclusão pelo atleta.
+  -- * Colocação: 1, 2, 3, 5 ou 7. NULL = competiu, mas ficou sem colocação.
+  -- * Lutas/vitórias/derrotas são opcionais, mas sempre as três juntas.
+  -- ------------------------------------------------------------
+  create table if not exists public.competition_results (
+    id uuid primary key default gen_random_uuid(),
+    club_id uuid not null default public.current_club_id() references public.clubs(id) on delete cascade,
+    competition_id uuid not null references public.competitions(id) on delete cascade,
+    athlete_id uuid not null references public.athletes(id) on delete cascade,
+    colocacao integer,
+    lutas integer,
+    vitorias integer,
+    derrotas integer,
+    created_at timestamp with time zone default now() not null,
+    updated_at timestamp with time zone default now() not null,
+    constraint competition_results_competition_athlete_key unique (competition_id, athlete_id),
+    constraint competition_results_colocacao_check check (colocacao is null or colocacao in (1, 2, 3, 5, 7)),
+    constraint competition_results_stats_check check (
+      (lutas is null and vitorias is null and derrotas is null)
+      or (
+        lutas is not null and lutas >= 0
+        and vitorias is not null and vitorias >= 0
+        and derrotas is not null and derrotas >= 0
+        and vitorias + derrotas <= lutas
+      )
+    )
+  );
+
+  create index if not exists competition_results_club_idx on public.competition_results (club_id);
+  create index if not exists competition_results_competition_idx on public.competition_results (competition_id);
+  create index if not exists competition_results_athlete_idx on public.competition_results (athlete_id);
+
+  drop trigger if exists competition_results_touch on public.competition_results;
+  create trigger competition_results_touch before update on public.competition_results
+    for each row execute function public.training_sessions_touch();
+
   -- A competição é para este atleta?
   create or replace function public.competition_applies_to(p_competition public.competitions, p_athlete uuid)
   returns boolean
@@ -3314,6 +3352,173 @@
   $$;
 
   -- ------------------------------------------------------------
+  -- 3b. Atleta: competições passadas + resultado (para registrar/editar)
+  -- ------------------------------------------------------------
+  create or replace function public.athlete_list_competition_results(p_token uuid)
+  returns json
+  language plpgsql
+  stable
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_athlete uuid := public._athlete_ready(p_token);
+    v_club uuid;
+    v_categoria text;
+  begin
+    select a.club_id, a.categoria into v_club, v_categoria
+    from public.athletes a
+    where a.id = v_athlete;
+
+    return coalesce((
+      select json_agg(row_to_json(x) order by x.data desc)
+      from (
+        select c.id as competition_id, c.nome, c.data, c.data_pesagem, c.hora_pesagem, c.local,
+               v_categoria as categoria,
+               case when r.id is null then null else json_build_object(
+                 'id', r.id,
+                 'colocacao', r.colocacao,
+                 'lutas', r.lutas,
+                 'vitorias', r.vitorias,
+                 'derrotas', r.derrotas,
+                 'updated_at', r.updated_at
+               ) end as result
+        from public.competitions c
+        left join public.competition_results r
+          on r.competition_id = c.id
+         and r.athlete_id = v_athlete
+        where c.club_id = v_club
+          and (public.competition_applies_to(c, v_athlete) or r.id is not null)
+      ) x
+    ), '[]'::json);
+  end;
+  $$;
+
+  -- O atleta registra/edita o próprio resultado. Não existe exclusão.
+  create or replace function public.athlete_save_competition_result(
+    p_token uuid,
+    p_competition_id uuid,
+    p_colocacao integer,
+    p_lutas integer default null,
+    p_vitorias integer default null,
+    p_derrotas integer default null
+  )
+  returns void
+  language plpgsql
+  volatile
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_athlete uuid := public._athlete_ready(p_token);
+    v_competition public.competitions;
+    v_club uuid;
+    v_existing boolean;
+  begin
+    select a.club_id into v_club
+    from public.athletes a
+    where a.id = v_athlete;
+
+    select c.* into v_competition
+    from public.competitions c
+    where c.id = p_competition_id
+      and c.club_id = v_club;
+
+    if not found then
+      raise exception 'competicao_nao_encontrada';
+    end if;
+
+    if v_competition.data > public.training_today() then
+      raise exception 'competicao_futura';
+    end if;
+
+    -- Depois da convocação, o público pode mudar: quem já registrou continua podendo editar.
+    select exists (
+      select 1 from public.competition_results r
+      where r.competition_id = p_competition_id
+        and r.athlete_id = v_athlete
+    ) into v_existing;
+
+    if not v_existing and not public.competition_applies_to(v_competition, v_athlete) then
+      raise exception 'nao_autorizado';
+    end if;
+
+    if p_colocacao is not null and p_colocacao not in (1, 2, 3, 5, 7) then
+      raise exception 'colocacao_invalida';
+    end if;
+
+    if (p_lutas is null) <> (p_vitorias is null)
+       or (p_lutas is null) <> (p_derrotas is null) then
+      raise exception 'estatisticas_incompletas';
+    end if;
+
+    if p_lutas is not null
+       and (p_lutas < 0 or p_vitorias < 0 or p_derrotas < 0) then
+      raise exception 'estatisticas_invalidas';
+    end if;
+
+    if p_lutas is not null and p_vitorias + p_derrotas > p_lutas then
+      raise exception 'estatisticas_invalidas';
+    end if;
+
+    insert into public.competition_results (
+      club_id, competition_id, athlete_id, colocacao, lutas, vitorias, derrotas
+    )
+    values (
+      v_club, p_competition_id, v_athlete, p_colocacao, p_lutas, p_vitorias, p_derrotas
+    )
+    on conflict (competition_id, athlete_id) do update
+      set club_id = excluded.club_id,
+          colocacao = excluded.colocacao,
+          lutas = excluded.lutas,
+          vitorias = excluded.vitorias,
+          derrotas = excluded.derrotas;
+  end;
+  $$;
+
+  -- ------------------------------------------------------------
+  -- 3c. Comissão técnica: resultados de todas as competições do clube
+  -- ------------------------------------------------------------
+  create or replace function public.coach_competition_results_overview()
+  returns table (
+    athlete_id uuid,
+    athlete_nome text,
+    competition_id uuid,
+    competition_nome text,
+    competition_data date,
+    colocacao integer,
+    lutas integer,
+    vitorias integer,
+    derrotas integer,
+    updated_at timestamp with time zone
+  )
+  language plpgsql
+  stable
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_club uuid;
+  begin
+    v_club := public.current_club_id();
+
+    if auth.uid() is null or v_club is null then
+      raise exception 'nao_autorizado';
+    end if;
+
+    return query
+      select r.athlete_id, a.nome, r.competition_id, c.nome, c.data,
+             r.colocacao, r.lutas, r.vitorias, r.derrotas, r.updated_at
+      from public.competition_results r
+      join public.competitions c on c.id = r.competition_id
+      join public.athletes a on a.id = r.athlete_id
+      where r.club_id = v_club
+        and c.club_id = v_club
+      order by c.data desc, a.nome;
+  end;
+  $$;
+
+  -- ------------------------------------------------------------
   -- 4. Regras de acesso (clube; escrita bloqueada no modo suporte)
   -- ------------------------------------------------------------
   alter table public.competitions enable row level security;
@@ -3342,6 +3547,16 @@
     for delete to authenticated
     using (club_id = (select public.current_club_id()) and (select public.support_club_id()) is null);
 
+  -- Resultados: a comissão técnica só lê (quem escreve é o atleta, pelas funções com token).
+  alter table public.competition_results enable row level security;
+  revoke all on public.competition_results from anon;
+  grant select on public.competition_results to authenticated;
+
+  drop policy if exists "Resultados de competições: leitura" on public.competition_results;
+  create policy "Resultados de competições: leitura" on public.competition_results
+    for select to authenticated
+    using (club_id = (select public.current_club_id()));
+
   revoke execute on function public.competition_applies_to(public.competitions, uuid) from public, anon;
   grant execute on function public.competition_applies_to(public.competitions, uuid) to authenticated;
 
@@ -3350,6 +3565,15 @@
 
   revoke execute on function public.athlete_list_competitions(uuid) from public;
   grant execute on function public.athlete_list_competitions(uuid) to anon, authenticated;
+
+  revoke execute on function public.athlete_list_competition_results(uuid) from public;
+  grant execute on function public.athlete_list_competition_results(uuid) to anon, authenticated;
+
+  revoke execute on function public.athlete_save_competition_result(uuid, uuid, integer, integer, integer, integer) from public;
+  grant execute on function public.athlete_save_competition_result(uuid, uuid, integer, integer, integer, integer) to anon, authenticated;
+
+  revoke execute on function public.coach_competition_results_overview() from public, anon;
+  grant execute on function public.coach_competition_results_overview() to authenticated;
 
   notify pgrst, 'reload schema';
 
@@ -4708,5 +4932,217 @@
   grant execute on function public.athlete_my_profile(uuid) to anon, authenticated;
   revoke execute on function public.athlete_update_profile(uuid, text, date) from public;
   grant execute on function public.athlete_update_profile(uuid, text, date) to anon, authenticated;
+
+  -- ------------------------------------------------------------
+  -- PARTE 19. WHOOP (CONEXÃO POR ATLETA)
+  -- * Cada atleta conecta a própria conta WHOOP pelo perfil no app (OAuth 2.0).
+  --   Os tokens ficam em public.whoop_connections, que NINGUÉM lê pelo app:
+  --   só a Edge Function "whoop" (chave do servidor) acessa a tabela.
+  -- * A Edge Function busca recuperação, sono e ciclos (strain) e grava um
+  --   resumo por dia em public.whoop_metrics. A comissão técnica lê esses
+  --   números (RLS do clube); o atleta lê os próprios por função com token.
+  -- ------------------------------------------------------------
+
+  create table if not exists public.whoop_connections (
+    athlete_id uuid primary key references public.athletes(id) on delete cascade,
+    whoop_user_id text,
+    whoop_name text,
+    access_token text not null,
+    refresh_token text not null,
+    expires_at timestamp with time zone not null,
+    scope text,
+    last_sync_at timestamp with time zone,
+    last_error text,
+    connected_at timestamp with time zone not null default now()
+  );
+
+  -- Sem políticas de acesso: só a chave do servidor (Edge Function) entra aqui.
+  alter table public.whoop_connections enable row level security;
+  revoke all on public.whoop_connections from anon, authenticated;
+
+  -- Pedido de conexão em andamento: a WHOOP exige um `state` de 8 caracteres e
+  -- ele volta na resposta. Guardado aqui para saber de qual atleta é a volta.
+  create table if not exists public.whoop_pending_states (
+    state text primary key,
+    athlete_id uuid not null references public.athletes(id) on delete cascade,
+    origin text,
+    created_at timestamp with time zone not null default now()
+  );
+
+  alter table public.whoop_pending_states enable row level security;
+  revoke all on public.whoop_pending_states from anon, authenticated;
+
+  create table if not exists public.whoop_metrics (
+    id uuid primary key default gen_random_uuid(),
+    club_id uuid not null references public.clubs(id) on delete cascade,
+    athlete_id uuid not null references public.athletes(id) on delete cascade,
+    date date not null,
+    recovery_score integer check (recovery_score is null or recovery_score between 0 and 100),
+    hrv_ms numeric(6,2),
+    resting_hr integer,
+    spo2 numeric(4,2),
+    skin_temp numeric(4,2),
+    sleep_hours numeric(4,2),
+    sleep_performance integer check (sleep_performance is null or sleep_performance between 0 and 100),
+    sleep_efficiency numeric(5,2),
+    strain numeric(5,2),
+    day_kj numeric(8,1),
+    steps integer,
+    avg_hr integer,
+    max_hr integer,
+    updated_at timestamp with time zone not null default now()
+  );
+
+  create index if not exists whoop_metrics_club_idx on public.whoop_metrics (club_id);
+  create index if not exists whoop_metrics_athlete_idx on public.whoop_metrics (athlete_id, date desc);
+  create unique index if not exists whoop_metrics_um_por_dia on public.whoop_metrics (athlete_id, date);
+
+  -- A comissão técnica só lê (quem grava é a Edge Function, com a chave do servidor).
+  alter table public.whoop_metrics enable row level security;
+  revoke all on public.whoop_metrics from anon;
+  revoke insert, update, delete on public.whoop_metrics from authenticated;
+  grant select on public.whoop_metrics to authenticated;
+
+  -- O clube que enxerga a métrica é o clube ATUAL do atleta (não o clube gravado
+  -- no dia). Assim, se o atleta mudar de clube, o clube antigo deixa de ver os dados.
+  drop policy if exists "Clube: leitura" on public.whoop_metrics;
+  create policy "Clube: leitura" on public.whoop_metrics
+    for select to authenticated using (
+      exists (
+        select 1
+        from public.athletes a
+        where a.id = whoop_metrics.athlete_id
+          and a.club_id = (select public.current_club_id())
+      )
+    );
+
+  -- A Edge Function usa a chave do servidor (service_role) para gravar tokens e números.
+  do $$
+  begin
+    if exists (select 1 from pg_roles where rolname = 'service_role') then
+      execute 'grant all on public.whoop_connections, public.whoop_pending_states, public.whoop_metrics to service_role';
+    end if;
+  end $$;
+
+  -- Situação da conexão + últimos 14 dias de números (a comissão técnica vê).
+  create or replace function public.club_whoop_status(p_athlete_id uuid)
+  returns json
+  language plpgsql
+  stable
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_club uuid := public.current_club_id();
+    v_conn public.whoop_connections;
+  begin
+    if v_club is null then
+      raise exception 'nao_autorizado';
+    end if;
+    if not exists (select 1 from public.athletes a where a.id = p_athlete_id and a.club_id = v_club) then
+      raise exception 'nao_autorizado';
+    end if;
+
+    select * into v_conn from public.whoop_connections c where c.athlete_id = p_athlete_id;
+    if not found then
+      return json_build_object('connected', false, 'days', '[]'::json);
+    end if;
+
+    return json_build_object(
+      'connected', true,
+      'whoop_name', v_conn.whoop_name,
+      'connected_at', v_conn.connected_at,
+      'last_sync_at', v_conn.last_sync_at,
+      'last_error', v_conn.last_error,
+      'days', coalesce((
+        select json_agg(json_build_object(
+                 'date', m.date,
+                 'recovery_score', m.recovery_score,
+                 'hrv_ms', m.hrv_ms,
+                 'resting_hr', m.resting_hr,
+                 'spo2', m.spo2,
+                 'sleep_hours', m.sleep_hours,
+                 'sleep_performance', m.sleep_performance,
+                 'sleep_efficiency', m.sleep_efficiency,
+                 'strain', m.strain,
+                 'day_kj', m.day_kj,
+                 'steps', m.steps,
+                 'avg_hr', m.avg_hr,
+                 'max_hr', m.max_hr
+               ) order by m.date desc)
+        from public.whoop_metrics m
+        where m.athlete_id = p_athlete_id
+          and m.date >= public.training_today() - 13
+      ), '[]'::json)
+    );
+  end;
+  $$;
+
+  -- O atleta vê a própria conexão e os próprios números (o banco acha quem é pelo token).
+  create or replace function public.athlete_whoop(p_token uuid)
+  returns json
+  language plpgsql
+  stable
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_me uuid := public._athlete_ready(p_token);
+    v_conn public.whoop_connections;
+  begin
+    select * into v_conn from public.whoop_connections c where c.athlete_id = v_me;
+    if not found then
+      return json_build_object('connected', false, 'days', '[]'::json);
+    end if;
+
+    return json_build_object(
+      'connected', true,
+      'whoop_name', v_conn.whoop_name,
+      'connected_at', v_conn.connected_at,
+      'last_sync_at', v_conn.last_sync_at,
+      'last_error', v_conn.last_error,
+      'days', coalesce((
+        select json_agg(json_build_object(
+                 'date', m.date,
+                 'recovery_score', m.recovery_score,
+                 'hrv_ms', m.hrv_ms,
+                 'resting_hr', m.resting_hr,
+                 'sleep_hours', m.sleep_hours,
+                 'sleep_performance', m.sleep_performance,
+                 'strain', m.strain,
+                 'day_kj', m.day_kj,
+                 'steps', m.steps
+               ) order by m.date desc)
+        from public.whoop_metrics m
+        where m.athlete_id = v_me
+          and m.date >= public.training_today() - 13
+      ), '[]'::json)
+    );
+  end;
+  $$;
+
+  revoke execute on function public.club_whoop_status(uuid) from public;
+  grant execute on function public.club_whoop_status(uuid) to authenticated;
+  revoke execute on function public.athlete_whoop(uuid) from public;
+  grant execute on function public.athlete_whoop(uuid) to anon, authenticated;
+
+  -- Sincronização diária (OPCIONAL). Sem isso, os dados só são relidos quando o
+  -- atleta/treinador toca em "Atualizar/Sincronizar". Passo a passo, depois de
+  -- publicar a função e criar o segredo CRON_SECRET em Edge Functions -> Secrets
+  -- (o MESMO texto nos dois lugares):
+  --
+  --   select vault.create_secret('<texto-aleatorio-longo>', 'cron_whoop');
+  --   select cron.unschedule('sincronizar-whoop');
+  --   select cron.schedule('sincronizar-whoop', '0 9 * * *', $job$
+  --     select net.http_post(
+  --       url := 'https://<ref>.supabase.co/functions/v1/whoop',
+  --       headers := jsonb_build_object(
+  --         'Content-Type', 'application/json',
+  --         'x-cron-secret', (select decrypted_secret from vault.decrypted_secrets where name = 'cron_whoop')),
+  --       body := '{"action":"sync_all"}'::jsonb
+  --     ) $job$);
+  --
+  -- 09:00 UTC = 06:00 em Brasília. Requer as extensões pg_cron e pg_net.
+  -- Para parar: select cron.unschedule('sincronizar-whoop');
 
   notify pgrst, 'reload schema';

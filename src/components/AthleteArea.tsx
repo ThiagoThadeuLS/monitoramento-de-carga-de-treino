@@ -17,10 +17,16 @@ import { AthleteLogin } from './AthleteLogin';
 import { AthleteChangePassword } from './AthleteChangePassword';
 import { AthleteToday, TodayAction, sessionMinutes } from './athlete/AthleteToday';
 import { AthleteCompetitionList } from './athlete/AthleteCompetitionList';
+import { AthleteCompetitionResults } from './athlete/AthleteCompetitionResults';
+import { AthletePendingResultCard } from './athlete/AthletePendingResultCard';
+import { CompetitionResultDialog } from './athlete/CompetitionResultDialog';
+import { useAthleteCompetitionResults } from './athlete/useAthleteCompetitionResults';
 import { PhotoPicker } from './ui/PhotoPicker';
 import { ShareStoryProvider } from './athlete/ShareStory';
 import { AchievementsPanel, AchievementsStrip, useAthleteAchievements } from './athlete/AthleteAchievements';
-import type { StoryPerson } from '../lib/storyCard';
+import type { StoryCard, StoryPerson } from '../lib/storyCard';
+import type { AthleteCompetitionResult } from '../lib/competitions';
+import { pendingCompetitionResults } from '../lib/competitions';
 import type { TrainingStickerData } from '../lib/trainingSticker';
 import { PseRecord, PsrRecord, WeightRecord } from '../types';
 import { isSupabaseConfigured } from '../lib/supabase';
@@ -72,9 +78,27 @@ type Overlay =
   | { kind: 'peso' }
   | { kind: 'pse'; trainingType?: string; duration?: number; sessionId?: string }
   | { kind: 'treino'; id: string; name: string }
+  | { kind: 'resultado'; competition: AthleteCompetitionResult }
   | null;
 
 const hm = (t?: string | null) => (t ? t.slice(0, 5) : '');
+
+/** Mensagem da volta do OAuth da WHOOP (/?whoop=...&motivo=...). */
+function whoopMessage(whoop: string, motivo: string | null): string {
+  if (whoop === 'conectado') return 'WHOOP conectado! Os dados aparecem aqui no Perfil.';
+  switch (motivo) {
+    case 'acesso_negado':
+      return 'Você não autorizou o acesso na WHOOP. Nada foi alterado; pode conectar quando quiser.';
+    case 'estado_invalido':
+      return 'A conexão expirou antes de terminar. Toque em "Conectar meu WHOOP" de novo.';
+    case 'sem_refresh':
+      return 'A WHOOP não liberou o acesso contínuo. Tente conectar novamente.';
+    case 'sem_configuracao':
+      return 'A conexão com a WHOOP ainda não foi ativada no servidor. Avise a comissão técnica.';
+    default:
+      return 'Não foi possível conectar o WHOOP. Tente de novo pelo Perfil.';
+  }
+}
 
 /** Dados da figurinha do pós-treino: o treino respondido (se houver) e a PSE enviada */
 function trainingStickerInfo(
@@ -136,6 +160,27 @@ export const AthleteArea: React.FC = () => {
   useEffect(() => {
     setVisited((cur) => (cur.has(currentView) ? cur : new Set(cur).add(currentView)));
   }, [currentView]);
+
+  // Abre o Perfil a partir do efeito abaixo sem recriar o efeito a cada render
+  const goPerfil = useRef(setView);
+  goPerfil.current = setView;
+
+  // Volta do "Conectar WHOOP" (/?whoop=conectado): avisa e abre o Perfil.
+  // Só depois de a sessão carregar, para o atleta não cair na tela de login
+  // com a mensagem já gasta.
+  useEffect(() => {
+    if (!session) return;
+    const params = new URLSearchParams(window.location.search);
+    const whoop = params.get('whoop');
+    if (!whoop) return;
+    const motivo = params.get('motivo');
+    notify(whoopMessage(whoop, motivo), whoop === 'conectado' ? 'success' : 'error');
+    goPerfil.current('perfil');
+    params.delete('whoop');
+    params.delete('motivo');
+    const qs = params.toString();
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}${qs ? `?${qs}` : ''}`);
+  }, [notify, session]);
 
   // Fechar a tela aberta: volta no histórico quantos passos ela abriu (o "voltar" do celular
   // volta um de cada vez). Ex.: ficha do treino -> PSE = 2 passos.
@@ -262,9 +307,22 @@ export const AthleteArea: React.FC = () => {
 
   // Conquistas (sequência, selos e resumos): recarregam junto com a tela Hoje
   const achievements = useAthleteAchievements(readyToken, homeVersion);
+  // Competições passadas + resultado: alimentam o aviso do Hoje, a Agenda e o selo da aba
+  const competitionResults = useAthleteCompetitionResults(readyToken, homeVersion);
+  const pendingResultToday = useMemo(
+    () => pendingCompetitionResults(competitionResults.rows, today),
+    [competitionResults.rows, today]
+  );
+  const pendingResultCount = useMemo(
+    () => competitionResults.rows.filter((row) => !row.result && row.data <= today).length,
+    [competitionResults.rows, today]
+  );
   // Foto pós-treino com a figurinha: pedida ao enviar a PSE ou pelo botão "Postar" do treino
   const [pendingTraining, setPendingTraining] = useState<TrainingStickerData | null>(null);
   const clearPendingTraining = useCallback(() => setPendingTraining(null), []);
+  // Cartão de resultado pedido dentro da tela de registro: abre depois que ela fecha
+  const [pendingStory, setPendingStory] = useState<StoryCard | null>(null);
+  const clearPendingStory = useCallback(() => setPendingStory(null), []);
   // Quem aparece nos cartões para compartilhar (foto, nome, categoria e clube)
   const storyPerson = useMemo<StoryPerson>(
     () => ({
@@ -511,6 +569,8 @@ export const AthleteArea: React.FC = () => {
       ? 'Peso'
       : overlay?.kind === 'pse'
       ? 'PSE (esforço do treino)'
+      : overlay?.kind === 'resultado'
+      ? 'Resultado da competição'
       : '';
 
   const renderOverlay = () => {
@@ -553,6 +613,18 @@ export const AthleteArea: React.FC = () => {
           {overlay.kind === 'peso' && (
             <WeightForm athleteId={athlete.id} athleteName={displayName} lastWeight={home?.lastWeight?.weight ?? null} onSubmit={handleWeightSubmit} />
           )}
+          {overlay.kind === 'resultado' && (
+            <CompetitionResultDialog
+              token={token}
+              competition={overlay.competition}
+              onClose={closeOverlay}
+              onSaved={competitionResults.reload}
+              onShare={(card) => {
+                setPendingStory(card);
+                closeOverlay();
+              }}
+            />
+          )}
         </div>
       </div>
     );
@@ -571,6 +643,9 @@ export const AthleteArea: React.FC = () => {
       // Só abre depois que a tela da PSE fechou (o "voltar" do celular continua certo)
       trainingRequest={overlay ? null : pendingTraining}
       onTrainingRequestHandled={clearPendingTraining}
+      // Resultado salvo na tela de registro: o cartão abre depois que ela fecha
+      storyRequest={overlay ? null : pendingStory}
+      onStoryRequestHandled={clearPendingStory}
     >
     <div className="max-w-2xl mx-auto px-4 pt-6 pb-28 space-y-5">
       {tutorial && (
@@ -650,6 +725,12 @@ export const AthleteArea: React.FC = () => {
             onReload={reloadHome}
             onAction={onTodayAction}
             highlights={<AchievementsStrip view={achievements} athleteId={athlete.id} />}
+            resultCard={
+              <AthletePendingResultCard
+                pending={pendingResultToday}
+                onRegister={(competition) => openOverlay({ kind: 'resultado', competition })}
+              />
+            }
             onShareTraining={(s, p) => setPendingTraining(trainingStickerInfo(p, s))}
             competitionCard={
               <Suspense fallback={null}>
@@ -669,6 +750,11 @@ export const AthleteArea: React.FC = () => {
           'agenda',
           <div data-tour="athlete-schedule" className="space-y-4">
             <AthleteCompetitionList token={token} today={today} />
+            <AthleteCompetitionResults
+              rows={competitionResults.rows}
+              today={today}
+              onRegister={(competition) => openOverlay({ kind: 'resultado', competition })}
+            />
             <TrainingSchedule
               readOnly
               listOnly
@@ -757,7 +843,17 @@ export const AthleteArea: React.FC = () => {
                 }`}
                 aria-current={active ? 'page' : undefined}
               >
-                <Icon className="w-5 h-5" />
+                <span className="relative">
+                  <Icon className="w-5 h-5" />
+                  {id === 'agenda' && pendingResultCount > 0 && (
+                    <span
+                      className="absolute -top-1.5 -right-2 min-w-[15px] h-[15px] px-1 rounded-full bg-amber-400 text-slate-950 text-[9px] font-black flex items-center justify-center"
+                      title={`${pendingResultCount} resultado${pendingResultCount === 1 ? '' : 's'} para registrar`}
+                    >
+                      {pendingResultCount > 9 ? '9+' : pendingResultCount}
+                    </span>
+                  )}
+                </span>
                 {label}
               </button>
             );

@@ -3,6 +3,7 @@
 // plataforma no rodapé. A imagem só sai do aparelho se o atleta escolher onde postar.
 // Este arquivo é baixado só na hora de compartilhar (import dinâmico).
 import type { Badge, PeriodSummary } from './achievements';
+import type { CompetitionPlacement } from './competitionResults';
 import { todayISO } from './date';
 
 export type StoryCard =
@@ -10,6 +11,17 @@ export type StoryCard =
   | { kind: 'sequencia'; dias: number }
   | { kind: 'resumo'; resumo: PeriodSummary }
   | { kind: 'competicao'; nome: string; data: string; dias: number; local?: string | null; categoria?: string | null }
+  | {
+      kind: 'resultado';
+      nome: string;
+      data: string;
+      local?: string | null;
+      categoria?: string | null;
+      colocacao: CompetitionPlacement;
+      lutas?: number | null;
+      vitorias?: number | null;
+      derrotas?: number | null;
+    }
   | { kind: 'selo'; selo: Pick<Badge, 'emoji' | 'title' | 'description' | 'unlockedAt'> };
 
 export interface StoryPerson {
@@ -294,8 +306,8 @@ function gridRow(ctx: Ctx, stats: Stat[], colors: StoryColors): Row {
   };
 }
 
-function medalRow(ctx: Ctx, emoji: string, colors: StoryColors): Row {
-  const r = 170;
+function medalRow(ctx: Ctx, emoji: string, colors: StoryColors, radius = 170): Row {
+  const r = radius;
   return {
     h: 2 * r + 40,
     draw: (top) => {
@@ -403,6 +415,36 @@ function heroRows(ctx: Ctx, card: StoryCard, c: StoryColors): Row[] {
         numberRow(ctx, String(card.dias), '', 300, c),
         textRow(ctx, card.dias === 1 ? 'DIA' : 'DIAS', 76, 900, c.accentSoft),
         ...tail,
+      ];
+    }
+    case 'resultado': {
+      const emoji = card.colocacao === 1 ? '🥇' : card.colocacao === 2 ? '🥈' : card.colocacao === 3 ? '🥉' : '🏅';
+      const title =
+        card.colocacao === 1 ? 'CAMPEÃO' : card.colocacao === 2 ? 'VICE-CAMPEÃO' : `${card.colocacao}º LUGAR`;
+      const meta = [br(card.data), card.local].filter(Boolean).join(' · ');
+      const cat = categoryLabel(card.categoria);
+      const fights =
+        card.lutas !== null && card.lutas !== undefined
+          ? `${card.lutas} luta${card.lutas === 1 ? '' : 's'}` +
+            (card.vitorias !== null && card.vitorias !== undefined
+              ? ` • ${card.vitorias} vitória${card.vitorias === 1 ? '' : 's'}`
+              : '') +
+            (card.derrotas !== null && card.derrotas !== undefined
+              ? ` • ${card.derrotas} derrota${card.derrotas === 1 ? '' : 's'}`
+              : '')
+          : '';
+      return [
+        label('MEU RESULTADO'),
+        spacer(20),
+        medalRow(ctx, emoji, c, 145),
+        spacer(16),
+        textRow(ctx, title, 92, 900, WHITE),
+        spacer(16),
+        textRow(ctx, card.nome, 58, 900, WHITE, 2),
+        spacer(8),
+        textRow(ctx, meta, 36, 600, c.muted, 2),
+        ...(cat ? [spacer(16), pillRow(ctx, `Categoria ${cat}`, rgba(c.accent, 0.2), c.accentSoft, 34)] : []),
+        ...(fights ? [spacer(14), textRow(ctx, fights, 36, 700, c.accentSoft, 2)] : []),
       ];
     }
     case 'selo':

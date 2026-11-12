@@ -9,3 +9,8 @@ verify_jwt = false
 # app). A função confere a sessão dele no banco antes de gravar a foto.
 [functions.foto-atleta]
 verify_jwt = false
+
+# WHOOP: o atleta conecta pelo token do app (não tem login Supabase) e a volta do
+# OAuth chega sem token. A função confere quem é pelo banco e pelos segredos da WHOOP.
+[functions.whoop]
+verify_jwt = false
