@@ -119,6 +119,17 @@ export function AdversaryManagement({ readOnly = false, athleteToken }: { readOn
     }
   }
 
+  async function updateObservation(obsId: string, texto: string) {
+    try {
+      await data.updateObservation(obsId, texto);
+      notify('Observação atualizada.', 'success');
+      return true;
+    } catch (err) {
+      notify(errMsg(err, 'Não foi possível editar a observação.'), 'error');
+      return false;
+    }
+  }
+
   async function deleteObservation(obsId: string) {
     if (!(await confirm({ message: 'Excluir esta observação?', danger: true }))) return;
     try {
@@ -308,6 +319,7 @@ export function AdversaryManagement({ readOnly = false, athleteToken }: { readOn
           onDelete={() => remove(open)}
           onToggleHidden={() => toggleHidden(open)}
           onAddObservation={(texto) => addObservation(open.id, texto)}
+          onUpdateObservation={updateObservation}
           onDeleteObservation={deleteObservation}
         />
       )}

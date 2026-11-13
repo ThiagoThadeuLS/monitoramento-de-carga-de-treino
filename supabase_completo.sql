@@ -2824,6 +2824,8 @@
   alter table public.adversario_observacoes add column if not exists autor_tipo text;
   alter table public.adversario_observacoes add column if not exists texto text;
   alter table public.adversario_observacoes add column if not exists created_at timestamp with time zone default now();
+  -- Quando o autor corrigiu o texto (null = nunca editado)
+  alter table public.adversario_observacoes add column if not exists editado_em timestamp with time zone;
   create index if not exists adversario_observacoes_adversario_idx on public.adversario_observacoes (adversario_id);
 
   -- Apagar a ficha apaga as observações dela
@@ -2855,7 +2857,7 @@
   -- Remove regras antigas criadas pelo painel (podiam liberar acesso anônimo).
   alter table public.adversario_observacoes enable row level security;
   revoke all on public.adversario_observacoes from anon;
-  grant select, insert, delete on public.adversario_observacoes to authenticated;
+  grant select, insert, update, delete on public.adversario_observacoes to authenticated;
   do $$
   declare
     p record;
@@ -2900,6 +2902,18 @@
     for delete to authenticated
     using (
       autor_tipo = 'tecnico' and autor_id::text = (select auth.uid())::text and (select public.support_club_id()) is null
+      and exists (select 1 from public.adversarios a where a.id = adversario_id and a.club_id = (select public.current_club_id()))
+    );
+
+  -- O treinador corrige o texto da própria observação (mesma regra de quem apaga)
+  create policy "Observações: autor edita" on public.adversario_observacoes
+    for update to authenticated
+    using (
+      autor_tipo = 'tecnico' and autor_id::text = (select auth.uid())::text and (select public.support_club_id()) is null
+      and exists (select 1 from public.adversarios a where a.id = adversario_id and a.club_id = (select public.current_club_id()))
+    )
+    with check (
+      autor_tipo = 'tecnico' and autor_id::text = (select auth.uid())::text
       and exists (select 1 from public.adversarios a where a.id = adversario_id and a.club_id = (select public.current_club_id()))
     );
 
@@ -2999,7 +3013,7 @@
       'observacoes', coalesce((
         select json_agg(x order by x.created_at desc)
         from (
-          select o.id, o.adversario_id, o.autor_id, o.autor_tipo, o.texto, o.created_at
+          select o.id, o.adversario_id, o.autor_id, o.autor_tipo, o.texto, o.created_at, o.editado_em
           from public.adversario_observacoes o
           join public.adversarios a on a.id = o.adversario_id
           where public._athlete_sees_adversario(v_me, o.adversario_id)
@@ -3119,6 +3133,32 @@
   end;
   $$;
 
+  -- O atleta corrige o texto da própria observação
+  create or replace function public.athlete_update_observacao(p_token uuid, p_id uuid, p_texto text)
+  returns void
+  language plpgsql
+  volatile
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_me uuid := public._athlete_ready(p_token);
+  begin
+    if length(trim(coalesce(p_texto, ''))) = 0 then
+      raise exception 'observacao_vazia';
+    end if;
+    if length(trim(p_texto)) > 2000 then
+      raise exception 'observacao_longa';
+    end if;
+    update public.adversario_observacoes o
+    set texto = trim(p_texto), editado_em = now()
+    where o.id = p_id and o.autor_tipo = 'atleta' and o.autor_id::text = v_me::text;
+    if not found then
+      raise exception 'registro_nao_encontrado';
+    end if;
+  end;
+  $$;
+
   -- "Apagar para mim" (p_oculto = true) ou mostrar de novo (false)
   create or replace function public.athlete_set_adversario_oculto(p_token uuid, p_id uuid, p_oculto boolean)
   returns void
@@ -3151,6 +3191,8 @@
   revoke execute on function public.athlete_delete_adversario(uuid, uuid) from public;
   revoke execute on function public.athlete_add_observacao(uuid, uuid, text) from public;
   revoke execute on function public.athlete_delete_observacao(uuid, uuid) from public;
+  revoke execute on function public.athlete_update_observacao(uuid, uuid, text) from public;
+  grant execute on function public.athlete_update_observacao(uuid, uuid, text) to anon, authenticated;
   grant execute on function public.athlete_list_adversarios(uuid) to anon, authenticated;
   grant execute on function public.athlete_save_adversario(uuid, uuid, text, text, text, text, text, text) to anon, authenticated;
   grant execute on function public.athlete_delete_adversario(uuid, uuid) to anon, authenticated;
@@ -3190,6 +3232,18 @@
   alter table public.competitions drop constraint if exists competitions_audience_check;
   alter table public.competitions
     add constraint competitions_audience_check check (audience in ('todos', 'incluir', 'exceto', 'ninguem'));
+
+  -- Treinamento de campo: mesmo cadastro e mesmo público, sem pesagem, com início (data) e fim (data_fim).
+  -- As competições já cadastradas continuam como 'competicao' (todas têm pesagem).
+  alter table public.competitions add column if not exists tipo text not null default 'competicao';
+  alter table public.competitions add column if not exists data_fim date;
+  alter table public.competitions alter column data_pesagem drop not null;
+  alter table public.competitions drop constraint if exists competitions_tipo_check;
+  alter table public.competitions
+    add constraint competitions_tipo_check check (
+      (tipo = 'competicao' and data_pesagem is not null and data_fim is null)
+      or (tipo = 'campo' and data_pesagem is null and hora_pesagem is null and (data_fim is null or data_fim >= data))
+    );
 
   drop trigger if exists competitions_touch on public.competitions;
   create trigger competitions_touch before update on public.competitions
@@ -3329,9 +3383,9 @@
     where a.id = v_athlete;
 
     return coalesce((
-      select json_agg(row_to_json(x) order by x.data_pesagem, x.data)
+      select json_agg(row_to_json(x) order by coalesce(x.data_pesagem, x.data), x.data)
       from (
-        select c.id, c.nome, c.data, c.data_pesagem, c.hora_pesagem, c.local, c.observacoes,
+        select c.id, c.nome, c.tipo, c.data, c.data_fim, c.data_pesagem, c.hora_pesagem, c.local, c.observacoes,
                v_categoria as categoria,
                w.weight as peso_atual,
                w.date as peso_data
@@ -3344,7 +3398,7 @@
           limit 1
         ) w on true
         where c.club_id = v_club
-          and c.data >= public.training_today() - 7
+          and coalesce(c.data_fim, c.data) >= public.training_today() - 7
           and public.competition_applies_to(c, v_athlete)
       ) x
     ), '[]'::json);
@@ -3388,6 +3442,7 @@
           on r.competition_id = c.id
          and r.athlete_id = v_athlete
         where c.club_id = v_club
+          and c.tipo = 'competicao' -- treinamento de campo não tem resultado
           and (public.competition_applies_to(c, v_athlete) or r.id is not null)
       ) x
     ), '[]'::json);
@@ -3422,7 +3477,8 @@
     select c.* into v_competition
     from public.competitions c
     where c.id = p_competition_id
-      and c.club_id = v_club;
+      and c.club_id = v_club
+      and c.tipo = 'competicao';
 
     if not found then
       raise exception 'competicao_nao_encontrada';

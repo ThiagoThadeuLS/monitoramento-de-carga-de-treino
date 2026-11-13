@@ -228,8 +228,46 @@ export function drawTrainingSticker(
   }
 
   // Rodapé: marca da plataforma
+  drawFooter(ctx, y, text, muted, assets, brand);
+}
+
+// ---------- Figurinha da medalha (foto com a medalha depois da competição) ----------
+
+/** Resultado da competição (mesmos dados do cartão de Stories "resultado"). */
+export interface MedalStickerData {
+  kind: 'resultado';
+  nome: string;
+  data: string;
+  local?: string | null;
+  categoria?: string | null;
+  colocacao: 1 | 2 | 3 | 5 | 7;
+  lutas?: number | null;
+  vitorias?: number | null;
+  derrotas?: number | null;
+}
+
+/** O que vai por cima da foto: o treino (PSE) ou a medalha da competição */
+export type PhotoStickerInfo = TrainingStickerData | MedalStickerData;
+
+export const isMedalSticker = (info: PhotoStickerInfo): info is MedalStickerData => 'kind' in info && info.kind === 'resultado';
+
+/** A medalha tem lutas/vitórias para mostrar ou esconder? */
+export const medalHasFights = (info: MedalStickerData) => info.lutas !== null && info.lutas !== undefined;
+
+const MEDAL_H = 300;
+const MEDAL_COLOR: Record<MedalStickerData['colocacao'], string> = { 1: '#facc15', 2: '#e2e8f0', 3: '#d97706', 5: '#38bdf8', 7: '#38bdf8' };
+const MEDAL_TITLE: Record<MedalStickerData['colocacao'], string> = { 1: 'CAMPEÃO', 2: 'VICE-CAMPEÃO', 3: '3º LUGAR', 5: '5º LUGAR', 7: '7º LUGAR' };
+
+export function medalStickerHeight(): number {
+  return P + HEADER_H + MEDAL_H + FOOTER_H;
+}
+
+const brDate = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
+
+/** Rodapé com o ícone e o nome da plataforma (igual nas duas figurinhas) */
+function drawFooter(ctx: CanvasRenderingContext2D, y: number, text: string, muted: string, assets: StickerAssets, brand: string) {
   ctx.fillStyle = rgba(text, 0.14);
-  ctx.fillRect(P, y - 10, W - 2 * P, 3);
+  ctx.fillRect(P, y - 10, STICKER_W - 2 * P, 3);
   let fx = P;
   if (assets.logo) {
     ctx.save();
@@ -243,6 +281,115 @@ export function drawTrainingSticker(
   ctx.fillStyle = muted;
   ctx.textAlign = 'left';
   ctx.fillText(`feito com ${brand}`, fx, y + 44);
+}
+
+/** Desenha a figurinha da medalha na origem do ctx (STICKER_W × medalStickerHeight). */
+export function drawMedalSticker(
+  ctx: CanvasRenderingContext2D,
+  info: MedalStickerData,
+  style: StickerStyle,
+  assets: StickerAssets,
+  colors: StoryColors,
+  brand: string
+) {
+  const W = STICKER_W;
+  const H = medalStickerHeight();
+  const dark = style.estilo === 'escuro';
+  const text = dark ? '#ffffff' : '#0f172a';
+  const muted = dark ? colors.muted : '#475569';
+  const medal = MEDAL_COLOR[info.colocacao];
+  const podio = info.colocacao <= 3;
+
+  roundRect(ctx, 2, 2, W - 4, H - 4, 52);
+  ctx.fillStyle = dark ? rgba(colors.base, 0.84) : rgba('#ffffff', 0.95);
+  ctx.fill();
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = rgba(medal, dark ? 0.75 : 0.9);
+  ctx.stroke();
+
+  // Cabeçalho: escudo, "PÓDIO"/"RESULTADO", nome da competição, data e local
+  let y = P;
+  let tx = P;
+  if (assets.escudo) {
+    containImage(ctx, assets.escudo, P, y + 6, 96, 110);
+    tx = P + 124;
+  }
+  const tw = W - P - tx;
+  setFont(ctx, 26, 900);
+  ctx.textAlign = 'left';
+  ctx.fillStyle = dark ? colors.accentSoft : colors.accent;
+  ctx.fillText(podio ? 'PÓDIO' : 'RESULTADO', tx, y + 30);
+  fitFont(ctx, info.nome, tw, 56, 32, 900);
+  ctx.fillStyle = text;
+  ctx.fillText(info.nome, tx, y + 96);
+  const sub = [brDate(info.data), info.local].filter(Boolean).join(' · ');
+  fitFont(ctx, sub, tw, 32, 22, 600);
+  ctx.fillStyle = muted;
+  ctx.fillText(sub, tx, y + 146);
+  y += HEADER_H;
+  ctx.fillStyle = rgba(text, 0.14);
+  ctx.fillRect(P, y - 26, W - 2 * P, 3);
+
+  // Medalha: fita em V e o disco com a colocação
+  const r = 104;
+  const mx = P + r + 6;
+  const my = y + 150;
+  ctx.fillStyle = rgba(colors.accent, 0.9);
+  ctx.beginPath();
+  ctx.moveTo(mx - 78, y - 6);
+  ctx.lineTo(mx - 30, y - 6);
+  ctx.lineTo(mx + 6, my - r + 20);
+  ctx.lineTo(mx - 34, my - r + 26);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = rgba(colors.accent, 0.65);
+  ctx.beginPath();
+  ctx.moveTo(mx + 78, y - 6);
+  ctx.lineTo(mx + 30, y - 6);
+  ctx.lineTo(mx - 6, my - r + 20);
+  ctx.lineTo(mx + 34, my - r + 26);
+  ctx.closePath();
+  ctx.fill();
+  const grad = ctx.createRadialGradient(mx - 30, my - 34, 10, mx, my, r);
+  grad.addColorStop(0, '#ffffff');
+  grad.addColorStop(0.35, medal);
+  grad.addColorStop(1, rgba(medal, 0.75));
+  ctx.beginPath();
+  ctx.arc(mx, my, r, 0, Math.PI * 2);
+  ctx.fillStyle = grad;
+  ctx.fill();
+  ctx.lineWidth = 6;
+  ctx.strokeStyle = rgba('#000000', 0.18);
+  ctx.beginPath();
+  ctx.arc(mx, my, r - 16, 0, Math.PI * 2);
+  ctx.stroke();
+  setFont(ctx, 96, 900);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#0f172a';
+  ctx.fillText(`${info.colocacao}º`, mx + 4, my + 34);
+
+  // Título, categoria e lutas
+  const rx = mx + r + 40;
+  const rw = W - P - rx;
+  ctx.textAlign = 'left';
+  fitFont(ctx, MEDAL_TITLE[info.colocacao], rw, 70, 34, 900);
+  ctx.fillStyle = dark || info.colocacao !== 2 ? medal : '#64748b';
+  ctx.fillText(MEDAL_TITLE[info.colocacao], rx, y + 118);
+  if (info.categoria) {
+    fitFont(ctx, `Categoria ${info.categoria}`, rw, 34, 22, 700);
+    ctx.fillStyle = text;
+    ctx.fillText(`Categoria ${info.categoria}`, rx, y + 172);
+  }
+  if (style.notas && medalHasFights(info)) {
+    const lutas = info.lutas ?? 0;
+    const fights = `${lutas} luta${lutas === 1 ? '' : 's'} · ${info.vitorias ?? 0}V · ${info.derrotas ?? 0}D`;
+    fitFont(ctx, fights, rw, 32, 20, 600);
+    ctx.fillStyle = muted;
+    ctx.fillText(fights, rx, y + 220);
+  }
+  y += MEDAL_H;
+
+  drawFooter(ctx, y, text, muted, assets, brand);
 }
 
 /** Desenha o Story final: foto cobrindo a tela e a figurinha por cima, com sombra suave. */
@@ -270,13 +417,15 @@ export async function loadStickerAssets(escudo?: string | null): Promise<Sticker
   return { escudo: e, logo };
 }
 
-export function renderSticker(info: TrainingStickerData, style: StickerStyle, assets: StickerAssets, brand: string): HTMLCanvasElement {
+export function renderSticker(info: PhotoStickerInfo, style: StickerStyle, assets: StickerAssets, brand: string): HTMLCanvasElement {
+  const medal = isMedalSticker(info);
   const canvas = document.createElement('canvas');
   canvas.width = STICKER_W;
-  canvas.height = stickerHeight(style);
+  canvas.height = medal ? medalStickerHeight() : stickerHeight(style);
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Não foi possível montar a figurinha.');
-  drawTrainingSticker(ctx, info, style, assets, readStoryColors(), brand);
+  if (medal) drawMedalSticker(ctx, info, style, assets, readStoryColors(), brand);
+  else drawTrainingSticker(ctx, info, style, assets, readStoryColors(), brand);
   return canvas;
 }
 

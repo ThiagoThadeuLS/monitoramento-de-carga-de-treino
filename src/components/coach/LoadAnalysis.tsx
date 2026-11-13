@@ -1,24 +1,25 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Gauge, RefreshCw, Loader2, AlertCircle, Download, Info, ChevronRight, ChevronDown, TriangleAlert, Timer } from 'lucide-react';
+import { Gauge, Loader2, AlertCircle, Info, ChevronRight, ChevronDown, TriangleAlert, Timer } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { addDaysISO, todayISO } from '../../lib/date';
 import { PseRecord } from '../../types';
 import { useClubGroups } from '../../lib/groups';
 import { fetchClubAthletes } from '../../lib/athletes';
 import { useClub } from '../../lib/club';
-import { AthleteSelection, EMPTY_SELECTION, GroupFilter, resolveSelection, selectionLabel } from './GroupFilter';
+import { resolveSelection, selectionLabel } from './GroupFilter';
+import { AnalysisFilterValue } from './AnalysisFilter';
 import { DailyStatsChart } from './DailyStatsChart';
 import { MONOTONY_LIMIT, ZONE_INFO, dailyLoads, format2, formatUA, groupSeries, loadMetrics, sessionLoad } from '../../lib/load';
 import { brDate, downloadCsv, fileSlug, toCsv } from '../../lib/export';
 
-interface AthleteRow {
+export interface AthleteRow {
   id: string;
   nome: string;
   active: boolean;
 }
 
 /** Busca paginada (o Supabase devolve no máximo 1000 linhas por vez). */
-async function fetchPse(from: string, to: string): Promise<PseRecord[]> {
+export async function fetchPse(from: string, to: string): Promise<PseRecord[]> {
   const rows: PseRecord[] = [];
   for (let page = 0; ; page++) {
     const { data, error } = await supabase!
@@ -37,14 +38,48 @@ async function fetchPse(from: string, to: string): Promise<PseRecord[]> {
 
 type SortKey = 'acwr' | 'acute' | 'monotony' | 'nome';
 
+/** Carga de cada atleta até o dia `ref` (aguda, crônica, ACWR, monotonia, strain), já ordenada. */
+export function buildLoadRows(people: AthleteRow[], pse: PseRecord[], ref: string, sort: SortKey = 'acwr') {
+  const perAthlete = dailyLoads(pse);
+  const weekStart = addDaysISO(ref, -6);
+  const weekSessions = new Map<string, number>();
+  for (const r of pse) {
+    if (r.date >= weekStart && r.date <= ref && sessionLoad(r) !== null) {
+      weekSessions.set(r.athlete_id, (weekSessions.get(r.athlete_id) ?? 0) + 1);
+    }
+  }
+  const list = people.map((a) => ({ ...a, m: loadMetrics(perAthlete.get(a.id), ref, weekSessions.get(a.id) ?? 0) }));
+  const val = (r: (typeof list)[number]) =>
+    sort === 'acwr' ? r.m.acwr ?? -1 : sort === 'acute' ? r.m.acute : sort === 'monotony' ? r.m.monotony ?? -1 : 0;
+  return list.sort((x, y) => (sort === 'nome' ? x.nome.localeCompare(y.nome, 'pt-BR') : val(y) - val(x)));
+}
+
+/** Planilha (CSV para Excel) da carga por atleta. */
+export function downloadLoadCsv(rows: ReturnType<typeof buildLoadRows>, ref: string) {
+  const csv = toCsv(rows, [
+    { label: 'Atleta', value: (r) => r.nome },
+    { label: 'Data de referência', value: () => brDate(ref) },
+    { label: 'Carga aguda 7 dias (UA)', value: (r) => Math.round(r.m.acute) },
+    { label: 'Carga crônica semanal (UA)', value: (r) => Math.round(r.m.chronic) },
+    { label: 'ACWR', value: (r) => (r.m.acwr === null ? null : Math.round(r.m.acwr * 100) / 100) },
+    { label: 'Zona', value: (r) => (r.m.zone ? ZONE_INFO[r.m.zone].label : '') },
+    { label: 'Monotonia', value: (r) => (r.m.monotony === null ? null : Math.round(r.m.monotony * 100) / 100) },
+    { label: 'Strain', value: (r) => (r.m.strain === null ? null : Math.round(r.m.strain)) },
+    { label: 'Treinos na semana', value: (r) => r.m.sessions },
+    { label: 'Dados insuficientes (<3 semanas)', value: (r) => r.m.insufficient },
+  ]);
+  downloadCsv(fileSlug('carga', ref), csv);
+}
+
 /** Aba Carga: carga interna (PSE x minutos), ACWR, monotonia e strain por atleta e do grupo. */
-export const LoadAnalysis: React.FC<{ onOpenProfile?: (athleteId: string) => void }> = ({ onOpenProfile }) => {
-  const [ref, setRef] = useState(todayISO);
+export const LoadAnalysis: React.FC<{ filter: AnalysisFilterValue; onOpenProfile?: (athleteId: string) => void }> = ({ filter, onOpenProfile }) => {
+  // Carga interna: os 28 dias até a data final do filtro das Análises (nunca depois de hoje)
+  const ref = filter.to && filter.to <= todayISO() ? filter.to : todayISO();
+  const { selection, reloadKey } = filter;
   const [athletes, setAthletes] = useState<AthleteRow[]>([]);
   const [pse, setPse] = useState<PseRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [selection, setSelection] = useState<AthleteSelection>(EMPTY_SELECTION);
   const [sort, setSort] = useState<SortKey>('acwr');
   const [help, setHelp] = useState(false);
   const { groups } = useClubGroups();
@@ -52,9 +87,6 @@ export const LoadAnalysis: React.FC<{ onOpenProfile?: (athleteId: string) => voi
   const clubId = club?.id ?? null;
 
   const from = addDaysISO(ref, -55); // 28 dias de gráfico + 28 de histórico para a carga crônica
-
-  const [reloadKey, setReloadKey] = useState(0);
-  const load = () => setReloadKey((k) => k + 1);
 
   useEffect(() => {
     if (!supabase) return;
@@ -93,19 +125,7 @@ export const LoadAnalysis: React.FC<{ onOpenProfile?: (athleteId: string) => voi
     return pse.filter((r) => !r.did_not_train && r.rpe_score && !r.duration_minutes && ids.has(r.athlete_id)).length;
   }, [pse, people]);
 
-  const rows = useMemo(() => {
-    const weekStart = addDaysISO(ref, -6);
-    const weekSessions = new Map<string, number>();
-    for (const r of pse) {
-      if (r.date >= weekStart && r.date <= ref && sessionLoad(r) !== null) {
-        weekSessions.set(r.athlete_id, (weekSessions.get(r.athlete_id) ?? 0) + 1);
-      }
-    }
-    const list = people.map((a) => ({ ...a, m: loadMetrics(perAthlete.get(a.id), ref, weekSessions.get(a.id) ?? 0) }));
-    const val = (r: (typeof list)[number]) =>
-      sort === 'acwr' ? r.m.acwr ?? -1 : sort === 'acute' ? r.m.acute : sort === 'monotony' ? r.m.monotony ?? -1 : 0;
-    return list.sort((x, y) => (sort === 'nome' ? x.nome.localeCompare(y.nome, 'pt-BR') : val(y) - val(x)));
-  }, [people, perAthlete, pse, ref, sort]);
+  const rows = useMemo(() => buildLoadRows(people, pse, ref, sort), [people, pse, ref, sort]);
 
   const days = useMemo(() => Array.from({ length: 28 }, (_, k) => addDaysISO(ref, -(27 - k))), [ref]);
   const series = useMemo(() => groupSeries(perAthlete, people.map((p) => p.id), days), [perAthlete, people, days]);
@@ -115,22 +135,6 @@ export const LoadAnalysis: React.FC<{ onOpenProfile?: (athleteId: string) => voi
   const highMonotony = rows.filter((r) => (r.m.monotony ?? 0) > MONOTONY_LIMIT).length;
   const avgAcute = withData.length ? withData.reduce((a, r) => a + r.m.acute, 0) / withData.length : 0;
   const label = selected ? selectionLabel(selection, groups, athletes) : 'Todos os atletas';
-
-  const exportCsv = () => {
-    const csv = toCsv(rows, [
-      { label: 'Atleta', value: (r) => r.nome },
-      { label: 'Data de referência', value: () => brDate(ref) },
-      { label: 'Carga aguda 7 dias (UA)', value: (r) => Math.round(r.m.acute) },
-      { label: 'Carga crônica semanal (UA)', value: (r) => Math.round(r.m.chronic) },
-      { label: 'ACWR', value: (r) => (r.m.acwr === null ? null : Math.round(r.m.acwr * 100) / 100) },
-      { label: 'Zona', value: (r) => (r.m.zone ? ZONE_INFO[r.m.zone].label : '') },
-      { label: 'Monotonia', value: (r) => (r.m.monotony === null ? null : Math.round(r.m.monotony * 100) / 100) },
-      { label: 'Strain', value: (r) => (r.m.strain === null ? null : Math.round(r.m.strain)) },
-      { label: 'Treinos na semana', value: (r) => r.m.sessions },
-      { label: 'Dados insuficientes (<3 semanas)', value: (r) => r.m.insufficient },
-    ]);
-    downloadCsv(fileSlug('carga', ref), csv);
-  };
 
   const zoneBadge = (r: (typeof rows)[number]) =>
     r.m.zone ? (
@@ -143,55 +147,11 @@ export const LoadAnalysis: React.FC<{ onOpenProfile?: (athleteId: string) => voi
 
   return (
     <div className="space-y-5">
-      {/* Filtros */}
-      <div data-tour="load-filters" className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl space-y-3">
-        <div className="flex flex-col sm:flex-row sm:items-end gap-3">
-          <div className="flex items-center gap-2 text-sky-400 sm:pb-2.5">
-            <Gauge className="w-5 h-5" />
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-300">Carga interna</span>
-          </div>
-          <label className="block">
-            <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Até o dia</span>
-            <div className="flex gap-2">
-              <input
-                type="date"
-                value={ref}
-                max={todayISO()}
-                onChange={(e) => e.target.value && setRef(e.target.value)}
-                className="flex-1 sm:flex-none bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
-              />
-              <button
-                type="button"
-                onClick={() => setRef(todayISO())}
-                className="px-3 py-2 rounded-lg text-xs font-bold border bg-slate-950 text-slate-300 border-slate-700 hover:bg-slate-800"
-              >
-                Hoje
-              </button>
-            </div>
-          </label>
-          <GroupFilter groups={groups} athletes={athletes.filter((a) => a.active)} value={selection} onChange={setSelection} className="sm:w-64" />
-          <div className="flex gap-2 sm:ml-auto">
-            <button
-              type="button"
-              onClick={exportCsv}
-              disabled={loading || !rows.length}
-              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold disabled:opacity-50"
-            >
-              <Download className="w-3.5 h-3.5" /> Exportar
-            </button>
-            <button
-              type="button"
-              onClick={load}
-              disabled={loading}
-              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold disabled:opacity-50"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Atualizar
-            </button>
-          </div>
-        </div>
-
+      {/* Como ler (período e atletas vêm do filtro das Análises) */}
+      <div data-tour="load-filters" className="space-y-2">
         <button type="button" onClick={() => setHelp(!help)} className="flex items-center gap-1.5 text-xs font-semibold text-sky-400 hover:text-sky-300">
-          <Info className="w-3.5 h-3.5" /> Como ler os indicadores {help ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+          <Gauge className="w-3.5 h-3.5" /> Carga até {brDate(ref)} • <Info className="w-3.5 h-3.5" /> Como ler os indicadores{' '}
+          {help ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
         </button>
         {help && (
           <ul className="text-xs text-slate-300 space-y-1.5 bg-slate-950/60 border border-slate-800 rounded-xl p-3">

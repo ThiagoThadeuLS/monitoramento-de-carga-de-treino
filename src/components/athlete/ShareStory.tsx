@@ -5,16 +5,16 @@ import { PLATFORM_NAME } from '../../lib/club';
 import { useDialogs } from '../ui/Dialogs';
 import { TrainingShareDialog } from './TrainingPhotoShare';
 import type { StoryCard, StoryPerson } from '../../lib/storyCard';
-import type { TrainingStickerData } from '../../lib/trainingSticker';
+import type { PhotoStickerInfo } from '../../lib/trainingSticker';
 
 interface ShareStoryValue {
   /** Abre a prévia do cartão (Stories) com o botão de compartilhar */
   openStory: (card: StoryCard) => void;
-  /** Abre a foto pós-treino com a figurinha do treino */
-  openTrainingShare: (info: TrainingStickerData) => void;
+  /** Abre a foto com figurinha: a do treino (pós-PSE) ou a da medalha (resultado da competição) */
+  openTrainingShare: (info: PhotoStickerInfo) => void;
 }
 
-type Opened = { kind: 'cartao'; card: StoryCard } | { kind: 'treino'; info: TrainingStickerData };
+type Opened = { kind: 'cartao'; card: StoryCard } | { kind: 'treino'; info: PhotoStickerInfo };
 
 const ShareStoryContext = createContext<ShareStoryValue | null>(null);
 
@@ -36,7 +36,7 @@ const FILE_NAME: Record<StoryCard['kind'], string> = {
 export const ShareStoryProvider: React.FC<{
   person: StoryPerson;
   /** Pedido de fora (ex.: PSE recém-enviada): abre a foto pós-treino assim que chega */
-  trainingRequest?: TrainingStickerData | null;
+  trainingRequest?: PhotoStickerInfo | null;
   onTrainingRequestHandled?: () => void;
   /** Cartão pedido de dentro de uma tela aberta: só abre depois que ela fecha */
   storyRequest?: StoryCard | null;
@@ -51,7 +51,7 @@ export const ShareStoryProvider: React.FC<{
     setOpened(next);
   }, []);
   const openStory = useCallback((card: StoryCard) => open({ kind: 'cartao', card }), [open]);
-  const openTrainingShare = useCallback((info: TrainingStickerData) => open({ kind: 'treino', info }), [open]);
+  const openTrainingShare = useCallback((info: PhotoStickerInfo) => open({ kind: 'treino', info }), [open]);
 
   useEffect(() => {
     if (!trainingRequest) return;

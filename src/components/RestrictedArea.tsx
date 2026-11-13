@@ -7,6 +7,18 @@ import { CoachLogin } from './CoachLogin';
 import { PlatformPanel } from './coach/PlatformPanel';
 import { DailyOverview } from './coach/DailyOverview';
 import { PeriodAnalysis } from './coach/PeriodAnalysis';
+import { AnalysisFilter, AnalysisFilterValue, initialAnalysisFilter } from './coach/AnalysisFilter';
+
+/** Modo suporte: Período com o mesmo filtro (datas e atletas) do painel do clube. */
+const SupportPeriod: React.FC = () => {
+  const [filter, setFilter] = useState<AnalysisFilterValue>(initialAnalysisFilter);
+  return (
+    <div className="space-y-6">
+      <AnalysisFilter value={filter} onChange={setFilter} section="periodo" />
+      <PeriodAnalysis filter={filter} />
+    </div>
+  );
+};
 import { TrainingSchedule } from './coach/TrainingSchedule';
 import { AthleteManagement } from './coach/AthleteManagement';
 import { AdversaryManagement } from './coach/AdversaryManagement';
@@ -210,7 +222,7 @@ export const RestrictedArea: React.FC = () => {
 
         <div key={support.club.id} className="space-y-6">
           {tab === 'overview' && <DailyOverview />}
-          {tab === 'period' && <PeriodAnalysis />}
+          {tab === 'period' && <SupportPeriod />}
           {tab === 'schedule' && <TrainingSchedule readOnly />}
           {tab === 'athletes' && <AthleteManagement readOnly />}
           {tab === 'adversaries' && <AdversaryManagement readOnly />}

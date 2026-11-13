@@ -372,6 +372,12 @@ export async function addAthleteObservation(token: string, adversarioId: string,
   if (error) throw toAuthError(error);
 }
 
+/** Corrige o texto de uma observação do próprio atleta. */
+export async function updateAthleteObservation(token: string, id: string, texto: string): Promise<void> {
+  const { error } = await client().rpc('athlete_update_observacao', { p_token: token, p_id: id, p_texto: texto });
+  if (error) throw toAuthError(error);
+}
+
 export async function deleteAthleteObservation(token: string, id: string): Promise<void> {
   const { error } = await client().rpc('athlete_delete_observacao', { p_token: token, p_id: id });
   if (error) throw toAuthError(error);

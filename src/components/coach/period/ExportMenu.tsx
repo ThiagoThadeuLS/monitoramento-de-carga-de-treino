@@ -15,10 +15,12 @@ interface Props {
   nameOf: (athleteId: string) => string;
   disabled: boolean;
   onError: (message: string) => void;
+  /** Botões soltos (Relatório) em vez do menu "Exportar" */
+  inline?: boolean;
 }
 
 /** Exportar planilhas (CSV para Excel): respeita o período e a seleção de atletas. */
-export const ExportMenu: React.FC<Props> = ({ from, to, pse, psr, selected, nameOf, disabled, onError }) => {
+export const ExportMenu: React.FC<Props> = ({ from, to, pse, psr, selected, nameOf, disabled, onError, inline = false }) => {
   const [open, setOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
 
@@ -84,6 +86,31 @@ export const ExportMenu: React.FC<Props> = ({ from, to, pse, psr, selected, name
       }
     }
   };
+
+  // No Relatório: um botão para cada planilha, sem menu
+  if (inline) {
+    return (
+      <>
+        {(
+          [
+            ['pse', 'PSE e carga'],
+            ['psr', 'PSR (bem-estar)'],
+            ['peso', 'Peso'],
+          ] as const
+        ).map(([k, l]) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => exportData(k)}
+            disabled={disabled || exporting}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold disabled:opacity-50"
+          >
+            {exporting && k === 'peso' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />} {l}
+          </button>
+        ))}
+      </>
+    );
+  }
 
   return (
     <div className="relative flex-1 lg:flex-none">

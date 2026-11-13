@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { MapPin, Share2, Trophy } from 'lucide-react';
-import { AthleteCompetition, listAthleteCompetitions } from '../../lib/competitions';
+import { MapPin, Share2, Tent, Trophy } from 'lucide-react';
+import { AthleteCompetition, eventEndDate, fieldTrainingRange, isFieldTraining, listAthleteCompetitions } from '../../lib/competitions';
 import { daysBetweenISO } from '../../lib/weightPlan';
 import { useShareStory } from './ShareStory';
 
@@ -21,9 +21,9 @@ export const AthleteCompetitionList: React.FC<{ token: string; today: string }> 
     };
   }, [token, today]);
 
-  // Só as 3 próximas (a Agenda não fica comprida)
+  // Só as 3 próximas (a Agenda não fica comprida); treinamento de campo fica até o último dia
   const upcoming = list
-    .filter((c) => c.data >= today)
+    .filter((c) => eventEndDate(c) >= today)
     .sort((a, b) => a.data.localeCompare(b.data))
     .slice(0, 3);
   if (upcoming.length === 0) return null;
@@ -31,7 +31,7 @@ export const AthleteCompetitionList: React.FC<{ token: string; today: string }> 
   return (
     <section className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 space-y-2">
       <p className="text-[10px] uppercase font-bold tracking-wider text-amber-300 flex items-center gap-1.5">
-        <Trophy className="w-3.5 h-3.5" /> Próximas competições
+        <Trophy className="w-3.5 h-3.5" /> {upcoming.some(isFieldTraining) ? 'Próximas competições e treinamentos de campo' : 'Próximas competições'}
       </p>
       <ul className="space-y-1.5">
         {upcoming.map((c) => (
@@ -46,13 +46,24 @@ export const AthleteCompetitionList: React.FC<{ token: string; today: string }> 
             </div>
             <div className="flex items-start gap-1 flex-shrink-0">
               <div className="text-right text-slate-400">
-                <p>Competição {br(c.data)}</p>
-                <p className="text-slate-500">
-                  Pesagem {br(c.data_pesagem)}
-                  {c.hora_pesagem ? ` ${c.hora_pesagem.slice(0, 5)}` : ''}
-                </p>
+                {isFieldTraining(c) || !c.data_pesagem ? (
+                  <>
+                    <p className="text-emerald-300 flex items-center justify-end gap-1">
+                      <Tent className="w-3 h-3" /> Treinamento de campo
+                    </p>
+                    <p className="text-slate-500">{fieldTrainingRange(c)}</p>
+                  </>
+                ) : (
+                  <>
+                    <p>Competição {br(c.data)}</p>
+                    <p className="text-slate-500">
+                      Pesagem {br(c.data_pesagem)}
+                      {c.hora_pesagem ? ` ${c.hora_pesagem.slice(0, 5)}` : ''}
+                    </p>
+                  </>
+                )}
               </div>
-              {share && (
+              {share && !isFieldTraining(c) && (
                 <button
                   type="button"
                   onClick={() =>

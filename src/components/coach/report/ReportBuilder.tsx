@@ -1,18 +1,23 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { FileDown, Loader2, Eye, SlidersHorizontal, BarChart3, Table2 } from 'lucide-react';
+import { FileDown, Loader2, Eye, SlidersHorizontal, BarChart3, Table2, Download, FileSpreadsheet } from 'lucide-react';
 import { useClub } from '../../../lib/club';
 import { ClubAthlete, fetchClubAthletes } from '../../../lib/athletes';
 import { useDialogs } from '../../ui/Dialogs';
 import { PseRecord, PsrRecord } from '../../../types';
 import { addDaysISO, todayISO } from '../../../lib/date';
-import { AthleteSelection, EMPTY_SELECTION, GroupFilter, resolveSelection } from '../GroupFilter';
+import { resolveSelection } from '../GroupFilter';
 import { useClubGroups } from '../../../lib/groups';
-import { MAX_DAYS, fetchRange } from '../period/shared';
+import { fetchRange } from '../period/shared';
+import { ExportMenu } from '../period/ExportMenu';
+import { AnalysisFilterValue, analysisRangeError } from '../AnalysisFilter';
+import { buildLoadRows, downloadLoadCsv, fetchPse } from '../LoadAnalysis';
 import { ReportPreview, ReportState } from './ReportPreview';
 import { ChartKind } from './ChartRenderer';
 
 interface Props {
   coachName: string;
+  /** Período e atletas do filtro das Análises */
+  filter: AnalysisFilterValue;
 }
 
 const DEFAULT_METRICS = [
@@ -69,14 +74,13 @@ async function buildPdf(root: HTMLElement, filename: string) {
   pdf.save(filename);
 }
 
-export const ReportBuilder: React.FC<Props> = ({ coachName }) => {
+export const ReportBuilder: React.FC<Props> = ({ coachName, filter }) => {
   const { club } = useClub();
   const { groups } = useClubGroups();
   const { notify } = useDialogs();
   const [athletes, setAthletes] = useState<ClubAthlete[]>([]);
-  const [selection, setSelection] = useState<AthleteSelection>(EMPTY_SELECTION);
-  const [from, setFrom] = useState(addDaysISO(todayISO(), -14));
-  const [to, setTo] = useState(todayISO());
+  const { from, to, selection, reloadKey } = filter;
+  const [exportingLoad, setExportingLoad] = useState(false);
   const [pse, setPse] = useState<PseRecord[]>([]);
   const [psr, setPsr] = useState<PsrRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -88,21 +92,14 @@ export const ReportBuilder: React.FC<Props> = ({ coachName }) => {
   const previewRef = useRef<HTMLDivElement>(null);
 
   // Período válido e de no máximo 1 ano (igual à Análise do Período)
-  const rangeError =
-    !from || !to
-      ? 'Preencha as duas datas.'
-      : from > to
-      ? 'A data "De" precisa ser anterior à data "Até".'
-      : addDaysISO(from, MAX_DAYS - 1) < to
-      ? 'Escolha um período de no máximo 1 ano.'
-      : '';
+  const rangeError = analysisRangeError(from, to);
 
   useEffect(() => {
     if (rangeError) return;
     let cancelled = false;
     setLoading(true);
     setLoadError('');
-    Promise.all([fetchClubAthletes(club?.id ?? null), fetchRange<PseRecord>('pse_records', from, to), fetchRange<PsrRecord>('psr_records', from, to)])
+    Promise.all([fetchClubAthletes(club?.id ?? null, reloadKey > 0), fetchRange<PseRecord>('pse_records', from, to), fetchRange<PsrRecord>('psr_records', from, to)])
       .then(([a, p, pr]) => {
         if (cancelled) return;
         setAthletes(a);
@@ -114,10 +111,26 @@ export const ReportBuilder: React.FC<Props> = ({ coachName }) => {
     return () => {
       cancelled = true;
     };
-  }, [club?.id, from, to, rangeError]);
+  }, [club?.id, from, to, rangeError, reloadKey]);
 
   const selected = useMemo(() => resolveSelection(selection, groups), [selection, groups]);
   const people = useMemo(() => athletes.filter((a) => a.active && (!selected || selected.has(a.id))), [athletes, selected]);
+  const names = useMemo(() => new Map(athletes.map((a) => [a.id, a.nome])), [athletes]);
+  const nameOf = (id: string) => names.get(id) ?? 'Atleta removido';
+
+  // Planilha da carga por atleta: os 28 dias até a data final (mesma conta da aba Carga interna)
+  const exportLoad = async () => {
+    const ref = to <= todayISO() ? to : todayISO();
+    setExportingLoad(true);
+    try {
+      const rows = buildLoadRows(people, await fetchPse(addDaysISO(ref, -55), ref), ref);
+      downloadLoadCsv(rows, ref);
+    } catch (err) {
+      notify(`Não foi possível exportar a carga: ${(err as Error)?.message ?? err}`, 'error');
+    } finally {
+      setExportingLoad(false);
+    }
+  };
 
   const athletesData = useMemo(
     () =>
@@ -170,6 +183,38 @@ export const ReportBuilder: React.FC<Props> = ({ coachName }) => {
             </button>
           </div>
 
+          {/* Planilhas: o período e os atletas do filtro das Análises */}
+          <div data-tour="report-export" className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 flex flex-col lg:flex-row lg:items-center gap-3">
+            <div className="flex items-center gap-2 min-w-0 lg:mr-auto">
+              <FileSpreadsheet className="w-5 h-5 text-emerald-400 flex-shrink-0" />
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-white">Planilhas para Excel</p>
+                <p className="text-xs text-slate-400">Período e atletas do filtro acima.</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <ExportMenu
+                inline
+                from={from}
+                to={to}
+                pse={pse}
+                psr={psr}
+                selected={selected}
+                nameOf={nameOf}
+                disabled={loading || !!rangeError || !!loadError}
+                onError={(m) => notify(m, 'error')}
+              />
+              <button
+                type="button"
+                onClick={exportLoad}
+                disabled={exportingLoad || loading || people.length === 0}
+                className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold disabled:opacity-50"
+              >
+                {exportingLoad ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />} Carga por atleta (ACWR)
+              </button>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-4 lg:gap-5">
             <div className="space-y-4">
               <div className="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden">
@@ -178,20 +223,12 @@ export const ReportBuilder: React.FC<Props> = ({ coachName }) => {
                   <h3 className="text-sm font-bold text-white">Montagem do relatório</h3>
                 </header>
                 <div className="p-4 space-y-4">
-                  <div className="grid grid-cols-2 gap-2">
-                    <label className="block">
-                      <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">De</span>
-                      <input type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-2 text-white text-xs" />
-                    </label>
-                    <label className="block">
-                      <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Até</span>
-                      <input type="date" value={to} max={todayISO()} onChange={(e) => setTo(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-2 text-white text-xs" />
-                    </label>
-                  </div>
+                  <p className="text-xs text-slate-400">
+                    {people.length} atleta{people.length === 1 ? '' : 's'} • {periodLabel}
+                  </p>
                   {(rangeError || loadError) && (
                     <p className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">{rangeError || loadError}</p>
                   )}
-                  <GroupFilter groups={groups} athletes={athletes.filter((a) => a.active)} value={selection} onChange={setSelection} />
                   <div>
                     <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Anotações gerais</span>
                     <textarea value={notesGerais} onChange={(e) => setNotesGerais(e.target.value)} rows={4} placeholder="Objetivo, observações gerais, feedback..." className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white text-xs resize-none" />

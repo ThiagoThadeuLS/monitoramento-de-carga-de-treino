@@ -155,9 +155,14 @@ export function coachTourSteps(nome: string, isAdmin: boolean, go: (area: CoachT
       ),
     },
     {
-      target: 'coach-banner',
-      title: 'Seu painel',
-      body: <p>Mostra o clube, seu nome e seu papel (<B>admin do clube</B> ou <B>treinador</B>). O admin tem a engrenagem para treinadores e cores.</p>,
+      target: 'coach-menu',
+      title: 'Seu menu',
+      body: (
+        <p>
+          Toque na sua foto para trocá-la, abrir as <B>configurações do clube</B> (horário das notificações; para o admin, também treinadores e cores) e
+          sair. A <B>lupa</B> ao lado busca qualquer atleta e abre a ficha dele.
+        </p>
+      ),
     },
     {
       target: 'coach-tabs',
@@ -165,10 +170,10 @@ export function coachTourSteps(nome: string, isAdmin: boolean, go: (area: CoachT
       body: (
         <List
           items={[
-            <><B>Hoje</B>: respostas do dia e quem está em risco de peso na próxima competição</>,
-            <><B>Análises</B>: período (gráficos, alertas, quem não respondeu) e carga interna</>,
+            <><B>Hoje</B>: quem precisa de atenção, os treinos do dia e as respostas de cada atleta</>,
+            <><B>Análises</B>: período, carga interna e relatório (com as planilhas para o Excel)</>,
             <><B>Planejamento</B>: agenda, fichas de preparação física e competições</>,
-            <><B>Elenco</B>: atletas, grupos e adversários</>,
+            <><B>Elenco</B>: atletas, grupos, composição corporal e adversários</>,
           ]}
         />
       ),
@@ -176,41 +181,69 @@ export function coachTourSteps(nome: string, isAdmin: boolean, go: (area: CoachT
     {
       target: 'daily-filters',
       before: to('hoje'),
-      title: 'Hoje: escolha a data e os atletas',
-      body: <p>Escolha o dia e filtre por grupos ou pessoas específicas. <B>Atualizar dados</B> busca as respostas mais recentes.</p>,
+      title: 'Hoje: escolha o dia e os atletas',
+      body: <p>Escolha o dia e filtre por grupos ou pessoas específicas. O botão de atualizar busca as respostas mais recentes.</p>,
+    },
+    {
+      target: 'daily-attention',
+      title: 'Precisa de atenção',
+      body: (
+        <>
+          <p>Junta num lugar só quem pede cuidado no dia, do mais grave para o mais leve:</p>
+          <List
+            items={[
+              <><B>ACWR acima de 1,5</B> e <B>monotonia alta</B> (carga interna)</>,
+              <><B>Dor muscular</B>, <B>fadiga alta</B> e <B>PSR baixa</B></>,
+              <><B>Esforço máximo</B>, quem <B>não treinou</B> (com o motivo) e quem está <B>sem resposta</B></>,
+              <>Atletas com a <B>notificação parada</B></>,
+            ]}
+          />
+        </>
+      ),
+    },
+    {
+      target: 'daily-sessions',
+      title: 'Treinos do dia',
+      body: <p>Para cada treino, a <B>PSE esperada</B> do cronograma ao lado da <B>média</B> do que os atletas responderam, e quantos já responderam.</p>,
     },
     {
       target: 'daily-cards',
       title: 'Resumo do dia',
-      body: <p>Quantos atletas responderam PSE, PSR e peso, com as médias do dia, e o total do elenco ativo.</p>,
+      body: <p>Quantos atletas responderam PSE, PSR e peso, com as médias do dia, e quantos ainda estão sem resposta.</p>,
     },
     {
       target: 'daily-table',
       title: 'Acompanhamento individual',
       body: (
         <>
-          <p>Todas as respostas de cada atleta no dia: cada PSE com o tipo de treino, a PSR e o peso.</p>
-          <p>
-            Alertas automáticos: <B>dor muscular</B>, <B>fadiga alta</B> e <B>esforço máximo</B>. Toque no <B>nome</B> para abrir a ficha completa do
-            atleta.
-          </p>
+          <p>Todas as respostas de cada atleta no dia, com quem precisa de atenção em cima. Marque <B>Só quem precisa de atenção</B> para encurtar a lista.</p>
+          <p>Toque no <B>nome</B> para abrir a ficha completa do atleta.</p>
         </>
       ),
     },
     {
-      target: 'period-filters',
+      target: 'daily-details',
+      title: 'Detalhes do dia',
+      body: <p>Abre as tabelas do dia: <B>PSE acima de 6</B> com as observações, quem <B>não treinou</B> (toque para ler o motivo) e <B>PSR abaixo de 5</B> em cada variável.</p>,
+    },
+    {
+      target: 'analysis-filters',
       before: to('analises', 'periodo'),
-      title: 'Período: filtros',
+      title: 'Análises: um filtro para tudo',
       body: (
         <List
           items={[
             <>Datas <B>De / Até</B> ou atalhos (Hoje, 7, 15, 30 dias)</>,
-            <>Filtro por <B>grupos ou pessoas</B> — vale para toda a tela</>,
-            <>Tipos de treino e modo <B>condensado</B> ou <B>por tipo</B> nos gráficos de PSE</>,
-            <><B>Exportar</B>: baixa PSE (com carga), PSR ou peso em planilha para o Excel</>,
+            <>Filtro por <B>grupos ou pessoas</B></>,
+            <>Vale para <B>Período</B>, <B>Carga interna</B> e <B>Relatório</B>: escolha uma vez e troque de aba</>,
           ]}
         />
       ),
+    },
+    {
+      target: 'period-filters',
+      title: 'Opções do gráfico',
+      body: <p>Tipos de treino e modo <B>condensado</B> ou <B>por tipo</B> nos gráficos de PSE, e a linha da PSE esperada.</p>,
     },
     {
       target: 'period-charts',
@@ -232,27 +265,14 @@ export function coachTourSteps(nome: string, isAdmin: boolean, go: (area: CoachT
       ),
     },
     {
-      target: 'period-day',
-      title: 'Alertas de um dia',
-      body: (
-        <List
-          items={[
-            <><B>PSE acima de 6</B></>,
-            <><B>Não treinaram</B> — toque para ler o motivo</>,
-            <><B>PSR abaixo de 5</B> em qualquer variável</>,
-          ]}
-        />
-      ),
-    },
-    {
       target: 'load-filters',
       before: to('analises', 'carga'),
       title: 'Carga interna',
       body: (
         <>
           <p>
-            A carga de cada treino é <B>PSE × duração em minutos</B> (método de Foster), em UA. Escolha até que dia calcular e quais atletas; o botão{' '}
-            <B>Exportar</B> baixa a tabela.
+            A carga de cada treino é <B>PSE × duração em minutos</B> (método de Foster), em UA. Calcula os 28 dias até a data <B>Até</B> do filtro, para
+            os atletas escolhidos.
           </p>
           <p>“Como ler os indicadores” explica cada número.</p>
         </>
@@ -282,20 +302,19 @@ export function coachTourSteps(nome: string, isAdmin: boolean, go: (area: CoachT
       ),
     },
     {
-      target: 'schedule-reminders',
-      before: to('planejamento', 'agenda'),
-      title: 'Agenda: horário dos avisos e pesagem',
+      target: 'report-export',
+      before: to('analises', 'relatorio'),
+      title: 'Relatório e planilhas',
       body: (
-        <>
-          <p>
-            Defina <B>das … às …</B>: a PSR começa a ser cobrada no início, e quem não responder até o fim entra na tabela “Sem resposta”.
-          </p>
-          <p>Marque também os dias e o horário do lembrete de pesagem.</p>
-        </>
+        <p>
+          Monte o relatório em PDF com anotações, métricas e gráficos. Em <B>Planilhas para Excel</B> você baixa PSE (com carga), PSR, peso e a carga por
+          atleta (ACWR), sempre do período e dos atletas do filtro.
+        </p>
       ),
     },
     {
       target: 'schedule-week',
+      before: to('planejamento', 'agenda'),
       title: 'Cronograma da semana',
       body: (
         <>
@@ -354,7 +373,7 @@ export function coachTourSteps(nome: string, isAdmin: boolean, go: (area: CoachT
         <p>
           Cadastre atletas com <B>CPF</B>. Eles entram com o CPF e a senha inicial é o <B>nome completo junto, em minúsculas</B>; no primeiro acesso criam a
           própria senha e aceitam o termo de uso dos dados. Você também pode abrir a <B>ficha</B>, editar, voltar a senha para a inicial e{' '}
-          <B>inativar</B> (bloqueia o acesso e mantém o histórico — excluir apaga tudo).
+          <B>inativar</B> (bloqueia o acesso e mantém o histórico — excluir apaga tudo). No topo, veja quem está recebendo as notificações.
         </p>
       ),
     },
@@ -363,6 +382,26 @@ export function coachTourSteps(nome: string, isAdmin: boolean, go: (area: CoachT
       before: to('elenco', 'grupos'),
       title: 'Elenco: grupos',
       body: <p>Crie grupos (ex.: Pesados, Sub-18). Um atleta pode estar em vários. Os grupos servem para programar treinos e filtrar as análises.</p>,
+    },
+    {
+      target: 'coach-content',
+      before: to('elenco', 'corpo'),
+      title: 'Elenco: composição corporal',
+      body: <p>Registre as avaliações de dobras de cada atleta e acompanhe o % de gordura ao longo do tempo.</p>,
+    },
+    {
+      target: 'schedule-reminders',
+      before: to('config', 'notificacoes'),
+      title: 'Configurações: notificações',
+      body: (
+        <>
+          <p>
+            Pelo seu menu, em <B>Configurações</B>: defina <B>das … às …</B>. A PSR começa a ser cobrada no início, e quem não responder até o fim entra
+            em “Sem resposta”.
+          </p>
+          <p>Marque também os dias e o horário do lembrete de pesagem.</p>
+        </>
+      ),
     },
     isAdmin && {
       target: 'coach-content',

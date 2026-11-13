@@ -9,11 +9,16 @@ interface Props {
   /** null = todos os atletas */
   selected: Set<string> | null;
   nameOf: (athleteId: string) => string;
+  /** Dia vindo de fora (tela Hoje): sem seletor de data próprio */
+  day?: string;
+  /** Muda para buscar de novo (botão atualizar de quem controla o dia) */
+  reloadSignal?: number;
 }
 
-/** Alertas de um único dia (independente do período dos gráficos): PSE alta, quem não treinou e PSR baixa. */
-export const DayAlerts: React.FC<Props> = ({ selected, nameOf }) => {
-  const [tableDay, setTableDay] = useState(todayISO);
+/** Alertas de um único dia: PSE alta, quem não treinou e PSR baixa. */
+export const DayAlerts: React.FC<Props> = ({ selected, nameOf, day, reloadSignal = 0 }) => {
+  const [ownDay, setTableDay] = useState(todayISO);
+  const tableDay = day ?? ownDay;
   const [dayPse, setDayPse] = useState<PseRecord[]>([]);
   const [dayPsr, setDayPsr] = useState<PsrRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,7 +51,7 @@ export const DayAlerts: React.FC<Props> = ({ selected, nameOf }) => {
     return () => {
       cancelled = true;
     };
-  }, [tableDay, reloadKey]);
+  }, [tableDay, reloadKey, reloadSignal]);
 
   const reload = useCallback(() => setReloadKey((k) => k + 1), []);
 
@@ -87,6 +92,7 @@ export const DayAlerts: React.FC<Props> = ({ selected, nameOf }) => {
 
   return (
     <>
+      {!day && (
       <div data-tour="period-day" className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center gap-3">
         <div className="flex items-center gap-2 flex-1">
           <AlertCircle className="w-5 h-5 text-amber-400" />
@@ -124,6 +130,7 @@ export const DayAlerts: React.FC<Props> = ({ selected, nameOf }) => {
           </button>
         </div>
       </div>
+      )}
 
       {error ? (
         <div className="p-3 bg-red-950/60 border border-red-800 rounded-xl flex items-center gap-2.5 text-red-300 text-xs">

@@ -1,18 +1,20 @@
 import React, { Suspense, useEffect, useRef, useState } from 'react';
 import {
   LogOut, BarChart3, Users, Loader2, LineChart, CalendarDays, Shield, AlertTriangle, UserCog, Settings2, UsersRound, Palette, Gauge,
-  Dumbbell, Trophy, Home, Activity,
+  Dumbbell, Trophy, Home, Activity, BellRing,
 } from 'lucide-react';
+import { InHeader } from '../lib/headerSlot';
+import { AthleteSearch, CoachMenu } from './coach/CoachMenu';
+import { AnalysisFilter, AnalysisFilterValue, initialAnalysisFilter } from './coach/AnalysisFilter';
 import { exitSupport } from '../lib/platform';
 import { HelpButton } from './tour/HelpButton';
 import { coachTourSteps } from './tour/steps';
 import { coachTutorialPending, markCoachTutorialDone } from '../lib/tutorial';
 import { CoachChangePassword } from './CoachChangePassword';
-import { ClubCrest, ClubInfo, useClub } from '../lib/club';
+import { ClubInfo, useClub } from '../lib/club';
 import { supabase } from '../lib/supabase';
 import { CoachLogin } from './CoachLogin';
 import { Athlete } from '../types';
-import { PhotoPicker } from './ui/PhotoPicker';
 import { uploadPhoto } from '../lib/photos';
 import { useDialogs } from './ui/Dialogs';
 import { lazyNamed } from '../lib/lazy';
@@ -35,12 +37,14 @@ const TeamManagement = lazyNamed(() => import('./coach/TeamManagement'), (m) => 
 const ThemeSettings = lazyNamed(() => import('./coach/ThemeSettings'), (m) => m.ThemeSettings);
 const AthleteProfile = lazyNamed(() => import('./coach/AthleteProfile'), (m) => m.AthleteProfile);
 const ReportBuilder = lazyNamed(() => import('./coach/report/ReportBuilder'), (m) => m.ReportBuilder);
+const WeightReminderSettings = lazyNamed(() => import('./coach/WeightReminderSettings'), (m) => m.WeightReminderSettings);
+const PushStatusCard = lazyNamed(() => import('./coach/PushStatusCard'), (m) => m.PushStatusCard);
 const Tour = lazyNamed(() => import('./tour/Tour'), (m) => m.Tour);
 
 type CoachAreaId = 'hoje' | 'analises' | 'planejamento' | 'elenco' | 'config';
 type Icon = typeof BarChart3;
 
-/** As 4 áreas do painel (+ configurações na engrenagem, só admin) e as seções de cada uma */
+/** As 4 áreas do painel (+ configurações no menu do treinador) e as seções de cada uma */
 const AREAS: {
   id: CoachAreaId;
   label: string;
@@ -76,6 +80,7 @@ const AREAS: {
     subs: [
       { id: 'atletas', label: 'Atletas', icon: Users },
       { id: 'grupos', label: 'Grupos', icon: UsersRound },
+      { id: 'corpo', label: 'Composição corporal', icon: Activity },
       { id: 'adversarios', label: 'Adversários', icon: Shield },
     ],
   },
@@ -83,10 +88,12 @@ const AREAS: {
     id: 'config',
     label: 'Configurações',
     icon: Settings2,
-    adminOnly: true,
+    // Fica fora das 4 abas: abre pelo menu do treinador (foto no cabeçalho)
+    adminOnly: false,
     subs: [
       { id: 'treinadores', label: 'Treinadores', icon: UserCog, adminOnly: true },
       { id: 'cores', label: 'Cores', icon: Palette, adminOnly: true },
+      { id: 'notificacoes', label: 'Notificações', icon: BellRing },
     ],
   },
 ];
@@ -126,10 +133,8 @@ export const CoachArea: React.FC<{ recovery?: boolean }> = ({ recovery = false }
   const [athleteToEdit, setAthleteToEdit] = useState<Athlete | null>(null);
   const [profileId, setProfileId] = useState<string | null>(null);
   const [workoutSession, setWorkoutSession] = useState<string | null>(null);
-  /** Prep. física: fichas dos treinos × composição corporal (avaliação das dobras) */
-  const [fisicaTab, setFisicaTab] = useState<'fichas' | 'corpo'>('fichas');
-  const corpoVisited = useRef(false);
-  if (fisicaTab === 'corpo') corpoVisited.current = true;
+  /** Período e atletas das Análises: o mesmo filtro vale para Período, Carga interna e Relatório */
+  const [analysisFilter, setAnalysisFilter] = useState<AnalysisFilterValue>(initialAnalysisFilter);
   const today = useTodayISO();
 
   // Área e seção ficam no histórico: o "voltar" do navegador volta para a tela anterior
@@ -379,63 +384,29 @@ export const CoachArea: React.FC<{ recovery?: boolean }> = ({ recovery = false }
           <Tour steps={coachTourSteps(coach!.nome, isAdmin, (area, s) => go(area as CoachAreaId, s))} onClose={finishTutorial} />
         </Suspense>
       )}
-      {/* Cabeçalho da comissão técnica */}
-      <div data-tour="coach-banner" className="bg-slate-900/90 border border-slate-800 rounded-3xl p-4 sm:p-5 shadow-xl flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3 min-w-0 flex-1">
-          <PhotoPicker
-            name={coach!.nome}
-            src={coach!.photo_url}
-            onPick={async (file) => {
-              if (!userId) return;
-              await uploadPhoto('coach', userId, viewClub.id, file);
-              notify('Foto atualizada.', 'success');
-              reloadProfile();
-            }}
-            onError={(message) => notify(message, 'error')}
-            className="w-14 h-14"
-            textClassName="text-base"
-            title="Trocar minha foto"
-          />
-          <ClubCrest club={viewClub} className="w-10 h-12 flex-shrink-0" />
-          <div className="min-w-0 flex-1">
-            <h2 className="text-base sm:text-lg font-black text-white tracking-tight truncate">Painel da Comissão Técnica</h2>
-            <p className="text-xs text-slate-400 truncate">{viewClub.nome}</p>
-            <p className="text-xs truncate">
-              <span className="text-sky-400 font-medium">{coach!.nome}</span>{' '}
-              <span className="text-slate-500">({isAdmin ? 'admin do clube' : 'treinador'})</span>
-            </p>
-          </div>
-        </div>
+      {/* No cabeçalho do topo: busca de atleta e menu do treinador (foto, configurações, sair) */}
+      <InHeader>
+        <AthleteSearch clubId={viewClub.id} onOpen={setProfileId} />
+        <CoachMenu
+          nome={coach!.nome}
+          photoUrl={coach!.photo_url}
+          isAdmin={isAdmin}
+          clubName={viewClub.nome}
+          onPickPhoto={async (file) => {
+            if (!userId) return;
+            await uploadPhoto('coach', userId, viewClub.id, file);
+            notify('Foto atualizada.', 'success');
+            reloadProfile();
+          }}
+          onPhotoError={(message) => notify(message, 'error')}
+          onSettings={() => go('config')}
+          onLogout={handleLogout}
+        />
+      </InHeader>
 
-        <div className="flex items-center gap-2 flex-shrink-0">
-          {isAdmin && (
-            <button
-              type="button"
-              onClick={() => go('config')}
-              className={`p-2 rounded-xl border text-xs font-bold transition-all ${
-                areaDef.id === 'config' ? 'bg-sky-500 text-slate-950 border-sky-400' : 'bg-slate-800 text-slate-300 border-slate-700/60 hover:text-white'
-              }`}
-              title="Configurações do clube (treinadores e cores)"
-              aria-label="Configurações do clube"
-            >
-              <Settings2 className="w-4 h-4" />
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={handleLogout}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-red-500/20 text-slate-300 hover:text-red-300 border border-slate-700/60 text-xs font-bold transition-all"
-            title="Sair"
-          >
-            <LogOut className="w-4 h-4" />
-            <span className="hidden sm:inline">Sair</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Áreas: 4 fixas (as configurações ficam na engrenagem) */}
+      {/* Áreas: 4 fixas (as configurações abrem pelo menu do treinador) */}
       <nav data-tour="coach-tabs" className="grid grid-cols-4 gap-1 p-1 bg-slate-900/90 border border-slate-800 rounded-2xl">
-        {AREAS.filter((a) => !a.adminOnly).map(({ id, label, icon: Icon }) => (
+        {AREAS.filter((a) => a.id !== 'config').map(({ id, label, icon: Icon }) => (
           <button
             key={id}
             type="button"
@@ -450,6 +421,12 @@ export const CoachArea: React.FC<{ recovery?: boolean }> = ({ recovery = false }
           </button>
         ))}
       </nav>
+
+      {areaDef.id === 'config' && (
+        <h2 className="text-sm font-black text-white uppercase tracking-wide flex items-center gap-2 px-1">
+          <Settings2 className="w-4 h-4 text-sky-400" /> Configurações do clube
+        </h2>
+      )}
 
       {/* Seções da área (quando tem mais de uma) */}
       {subs.length > 1 && (
@@ -478,56 +455,30 @@ export const CoachArea: React.FC<{ recovery?: boolean }> = ({ recovery = false }
           'hoje/',
           <div className="space-y-4">
             <CompetitionRiskCard today={today} onOpen={() => go('planejamento', 'competicoes')} />
-            <DailyOverview onEditAthlete={handleEditAthleteFromOverview} onOpenProfile={setProfileId} />
+            <DailyOverview onEditAthlete={handleEditAthleteFromOverview} onOpenProfile={setProfileId} onOpenNotifications={() => go('elenco', 'atletas')} />
           </div>
         )}
-        {pane('analises/periodo', <PeriodAnalysis />)}
-        {pane('analises/carga', <LoadAnalysis onOpenProfile={setProfileId} />)}
-        {pane('analises/relatorio', <ReportBuilder coachName={coach!.nome} />)}
-        {pane('planejamento/agenda', <TrainingSchedule onOpenWorkout={(id: string) => { setWorkoutSession(id); setFisicaTab('fichas'); go('planejamento', 'fisica'); }} />)}
-        {pane(
-          'planejamento/fisica',
-          <div className="space-y-4">
-            <div role="tablist" aria-label="Preparação física" className="grid grid-cols-2 gap-1 p-1 bg-slate-900/90 border border-slate-800 rounded-2xl">
-              {([
-                { id: 'fichas' as const, label: 'Fichas dos treinos', Icon: Dumbbell },
-                { id: 'corpo' as const, label: 'Composição corporal', Icon: Activity },
-              ]).map(({ id, label, Icon }) => (
-                <button
-                  key={id}
-                  type="button"
-                  role="tab"
-                  aria-selected={fisicaTab === id}
-                  onClick={() => setFisicaTab(id)}
-                  className={`flex items-center justify-center gap-1.5 px-2 py-2 rounded-xl text-[11px] sm:text-xs font-bold transition-colors ${
-                    fisicaTab === id ? 'bg-slate-100 text-slate-950' : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-                  }`}
-                >
-                  <Icon className="w-4 h-4" /> {label}
-                </button>
-              ))}
-            </div>
-            <div hidden={fisicaTab !== 'fichas'}>
-              <PhysicalWorkoutBuilder sessionId={workoutSession} />
-            </div>
-            {corpoVisited.current && (
-              <div hidden={fisicaTab !== 'corpo'}>
-                <Suspense fallback={<Spinner />}>
-                  <BodyComposition />
-                </Suspense>
-              </div>
-            )}
-          </div>
-        )}
+        {/* Análises: um filtro só (período e atletas) para as três abas */}
+        {areaDef.id === 'analises' && <AnalysisFilter value={analysisFilter} onChange={setAnalysisFilter} section={sub?.id ?? ''} />}
+        {pane('analises/periodo', <PeriodAnalysis filter={analysisFilter} />)}
+        {pane('analises/carga', <LoadAnalysis filter={analysisFilter} onOpenProfile={setProfileId} />)}
+        {pane('analises/relatorio', <ReportBuilder coachName={coach!.nome} filter={analysisFilter} />)}
+        {pane('planejamento/agenda', <TrainingSchedule onOpenWorkout={(id: string) => { setWorkoutSession(id); go('planejamento', 'fisica'); }} />)}
+        {pane('planejamento/fisica', <PhysicalWorkoutBuilder sessionId={workoutSession} />)}
         {pane('planejamento/competicoes', <CompetitionManagement />)}
         {pane(
           'elenco/atletas',
-          <AthleteManagement athleteToEdit={athleteToEdit} onClearAthleteToEdit={() => setAthleteToEdit(null)} onOpenProfile={setProfileId} />
+          <div className="space-y-4">
+            <PushStatusCard />
+            <AthleteManagement athleteToEdit={athleteToEdit} onClearAthleteToEdit={() => setAthleteToEdit(null)} onOpenProfile={setProfileId} />
+          </div>
         )}
         {pane('elenco/grupos', <GroupManagement />)}
+        {pane('elenco/corpo', <BodyComposition />)}
         {pane('elenco/adversarios', <AdversaryManagement />)}
         {isAdmin && pane('config/treinadores', <TeamManagement currentUserId={session.user.id} club={coach!.club} onClubChanged={reloadProfile} />)}
         {isAdmin && pane('config/cores', <ThemeSettings />)}
+        {pane('config/notificacoes', <WeightReminderSettings />)}
       </div>
       {profileId && (
         <Suspense fallback={null}>

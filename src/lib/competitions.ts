@@ -14,8 +14,11 @@ export * from './competitionResults';
 export interface AthleteCompetition {
   id: string;
   nome: string;
+  /** 'campo' = treinamento de campo (sem pesagem) */
+  tipo?: 'competicao' | 'campo';
   data: string;
-  data_pesagem: string;
+  data_fim?: string | null;
+  data_pesagem: string | null;
   hora_pesagem?: string | null;
   local?: string | null;
   observacoes?: string | null;
@@ -35,6 +38,8 @@ export interface CompetitionSummaryRow {
 
 function competitionError(err: any): string {
   const msg = String(err?.message ?? err ?? '');
+  if (/competitions_tipo_check|column .*(tipo|data_fim)|data_pesagem.*not-null|null value in column "data_pesagem"/.test(msg))
+    return 'O treinamento de campo ainda não foi ativado no banco. Rode o arquivo supabase_completo.sql no Supabase.';
   if (/competitions_audience_check/.test(msg))
     return 'A opção "Ninguém" ainda não foi ativada no banco. Rode o arquivo supabase_completo.sql no Supabase.';
   if (/publico_vazio/.test(msg)) return 'Escolha pelo menos um grupo ou atleta para a competição.';
@@ -76,14 +81,29 @@ function normalizeCompetitionResult(value: unknown): CompetitionResult | null {
   };
 }
 
-/** Competições do clube do treinador logado (RLS por clube). */
+/** Treinamento de campo (sem pesagem, com início e fim)? */
+export const isFieldTraining = (c: { tipo?: string | null }) => c.tipo === 'campo';
+
+/** Último dia do evento: fim do treinamento de campo ou a data da competição. */
+export const eventEndDate = (c: { data: string; data_fim?: string | null }) => c.data_fim || c.data;
+
+/** Data que conta para a contagem regressiva: pesagem da competição ou início do treinamento de campo. */
+export const eventKeyDate = (c: { data: string; data_pesagem?: string | null }) => c.data_pesagem || c.data;
+
+/** "01/12 a 05/12" (ou só "01/12" quando é um dia). */
+export const fieldTrainingRange = (c: { data: string; data_fim?: string | null }) => {
+  const br = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+  return c.data_fim && c.data_fim !== c.data ? `${br(c.data)} a ${br(c.data_fim)}` : br(c.data);
+};
+
+/** Competições e treinamentos de campo do clube do treinador logado (RLS por clube). */
 export async function listCompetitions(): Promise<Competition[]> {
   if (!supabase) return [];
   const { data, error } = await supabase
     .from('competitions')
     .select('*')
-    .order('data_pesagem')
-    .order('data');
+    .order('data')
+    .order('nome');
   if (error) throw new Error(competitionError(error));
   return (data ?? []) as Competition[];
 }
@@ -93,11 +113,15 @@ const semLista = (audience: Competition['audience']) => (audience ?? 'todos') ==
 
 export async function saveCompetition(competition: Omit<Competition, 'id' | 'created_at' | 'updated_at'> & { id?: string }) {
   if (!supabase) throw new Error('Supabase não configurado.');
+  const campo = isFieldTraining(competition);
+  // Só manda as colunas novas quando o tipo é conhecido (treinamento de campo ou registro lido de um
+  // banco que já tem a coluna): a competição continua funcionando num banco sem a parte nova do SQL
   const payload = {
     nome: competition.nome.trim(),
+    ...(competition.tipo ? { tipo: competition.tipo, data_fim: campo ? competition.data_fim || null : null } : {}),
     data: competition.data,
-    data_pesagem: competition.data_pesagem,
-    hora_pesagem: competition.hora_pesagem || null,
+    data_pesagem: campo ? null : competition.data_pesagem,
+    hora_pesagem: campo ? null : competition.hora_pesagem || null,
     local: competition.local?.trim() || null,
     observacoes: competition.observacoes?.trim() || null,
     audience: competition.audience ?? 'todos',

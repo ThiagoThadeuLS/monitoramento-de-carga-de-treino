@@ -78,7 +78,7 @@ function gerar() {
     body_compositions: [], athlete_prs: [], escudos: [],
   };
   t.coaches.push({ user_id: COACH_ID, club_id: CLUB_ID, nome: 'Paula Rezende', email: 'paula@carga.app', photo_url: null, role: 'admin', active: true, must_change_password: false, created_at: stamp(addDaysISO(today, -90), '09:00') });
-  t.coaches.push({ user_id: uid('c0ac0000'), club_id: CLUB_ID, nome: 'Marcos Lima', email: 'marcos@carga.app', photo_url: null, role: 'treinador', active: true, must_change_password: false, created_at: stamp(addDaysISO(today, -80), '09:00') });
+  t.coaches.push({ user_id: 'c0ac0000-0000-4000-8000-000000000002', club_id: CLUB_ID, nome: 'Marcos Lima', email: 'marcos@carga.app', photo_url: null, role: 'treinador', active: true, must_change_password: false, created_at: stamp(addDaysISO(today, -80), '09:00') });
   t.club_reminder_settings.push({ club_id: CLUB_ID, weight_days: [1, 3, 5], weight_time: '07:00', notify_from: '06:00', notify_until: '21:00' });
 
   // Atletas
@@ -222,7 +222,11 @@ function gerar() {
   );
 
   // Competição
-  t.competitions.push({ id: uid(), club_id: CLUB_ID, nome: 'Campeonato Mineiro Sênior', data: addDaysISO(today, 18), data_pesagem: addDaysISO(today, 17), hora_pesagem: '18:00:00', local: 'Belo Horizonte', observacoes: null, audience: 'incluir', target_group_ids: [G.sel], target_athlete_ids: [], created_at: stamp(addDaysISO(today, -20), '10:00') });
+  // Competição que já passou (pede o resultado) e um treinamento de campo
+  t.competitions.push({ id: uid(), club_id: CLUB_ID, tipo: 'competicao', nome: 'Copa BH de Judô', data: addDaysISO(today, -3), data_fim: null, data_pesagem: addDaysISO(today, -4), hora_pesagem: '17:00:00', local: 'Belo Horizonte', observacoes: null, audience: 'todos', target_group_ids: [], target_athlete_ids: [], created_at: stamp(addDaysISO(today, -30), '10:00') });
+  t.competitions.push({ id: uid(), club_id: CLUB_ID, tipo: 'campo', nome: 'Treinamento de campo — seleção mineira', data: addDaysISO(today, 9), data_fim: addDaysISO(today, 13), data_pesagem: null, hora_pesagem: null, local: 'Pindamonhangaba (SP)', observacoes: 'Levar quimono reserva e documento.', audience: 'todos', target_group_ids: [], target_athlete_ids: [], created_at: stamp(addDaysISO(today, -5), '10:00') });
+  t.adversario_observacoes.push({ id: uid(), adversario_id: t.adversarios[2].id, autor_id: COACH_ID, autor_tipo: 'tecnico', texto: 'Pegada forte na manga esquerda.', created_at: stamp(addDaysISO(today, -6), '10:00'), editado_em: null });
+  t.competitions.push({ id: uid(), club_id: CLUB_ID, tipo: 'competicao', nome: 'Campeonato Mineiro Sênior', data: addDaysISO(today, 18), data_pesagem: addDaysISO(today, 17), hora_pesagem: '18:00:00', local: 'Belo Horizonte', observacoes: null, audience: 'incluir', target_group_ids: [G.sel], target_athlete_ids: [], created_at: stamp(addDaysISO(today, -20), '10:00') });
 
   return { t, G, perfis };
 }
@@ -430,7 +434,29 @@ const RPC: Record<string, (a: Row) => any> = {
       const ultimo = doAtleta('weight_records').sort((a, b) => cmp(b.date, a.date))[0];
       return { ...c, categoria: ATLETA.categoria, peso_atual: ultimo?.weight ?? null, peso_data: ultimo?.date ?? null };
     }),
-  athlete_list_adversarios: () => ({ me: ATLETA.id, adversarios: db.adversarios.filter((a) => a.sexo === 'Feminino'), observacoes: [] }),
+  athlete_list_competition_results: () =>
+    db.competitions
+      .filter((c) => c.tipo !== 'campo' && c.data <= todayISO() && paraAtleta(c))
+      .map((c) => ({
+        competition_id: c.id, nome: c.nome, data: c.data, data_pesagem: c.data_pesagem, hora_pesagem: c.hora_pesagem, local: c.local,
+        categoria: ATLETA.categoria, result: c.resultado ?? null,
+      })),
+  athlete_save_competition_result: (a) => {
+    const c = db.competitions.find((x) => x.id === a.p_competition_id);
+    if (c) c.resultado = { id: uid(), colocacao: a.p_colocacao, lutas: a.p_lutas ?? null, vitorias: a.p_vitorias ?? null, derrotas: a.p_derrotas ?? null, updated_at: new Date().toISOString() };
+    return null;
+  },
+  coach_competition_results_overview: () => [],
+  athlete_list_adversarios: () => ({
+    me: ATLETA.id,
+    adversarios: db.adversarios.filter((a) => a.sexo === 'Feminino'),
+    observacoes: db.adversario_observacoes,
+  }),
+  athlete_update_observacao: (a) => {
+    const o = db.adversario_observacoes.find((x) => x.id === a.p_id);
+    if (o) Object.assign(o, { texto: a.p_texto, editado_em: new Date().toISOString() });
+    return null;
+  },
   athlete_submit_pse: (a) => (db.pse_records.push({ id: uid(), athlete_id: ATLETA.id, date: a.p_date, training_type: a.p_training_type, rpe_score: a.p_rpe_score, did_not_train: a.p_did_not_train, duration_minutes: a.p_duration_minutes, observations: a.p_observations, created_at: new Date().toISOString() }), null),
   athlete_submit_psr: (a) => (db.psr_records.push({ id: uid(), athlete_id: ATLETA.id, date: a.p_date, psr_score: a.p_psr_score, fatigue_score: a.p_fatigue_score, sleep_score: a.p_sleep_score, muscle_soreness_score: a.p_muscle_soreness_score, stress_score: a.p_stress_score, mood_score: a.p_mood_score, created_at: new Date().toISOString() }), null),
   athlete_submit_weight: (a) => (db.weight_records.push({ id: uid(), athlete_id: ATLETA.id, date: a.p_date, weight: a.p_weight, created_at: new Date().toISOString() }), null),

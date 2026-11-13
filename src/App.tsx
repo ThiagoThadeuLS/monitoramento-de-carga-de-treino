@@ -3,6 +3,7 @@ import { Loader2 } from 'lucide-react';
 import { Header } from './components/Header';
 import { AthleteArea } from './components/AthleteArea';
 import { ClubProvider } from './lib/club';
+import { HeaderSlotProvider } from './lib/headerSlot';
 import { InstallGate } from './components/InstallGate';
 import { isMobileDevice, isStandalone } from './lib/push';
 import { lazyNamed } from './lib/lazy';
@@ -57,6 +58,7 @@ export function App() {
 
   return (
     <ClubProvider>
+    <HeaderSlotProvider>
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
       <Header currentView={currentView} onViewChange={(v) => (clubInviteToken ? leaveInvite(v) : setCurrentView(v))} />
       
@@ -81,6 +83,7 @@ export function App() {
         </p>
       </footer>
     </div>
+    </HeaderSlotProvider>
     </ClubProvider>
   );
 }

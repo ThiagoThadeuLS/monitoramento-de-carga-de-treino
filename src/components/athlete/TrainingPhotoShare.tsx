@@ -4,7 +4,7 @@ import { Camera, Download, Image as ImageIcon, Loader2, RefreshCw, Share2, X } f
 import { PLATFORM_NAME } from '../../lib/club';
 import { useDialogs } from '../ui/Dialogs';
 import type { StoryPerson } from '../../lib/storyCard';
-import type { PostLayout, StickerAssets, StickerStyle, TrainingStickerData } from '../../lib/trainingSticker';
+import type { PhotoStickerInfo, PostLayout, StickerAssets, StickerStyle } from '../../lib/trainingSticker';
 
 type Libs = { sticker: typeof import('../../lib/trainingSticker'); story: typeof import('../../lib/storyCard') };
 
@@ -13,11 +13,33 @@ const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(mi
 const SAFE_BOTTOM = 0.86;
 
 /**
- * Foto pós-treino com a figurinha do treino por cima (Story 1080 × 1920).
+ * Foto com figurinha por cima (Story 1080 × 1920): a do treino (depois da PSE) ou a da medalha
+ * (depois de registrar o resultado da competição).
  * 1) convite: tirar foto ou escolher da galeria; 2) ajuste: arrastar a foto e a figurinha,
  * tamanho, cor e mostrar/esconder as notas; 3) compartilhar (Instagram, WhatsApp...) ou salvar.
  */
-export const TrainingShareDialog: React.FC<{ info: TrainingStickerData; person: StoryPerson; onClose: () => void }> = ({ info, person, onClose }) => {
+export const TrainingShareDialog: React.FC<{ info: PhotoStickerInfo; person: StoryPerson; onClose: () => void }> = ({ info, person, onClose }) => {
+  // Medalha: mesmos passos, outros textos (sem depender do código do desenho, que chega depois)
+  const medal = 'kind' in info && info.kind === 'resultado';
+  const hasNotes = medal ? info.lutas !== null && info.lutas !== undefined : true;
+  const fileName = medal ? 'minha-medalha.jpg' : 'meu-treino.jpg';
+  const texts = medal
+    ? {
+        invite: info.colocacao <= 3 ? 'Pódio! 🥇' : 'Resultado registrado! 🏅',
+        inviteSub: 'Tire uma foto com a medalha e poste no Story com a figurinha da competição.',
+        camera: 'Tirar foto',
+        title: 'Postar o resultado',
+        alt: 'Figurinha da medalha',
+        notes: ['Lutas: mostrando', 'Lutas: escondidas'],
+      }
+    : {
+        invite: 'Treino registrado! 💪',
+        inviteSub: 'Tire uma foto e poste com a figurinha do treino.',
+        camera: 'Tirar foto',
+        title: 'Postar o treino',
+        alt: 'Figurinha do treino',
+        notes: ['Notas: mostrando', 'Notas: escondidas'],
+      };
   const { notify } = useDialogs();
   const cameraRef = useRef<HTMLInputElement>(null);
   const galleryRef = useRef<HTMLInputElement>(null);
@@ -92,14 +114,14 @@ export const TrainingShareDialog: React.FC<{ info: TrainingStickerData; person: 
     const t = window.setTimeout(() => {
       libs.sticker
         .renderTrainingPost(photo.img, sticker.canvas, layout)
-        .then((blob) => !cancelled && setFile(new File([blob], 'meu-treino.jpg', { type: 'image/jpeg' })))
+        .then((blob) => !cancelled && setFile(new File([blob], fileName, { type: 'image/jpeg' })))
         .catch(() => !cancelled && setError('Não foi possível montar a imagem.'));
     }, 350);
     return () => {
       cancelled = true;
       window.clearTimeout(t);
     };
-  }, [libs, photo, sticker, layout]);
+  }, [libs, photo, sticker, layout, fileName]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -205,7 +227,7 @@ export const TrainingShareDialog: React.FC<{ info: TrainingStickerData; person: 
       className="fixed inset-0 z-[90] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto"
       role="dialog"
       aria-modal="true"
-      aria-label="Compartilhar o treino"
+      aria-label={texts.title}
     >
       {inputs}
       {!photo ? (
@@ -213,8 +235,8 @@ export const TrainingShareDialog: React.FC<{ info: TrainingStickerData; person: 
         <div className="w-full max-w-sm bg-slate-900 border border-slate-700 rounded-3xl p-5 space-y-4 shadow-2xl">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h2 className="text-base font-black text-white">Treino registrado! 💪</h2>
-              <p className="text-xs text-slate-400 mt-0.5">Tire uma foto e poste com a figurinha do treino.</p>
+              <h2 className="text-base font-black text-white">{texts.invite}</h2>
+              <p className="text-xs text-slate-400 mt-0.5">{texts.inviteSub}</p>
             </div>
             <button type="button" onClick={onClose} className="p-2 rounded-xl bg-slate-800 text-slate-300 hover:text-white" aria-label="Fechar">
               <X className="w-4 h-4" />
@@ -222,7 +244,7 @@ export const TrainingShareDialog: React.FC<{ info: TrainingStickerData; person: 
           </div>
           <div className="rounded-2xl bg-gradient-to-b from-slate-700 to-slate-800 p-3 flex justify-center">
             {sticker ? (
-              <img src={sticker.url} alt="Figurinha do treino" className="w-full max-w-[300px]" />
+              <img src={sticker.url} alt={texts.alt} className="w-full max-w-[300px]" />
             ) : (
               <Loader2 className="w-6 h-6 animate-spin text-slate-400 my-10" />
             )}
@@ -234,7 +256,7 @@ export const TrainingShareDialog: React.FC<{ info: TrainingStickerData; person: 
               onClick={() => cameraRef.current?.click()}
               className="py-3 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 text-sm font-black flex items-center justify-center gap-2"
             >
-              <Camera className="w-4 h-4" /> Tirar foto
+              <Camera className="w-4 h-4" /> {texts.camera}
             </button>
             <button
               type="button"
@@ -252,7 +274,7 @@ export const TrainingShareDialog: React.FC<{ info: TrainingStickerData; person: 
         // 2) Ajuste e 3) compartilhar
         <div className="w-full max-w-sm space-y-3">
           <div className="flex items-center justify-between gap-2">
-            <h2 className="text-base font-black text-white">Postar o treino</h2>
+            <h2 className="text-base font-black text-white">{texts.title}</h2>
             <div className="flex gap-2">
               {/* Sem "capture": o celular oferece câmera ou galeria */}
               <button
@@ -287,7 +309,7 @@ export const TrainingShareDialog: React.FC<{ info: TrainingStickerData; person: 
             {sticker && (
               <img
                 src={sticker.url}
-                alt="Figurinha do treino"
+                alt={texts.alt}
                 data-figurinha="1"
                 draggable={false}
                 className="absolute"
@@ -324,9 +346,9 @@ export const TrainingShareDialog: React.FC<{ info: TrainingStickerData; person: 
               <button type="button" onClick={() => setStyle((s) => ({ ...s, estilo: 'claro' }))} className={toggle(style.estilo === 'claro')}>
                 Clara
               </button>
-              <button type="button" onClick={() => setStyle((s) => ({ ...s, notas: !s.notas }))} className={`ml-auto ${toggle(style.notas)}`}>
-                {style.notas ? 'Notas: mostrando' : 'Notas: escondidas'}
-              </button>
+              {hasNotes && <button type="button" onClick={() => setStyle((s) => ({ ...s, notas: !s.notas }))} className={`ml-auto ${toggle(style.notas)}`}>
+                {style.notas ? texts.notes[0] : texts.notes[1]}
+              </button>}
             </div>
           </div>
 

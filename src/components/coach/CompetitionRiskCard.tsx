@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { AlertTriangle, ChevronRight, Trophy } from 'lucide-react';
 import { Competition } from '../../types';
-import { getCompetitionSummary, listCompetitions } from '../../lib/competitions';
+import { getCompetitionSummary, isFieldTraining, listCompetitions } from '../../lib/competitions';
 import { buildWeightPlan, daysBetweenISO, parseCategoryWeight } from '../../lib/weightPlan';
 
 interface Summary {
@@ -20,7 +20,10 @@ export const CompetitionRiskCard: React.FC<{ today: string; onOpen: () => void }
     (async () => {
       try {
         const list = await listCompetitions();
-        const next = list.filter((c) => c.data_pesagem >= today).sort((a, b) => a.data_pesagem.localeCompare(b.data_pesagem))[0];
+        // Só competições (treinamento de campo não tem pesagem)
+        const next = list
+          .filter((c): c is Competition & { data_pesagem: string } => !isFieldTraining(c) && !!c.data_pesagem && c.data_pesagem >= today)
+          .sort((a, b) => a.data_pesagem.localeCompare(b.data_pesagem))[0];
         if (!next) {
           if (!cancelled) setSummary(null);
           return;
@@ -56,7 +59,7 @@ export const CompetitionRiskCard: React.FC<{ today: string; onOpen: () => void }
 
   if (!summary) return null;
   const { competition: c, risk, attention, total } = summary;
-  const days = daysBetweenISO(today, c.data_pesagem);
+  const days = daysBetweenISO(today, c.data_pesagem ?? c.data);
 
   return (
     <button

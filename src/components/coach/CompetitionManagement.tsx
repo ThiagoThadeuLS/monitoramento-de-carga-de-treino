@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle, CalendarDays, CheckCircle2, ChevronRight, Clock, Loader2,
-  MapPin, Medal, Pencil, Plus, RefreshCw, Scale, Search, ShieldCheck, Swords, Trash2, Trophy, UsersRound, X,
+  MapPin, Medal, Pencil, Plus, RefreshCw, Scale, Search, ShieldCheck, Swords, Tent, Trash2, Trophy, UsersRound, X,
 } from 'lucide-react';
 import { Competition } from '../../types';
 import { AthleteGroup, AthleteRef, listGroupsCached } from '../../lib/groups';
@@ -10,7 +10,8 @@ import { useClub } from '../../lib/club';
 import {
   COMPETITION_PLACEMENTS, CompetitionResultOverviewRow, CompetitionSummaryRow, PLACEMENT_EMOJI,
   PLACEMENT_LABEL, competitionAppliesTo, competitionAudienceLabel, competitionResultStatsBy,
-  deleteCompetition, getCompetitionSummary, isCompetitionPlacement, listCompetitionResultsOverview,
+  deleteCompetition, eventEndDate, eventKeyDate, fieldTrainingRange, getCompetitionSummary, isCompetitionPlacement, isFieldTraining,
+  listCompetitionResultsOverview,
   listCompetitions, saveCompetition, summarizeCompetitionResults,
 } from '../../lib/competitions';
 import { addDaysISO, todayISO } from '../../lib/date';
@@ -21,8 +22,13 @@ import {
 
 interface CompetitionForm {
   id?: string;
+  /** Competição (com pesagem) ou treinamento de campo (início e fim, sem pesagem) */
+  tipo: 'competicao' | 'campo';
+  /** Tipo gravado no banco (undefined = registro novo ou banco sem a coluna) */
+  tipoOriginal?: Competition['tipo'];
   nome: string;
   data: string;
+  data_fim: string;
   data_pesagem: string;
   hora_pesagem: string;
   local: string;
@@ -90,10 +96,12 @@ const fightStats = (row?: CompetitionResultOverviewRow | null) => {
   return `${row.lutas} luta${row.lutas === 1 ? '' : 's'} • ${row.vitorias ?? 0} V • ${row.derrotas ?? 0} D`;
 };
 
-const emptyForm = (today: string): CompetitionForm => ({
+const emptyForm = (today: string, tipo: CompetitionForm['tipo'] = 'competicao'): CompetitionForm => ({
+  tipo,
   nome: '',
   data: addDaysISO(today, 14),
-  data_pesagem: addDaysISO(today, 13),
+  data_fim: tipo === 'campo' ? addDaysISO(today, 18) : '',
+  data_pesagem: tipo === 'campo' ? '' : addDaysISO(today, 13),
   hora_pesagem: '',
   local: '',
   observacoes: '',
@@ -203,22 +211,23 @@ export const CompetitionManagement: React.FC = () => {
     [competitions, activeCompetitionFilter]
   );
 
+  // Treinamento de campo fica em "Próximas" até o último dia
   const upcoming = useMemo(
-    () => visibleCompetitions.filter((c) => c.data >= today).sort((a, b) => a.data_pesagem.localeCompare(b.data_pesagem)),
+    () => visibleCompetitions.filter((c) => eventEndDate(c) >= today).sort((a, b) => eventKeyDate(a).localeCompare(eventKeyDate(b))),
     [visibleCompetitions, today]
   );
   const past = useMemo(
-    () => visibleCompetitions.filter((c) => c.data < today).sort((a, b) => b.data.localeCompare(a.data)),
+    () => visibleCompetitions.filter((c) => eventEndDate(c) < today).sort((a, b) => b.data.localeCompare(a.data)),
     [visibleCompetitions, today]
   );
 
   const targetedAthletes = (competition: Competition) =>
     athletes.filter((a) => competitionAppliesTo(competition, a.id, groups));
 
-  const openNew = () => {
+  const openNew = (tipo: CompetitionForm['tipo'] = 'competicao') => {
     setFormError('');
     setAthleteSearch('');
-    setForm(emptyForm(today));
+    setForm(emptyForm(today, tipo));
   };
 
   const openEdit = (competition: Competition) => {
@@ -226,9 +235,12 @@ export const CompetitionManagement: React.FC = () => {
     setAthleteSearch('');
     setForm({
       id: competition.id,
+      tipo: isFieldTraining(competition) ? 'campo' : 'competicao',
+      tipoOriginal: competition.tipo,
       nome: competition.nome,
       data: competition.data,
-      data_pesagem: competition.data_pesagem,
+      data_fim: competition.data_fim ?? '',
+      data_pesagem: competition.data_pesagem ?? '',
       hora_pesagem: hhmm(competition.hora_pesagem),
       local: competition.local ?? '',
       observacoes: competition.observacoes ?? '',
@@ -241,20 +253,30 @@ export const CompetitionManagement: React.FC = () => {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form) return;
-    if (!form.nome.trim()) return setFormError('Dê um nome à competição.');
-    if (!form.data || !form.data_pesagem) return setFormError('Informe a data da competição e a data da pesagem.');
-    if (form.data_pesagem > form.data) return setFormError('A pesagem precisa acontecer até a data da competição.');
+    const campo = form.tipo === 'campo';
+    const what = campo ? 'o treinamento de campo' : 'a competição';
+    if (!form.nome.trim()) return setFormError(`Dê um nome para ${what}.`);
+    if (campo) {
+      if (!form.data) return setFormError('Informe a data de início.');
+      if (form.data_fim && form.data_fim < form.data) return setFormError('O fim precisa ser depois do início.');
+    } else {
+      if (!form.data || !form.data_pesagem) return setFormError('Informe a data da competição e a data da pesagem.');
+      if (form.data_pesagem > form.data) return setFormError('A pesagem precisa acontecer até a data da competição.');
+    }
     if (usesList(form.audience) && form.group_ids.length + form.athlete_ids.length === 0)
-      return setFormError('Escolha pelo menos um grupo ou atleta para a competição.');
+      return setFormError(`Escolha pelo menos um grupo ou atleta para ${what}.`);
 
     setSaving(true);
     setFormError('');
     try {
       await saveCompetition({
         id: form.id,
+        // Competição nova num banco antigo segue sem a coluna "tipo"
+        tipo: campo ? 'campo' : form.tipoOriginal ? 'competicao' : undefined,
         nome: form.nome,
         data: form.data,
-        data_pesagem: form.data_pesagem,
+        data_fim: campo ? form.data_fim || null : null,
+        data_pesagem: campo ? null : form.data_pesagem,
         hora_pesagem: form.hora_pesagem || null,
         local: form.local,
         observacoes: form.observacoes,
@@ -264,7 +286,8 @@ export const CompetitionManagement: React.FC = () => {
       });
       const wasEditing = !!form.id;
       setForm(null);
-      flash(wasEditing ? `Competição "${form.nome.trim()}" atualizada.` : `Competição "${form.nome.trim()}" criada.`);
+      const label = campo ? 'Treinamento de campo' : 'Competição';
+      flash(wasEditing ? `${label} "${form.nome.trim()}" atualizado.` : `${label} "${form.nome.trim()}" criado.`);
       await load();
     } catch (err: any) {
       setFormError(err.message);
@@ -274,8 +297,11 @@ export const CompetitionManagement: React.FC = () => {
   };
 
   const handleDelete = async (competition: Competition) => {
+    const camp = isFieldTraining(competition);
     const ok = await confirm({
-      message: `Excluir a competição "${competition.nome}"? Os registros de peso dos atletas continuam salvos.`,
+      message: camp
+        ? `Excluir o treinamento de campo "${competition.nome}"?`
+        : `Excluir a competição "${competition.nome}"? Os registros de peso dos atletas continuam salvos.`,
       danger: true,
     });
     if (!ok) return;
@@ -283,7 +309,7 @@ export const CompetitionManagement: React.FC = () => {
       await deleteCompetition(competition.id);
       if (viewing?.id === competition.id) setViewing(null);
       setForm(null);
-      flash(`Competição "${competition.nome}" excluída.`);
+      flash(camp ? `Treinamento de campo "${competition.nome}" excluído.` : `Competição "${competition.nome}" excluída.`);
       await load();
     } catch (err: any) {
       setError(err.message);
@@ -291,6 +317,7 @@ export const CompetitionManagement: React.FC = () => {
   };
 
   const weighInDate = viewing?.data_pesagem ?? today;
+  const viewingCamp = !!viewing && isFieldTraining(viewing);
   const summaryRows = useMemo(() => {
     const planFor = (row: CompetitionSummaryRow): WeightPlan =>
       buildWeightPlan({
@@ -340,16 +367,28 @@ export const CompetitionManagement: React.FC = () => {
 
   const competitionCard = (competition: Competition, isPast = false) => {
     const targeted = targetedAthletes(competition);
-    const days = daysBetweenISO(today, competition.data_pesagem);
+    const camp = isFieldTraining(competition);
+    const days = daysBetweenISO(today, eventKeyDate(competition));
     const stats = resultByCompetition.get(competition.id);
     return (
-      <article key={competition.id} className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3">
+      <article key={competition.id} className={`bg-slate-900/90 border rounded-2xl p-4 space-y-3 ${camp ? 'border-emerald-900/70' : 'border-slate-800'}`}>
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-1.5 mb-1">
+              {camp && (
+                <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
+                  <Tent className="w-3 h-3" /> Treinamento de campo
+                </span>
+              )}
               {isPast ? (
                 <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 border border-slate-700">
-                  Encerrada
+                  {camp ? 'Encerrado' : 'Encerrada'}
+                </span>
+              ) : camp ? (
+                <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-md border ${
+                  days <= 7 ? 'bg-amber-500/15 text-amber-300 border-amber-500/40' : 'bg-sky-500/15 text-sky-300 border-sky-500/40'
+                }`}>
+                  {days <= 0 ? 'Em andamento' : `Começa em ${days} dia${days === 1 ? '' : 's'}`}
                 </span>
               ) : (
                 <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-md border ${
@@ -360,12 +399,22 @@ export const CompetitionManagement: React.FC = () => {
               )}
             </div>
             <h3 className="font-bold text-white break-words">{competition.nome}</h3>
-            <p className="text-xs text-slate-400 capitalize">{weekdayDate(competition.data)} • {longDate(competition.data)}</p>
-            <p className="text-xs text-slate-400 flex items-center gap-1 mt-1">
-              <CalendarDays className="w-3.5 h-3.5 text-violet-300" />
-              Pesagem {shortDate(competition.data_pesagem)}
-              {competition.hora_pesagem && ` às ${hhmm(competition.hora_pesagem)}`}
-            </p>
+            {camp ? (
+              <p className="text-xs text-slate-400 capitalize">
+                {weekdayDate(competition.data)}
+                {competition.data_fim && competition.data_fim !== competition.data ? ` a ${weekdayDate(competition.data_fim)}` : ''} •{' '}
+                {fieldTrainingRange(competition)}
+              </p>
+            ) : (
+              <>
+                <p className="text-xs text-slate-400 capitalize">{weekdayDate(competition.data)} • {longDate(competition.data)}</p>
+                <p className="text-xs text-slate-400 flex items-center gap-1 mt-1">
+                  <CalendarDays className="w-3.5 h-3.5 text-violet-300" />
+                  Pesagem {shortDate(competition.data_pesagem ?? competition.data)}
+                  {competition.hora_pesagem && ` às ${hhmm(competition.hora_pesagem)}`}
+                </p>
+              </>
+            )}
             {competition.local && (
               <p className="text-xs text-slate-400 flex items-center gap-1 mt-1">
                 <MapPin className="w-3.5 h-3.5 text-slate-500" />
@@ -408,7 +457,7 @@ export const CompetitionManagement: React.FC = () => {
               type="button"
               onClick={() => openEdit(competition)}
               className="p-2 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 border border-sky-500/30"
-              title="Editar competição"
+              title={camp ? 'Editar treinamento de campo' : 'Editar competição'}
             >
               <Pencil className="w-3.5 h-3.5" />
             </button>
@@ -416,7 +465,7 @@ export const CompetitionManagement: React.FC = () => {
               type="button"
               onClick={() => handleDelete(competition)}
               className="p-2 rounded-lg hover:bg-red-500/20 text-red-400 border border-red-500/20"
-              title="Excluir competição"
+              title={camp ? 'Excluir treinamento de campo' : 'Excluir competição'}
             >
               <Trash2 className="w-3.5 h-3.5" />
             </button>
@@ -427,7 +476,7 @@ export const CompetitionManagement: React.FC = () => {
           onClick={() => setViewing(competition)}
           className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs font-bold text-slate-300 hover:text-white hover:border-slate-500 transition-colors"
         >
-          <Scale className="w-3.5 h-3.5" /> Ver peso dos atletas
+          {camp ? <UsersRound className="w-3.5 h-3.5" /> : <Scale className="w-3.5 h-3.5" />} {camp ? 'Ver atletas' : 'Ver peso dos atletas'}
           <ChevronRight className="w-3.5 h-3.5" />
         </button>
       </article>
@@ -440,36 +489,47 @@ export const CompetitionManagement: React.FC = () => {
         <div className="flex flex-col sm:flex-row sm:items-center gap-3">
           <div className="flex-1">
             <p className="text-sm font-bold text-white flex items-center gap-1.5">
-              <Trophy className="w-4 h-4 text-amber-300" /> Competições
+              <Trophy className="w-4 h-4 text-amber-300" /> Competições e treinamentos de campo
             </p>
             <p className="text-xs text-slate-400">
-              Cadastre as competições, escolha os grupos ou atletas e acompanhe o peso de luta. O atleta vê o alerta na aba Peso.
+              Cadastre as competições (com pesagem e peso de luta) e os treinamentos de campo, escolha os grupos ou atletas. O atleta vê o aviso
+              na tela Hoje e na Agenda.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={openNew}
-            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-sm shadow-lg shadow-sky-500/20 active:scale-95 transition-all"
-          >
-            <Plus className="w-4 h-4" /> Nova competição
-          </button>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <button
+              type="button"
+              onClick={() => openNew('campo')}
+              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-200 border border-emerald-500/40 font-bold text-sm"
+            >
+              <Tent className="w-4 h-4" /> Treinamento de campo
+            </button>
+            <button
+              type="button"
+              onClick={() => openNew('competicao')}
+              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-sm shadow-lg shadow-sky-500/20 active:scale-95 transition-all"
+            >
+              <Plus className="w-4 h-4" /> Nova competição
+            </button>
+          </div>
         </div>
 
         {competitions.length > 0 && (
           <label className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3">
-            <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Ver competição</span>
+            <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Ver</span>
             <select
               value={activeCompetitionFilter}
               onChange={(e) => setCompetitionFilter(e.target.value)}
               className="w-full sm:max-w-md bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
             >
-              <option value="all">Todas as competições ({competitions.length})</option>
+              <option value="all">Todos ({competitions.length})</option>
               {[...competitions]
                 .sort((a, b) => b.data.localeCompare(a.data))
                 .map((competition) => {
                   const total = resultByCompetition.get(competition.id)?.total ?? 0;
                   return (
                     <option key={competition.id} value={competition.id}>
+                      {isFieldTraining(competition) ? 'Treinamento de campo: ' : ''}
                       {competition.nome} — {shortDate(competition.data)}
                       {total > 0 ? ` · ${total} resultado${total === 1 ? '' : 's'}` : ''}
                     </option>
@@ -587,8 +647,8 @@ export const CompetitionManagement: React.FC = () => {
       ) : competitions.length === 0 ? (
         <div className="py-14 text-center text-slate-400 space-y-1 bg-slate-900/60 border border-slate-800 rounded-2xl">
           <Trophy className="w-8 h-8 mx-auto text-slate-600" />
-          <p className="text-sm font-semibold text-slate-300">Nenhuma competição cadastrada</p>
-          <p className="text-xs">Crie a primeira e escolha os grupos que vão competir.</p>
+          <p className="text-sm font-semibold text-slate-300">Nenhuma competição ou treinamento de campo cadastrado</p>
+          <p className="text-xs">Crie o primeiro e escolha os grupos ou atletas que vão.</p>
         </div>
       ) : (
         <div className="space-y-4">
@@ -631,8 +691,14 @@ export const CompetitionManagement: React.FC = () => {
                 </p>
                 <h3 className="text-lg font-bold text-white break-words">{viewing.nome}</h3>
                 <p className="text-xs text-violet-300 mt-1">
-                  Pesagem {shortDate(viewing.data_pesagem)}
-                  {viewing.hora_pesagem && ` às ${hhmm(viewing.hora_pesagem)}`}
+                  {viewingCamp ? (
+                    <span className="text-emerald-300">Treinamento de campo • {fieldTrainingRange(viewing)}</span>
+                  ) : (
+                    <>
+                      Pesagem {shortDate(viewing.data_pesagem ?? viewing.data)}
+                      {viewing.hora_pesagem && ` às ${hhmm(viewing.hora_pesagem)}`}
+                    </>
+                  )}
                   {viewing.local && ` • ${viewing.local}`}
                 </p>
               </div>
@@ -646,12 +712,12 @@ export const CompetitionManagement: React.FC = () => {
                 <span className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-700 text-slate-300">
                   {summary.length} atleta{summary.length === 1 ? '' : 's'}
                 </span>
-                {riskCount > 0 && (
+                {!viewingCamp && riskCount > 0 && (
                   <span className="px-2.5 py-1 rounded-lg bg-red-500/15 border border-red-500/40 text-red-300 font-bold">
                     {riskCount} em risco
                   </span>
                 )}
-                {attentionCount > 0 && (
+                {!viewingCamp && attentionCount > 0 && (
                   <span className="px-2.5 py-1 rounded-lg bg-amber-500/15 border border-amber-500/40 text-amber-300 font-bold">
                     {attentionCount} em atenção
                   </span>
@@ -691,6 +757,21 @@ export const CompetitionManagement: React.FC = () => {
                     </>
                   )}
                 </div>
+              ) : viewingCamp ? (
+                // Treinamento de campo: só quem vai (sem pesagem nem peso de luta)
+                <ul className="rounded-xl border border-slate-800 divide-y divide-slate-800/70">
+                  {[...summary]
+                    .sort((a, b) => a.nome.localeCompare(b.nome))
+                    .map((row) => (
+                      <li key={row.athlete_id} className="px-3 py-2.5 flex items-center justify-between gap-3">
+                        <span className="text-sm font-semibold text-white break-words">{row.nome}</span>
+                        <span className="text-[11px] text-slate-400 flex-shrink-0">
+                          {row.categoria || 'Sem categoria'}
+                          {row.classe ? ` • ${row.classe}` : ''}
+                        </span>
+                      </li>
+                    ))}
+                </ul>
               ) : (
                 <>
                   {/* Celular */}
@@ -852,60 +933,129 @@ export const CompetitionManagement: React.FC = () => {
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4">
           <div className="bg-slate-900 border border-slate-700 rounded-t-3xl sm:rounded-3xl w-full max-w-lg max-h-[92vh] flex flex-col shadow-2xl">
             <div className="px-5 sm:px-6 py-4 border-b border-slate-800 flex items-center justify-between">
-              <h3 className="text-lg font-bold text-white">{form.id ? 'Editar competição' : 'Nova competição'}</h3>
+              <h3 className="text-lg font-bold text-white">
+                {form.tipo === 'campo'
+                  ? form.id
+                    ? 'Editar treinamento de campo'
+                    : 'Novo treinamento de campo'
+                  : form.id
+                  ? 'Editar competição'
+                  : 'Nova competição'}
+              </h3>
               <button type="button" onClick={() => setForm(null)} className="p-1.5 rounded-xl hover:bg-slate-800 text-slate-400 hover:text-white" title="Fechar">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <form onSubmit={handleSave} className="p-5 sm:p-6 space-y-4 overflow-y-auto">
+              {/* Tipo: só muda num cadastro novo (competição com resultados não vira treinamento de campo) */}
+              {!form.id && (
+                <div className="grid grid-cols-2 gap-2 p-1 bg-slate-950 border border-slate-800 rounded-xl" role="radiogroup" aria-label="Tipo">
+                  {(
+                    [
+                      ['competicao', 'Competição', Trophy],
+                      ['campo', 'Treinamento de campo', Tent],
+                    ] as const
+                  ).map(([id, label, Icon]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      role="radio"
+                      aria-checked={form.tipo === id}
+                      onClick={() =>
+                        setForm({
+                          ...form,
+                          tipo: id,
+                          data_pesagem: id === 'campo' ? '' : form.data_pesagem || addDaysISO(form.data, -1),
+                          data_fim: id === 'campo' ? form.data_fim || addDaysISO(form.data, 4) : '',
+                        })
+                      }
+                      className={`flex items-center justify-center gap-1.5 px-2 py-2 rounded-lg text-xs font-bold transition-colors ${
+                        form.tipo === id ? (id === 'campo' ? 'bg-emerald-500 text-slate-950' : 'bg-sky-500 text-slate-950') : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <Icon className="w-4 h-4" /> {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+
               <label className="block">
-                <span className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5">Nome da competição *</span>
+                <span className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5">
+                  {form.tipo === 'campo' ? 'Nome do treinamento de campo *' : 'Nome da competição *'}
+                </span>
                 <input
                   type="text"
                   required
                   maxLength={120}
                   value={form.nome}
                   onChange={(e) => setForm({ ...form, nome: e.target.value })}
-                  placeholder="ex: Campeonato Brasileiro"
+                  placeholder={form.tipo === 'campo' ? 'ex: Camping da seleção em Pinda' : 'ex: Campeonato Brasileiro'}
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
                 />
               </label>
 
-              <div className="grid grid-cols-2 gap-3">
-                <label className="block">
-                  <span className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5">Data da competição *</span>
-                  <input
-                    type="date"
-                    required
-                    value={form.data}
-                    onChange={(e) => setForm({ ...form, data: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
-                  />
-                </label>
-                <label className="block">
-                  <span className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5">Data da pesagem *</span>
-                  <input
-                    type="date"
-                    required
-                    value={form.data_pesagem}
-                    onChange={(e) => setForm({ ...form, data_pesagem: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
-                  />
-                </label>
-              </div>
+              {form.tipo === 'campo' ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="block">
+                    <span className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5">Início *</span>
+                    <input
+                      type="date"
+                      required
+                      value={form.data}
+                      onChange={(e) => setForm({ ...form, data: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5">Fim</span>
+                    <input
+                      type="date"
+                      value={form.data_fim}
+                      min={form.data || undefined}
+                      onChange={(e) => setForm({ ...form, data_fim: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    />
+                  </label>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="block">
+                    <span className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5">Data da competição *</span>
+                    <input
+                      type="date"
+                      required
+                      value={form.data}
+                      onChange={(e) => setForm({ ...form, data: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5">Data da pesagem *</span>
+                    <input
+                      type="date"
+                      required
+                      value={form.data_pesagem}
+                      onChange={(e) => setForm({ ...form, data_pesagem: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    />
+                  </label>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
-                <label className="block">
-                  <span className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5">Hora da pesagem</span>
-                  <input
-                    type="time"
-                    value={form.hora_pesagem}
-                    onChange={(e) => setForm({ ...form, hora_pesagem: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
-                  />
-                </label>
-                <label className="block">
+                {form.tipo !== 'campo' && (
+                  <label className="block">
+                    <span className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5">Hora da pesagem</span>
+                    <input
+                      type="time"
+                      value={form.hora_pesagem}
+                      onChange={(e) => setForm({ ...form, hora_pesagem: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    />
+                  </label>
+                )}
+                <label className={`block ${form.tipo === 'campo' ? 'col-span-2' : ''}`}>
                   <span className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5">Local</span>
                   <input
                     type="text"
@@ -1032,7 +1182,7 @@ export const CompetitionManagement: React.FC = () => {
                   rows={3}
                   value={form.observacoes}
                   onChange={(e) => setForm({ ...form, observacoes: e.target.value })}
-                  placeholder="Informações da competição, horário de concentração, documentos..."
+                  placeholder={form.tipo === 'campo' ? 'O que levar, horário de saída, hospedagem...' : 'Informações da competição, horário de concentração, documentos...'}
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 resize-y"
                 />
               </label>

@@ -3,7 +3,7 @@ import { BellOff, BellRing, ChevronDown, ChevronUp, Loader2, RefreshCw } from 'l
 import { supabase } from '../../lib/supabase';
 import { brDateOfStamp, timeOfStamp } from '../../lib/date';
 
-interface Row {
+export interface PushRow {
   athlete_id: string;
   nome: string;
   has_password: boolean;
@@ -17,7 +17,7 @@ interface Row {
 const when = (iso: string | null) => (iso ? `${brDateOfStamp(iso)} ${timeOfStamp(iso)}` : '');
 
 /** Por que o atleta não recebe (null = recebendo) */
-function problem(r: Row): string | null {
+export function pushProblem(r: PushRow): string | null {
   if (!r.has_password) return 'Ainda não entrou no app (não criou a senha).';
   if (r.active_devices === 0 && r.expired_devices > 0)
     return 'As notificações deste aparelho expiraram. Peça para abrir o app e tocar em "Ativar notificações".';
@@ -29,7 +29,7 @@ function problem(r: Row): string | null {
 
 /** Treinador: quem recebe os lembretes e quem não (com o motivo). */
 export const PushStatusCard: React.FC = () => {
-  const [rows, setRows] = useState<Row[] | null>(null);
+  const [rows, setRows] = useState<PushRow[] | null>(null);
   const [error, setError] = useState('');
   const [open, setOpen] = useState(false);
   const [version, setVersion] = useState(0);
@@ -45,7 +45,7 @@ export const PushStatusCard: React.FC = () => {
         setRows([]);
         return;
       }
-      setRows((data ?? []) as Row[]);
+      setRows((data ?? []) as PushRow[]);
     });
     return () => {
       cancelled = true;
@@ -60,7 +60,7 @@ export const PushStatusCard: React.FC = () => {
     );
   }
 
-  const withProblem = rows.map((r) => ({ r, p: problem(r) })).filter((x) => x.p);
+  const withProblem = rows.map((r) => ({ r, p: pushProblem(r) })).filter((x) => x.p);
   const ok = rows.length - withProblem.length;
 
   return (

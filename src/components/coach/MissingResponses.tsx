@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { BellOff, Clock } from 'lucide-react';
+import { BellOff, Clock, Eye, EyeOff } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { nowTimeHM, stampInAppZone, todayISO } from '../../lib/date';
 import { AthleteGroup, sessionAppliesTo } from '../../lib/groups';
@@ -36,11 +36,13 @@ const localStamp = (iso?: string) => stampInAppZone(iso);
 
 /**
  * Quem não respondeu PSR/PSE até o fim do horário das notificações do clube
- * (definido pelo treinador na Agenda). Respeita o período e a seleção de atletas.
+ * (definido em Configurações → Notificações). Respeita o período e a seleção de atletas.
  */
 export const MissingResponses: React.FC<Props> = ({ days, athletes, selected, groups, sessions, pse, psr }) => {
   const [deadline, setDeadline] = useState('22:00');
   const [showLate, setShowLate] = useState(true);
+  const [hidden, setHidden] = useState(false);
+  const [day, setDay] = useState('');
 
   useEffect(() => {
     supabase
@@ -89,9 +91,13 @@ export const MissingResponses: React.FC<Props> = ({ days, athletes, selected, gr
     return out.sort((x, y) => y.date.localeCompare(x.date) || x.nome.localeCompare(y.nome, 'pt-BR'));
   }, [days, athletes, selected, groups, sessions, pse, psr, deadline]);
 
-  const visible = showLate ? rows : rows.filter((r) => r.status === 'faltou');
-  const missing = rows.filter((r) => r.status === 'faltou').length;
-  const lateCount = rows.length - missing;
+  // Um dia só do período ('' = todos os dias)
+  const rowDays = useMemo(() => [...new Set(rows.map((r) => r.date))], [rows]);
+  const activeDay = day && rowDays.includes(day) ? day : '';
+  const dayRows = activeDay ? rows.filter((r) => r.date === activeDay) : rows;
+  const visible = showLate ? dayRows : dayRows.filter((r) => r.status === 'faltou');
+  const missing = dayRows.filter((r) => r.status === 'faltou').length;
+  const lateCount = dayRows.length - missing;
   const sentTime = (iso?: string) => {
     const [d, t] = localStamp(iso);
     return d ? `${brDate(d)} ${t}` : '';
@@ -115,21 +121,50 @@ export const MissingResponses: React.FC<Props> = ({ days, athletes, selected, gr
             Sem resposta até {deadline}
           </h3>
           <p className="text-xs text-slate-500 flex items-center gap-1">
-            <Clock className="w-3 h-3" /> Prazo = fim do horário das notificações (Agenda). Segue o período e os atletas selecionados.
+            <Clock className="w-3 h-3" /> Prazo = fim do horário das notificações (Configurações → Notificações). Segue o período e os atletas selecionados.
           </p>
         </div>
-        <div className="flex items-center gap-3 flex-shrink-0">
+        <div className="flex flex-wrap items-center gap-3 flex-shrink-0">
           <span className="text-xs text-slate-400">
             {missing} sem resposta{lateCount ? ` • ${lateCount} atrasada${lateCount === 1 ? '' : 's'}` : ''}
           </span>
-          <label className="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer">
-            <input type="checkbox" checked={showLate} onChange={(e) => setShowLate(e.target.checked)} className="accent-sky-500" />
-            Mostrar atrasadas
-          </label>
+          {!hidden && (
+            <>
+              <label className="flex items-center gap-1.5 text-xs text-slate-300">
+                <span className="sr-only">Dia</span>
+                <select
+                  value={activeDay}
+                  onChange={(e) => setDay(e.target.value)}
+                  aria-label="Ver só um dia"
+                  className="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:ring-2 focus:ring-sky-500"
+                >
+                  <option value="">Todos os dias</option>
+                  {rowDays.map((d) => (
+                    <option key={d} value={d}>
+                      {brDate(d)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer">
+                <input type="checkbox" checked={showLate} onChange={(e) => setShowLate(e.target.checked)} className="accent-sky-500" />
+                Mostrar atrasadas
+              </label>
+            </>
+          )}
+          <button
+            type="button"
+            onClick={() => setHidden(!hidden)}
+            aria-expanded={!hidden}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold"
+          >
+            {hidden ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+            {hidden ? 'Mostrar lista' : 'Ocultar lista'}
+          </button>
         </div>
       </header>
 
-      {visible.length === 0 ? (
+      {hidden ? null : visible.length === 0 ? (
         <p className="py-10 text-center text-sm text-slate-500">Todos responderam dentro do prazo neste período.</p>
       ) : (
         <>

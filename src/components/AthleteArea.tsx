@@ -25,9 +25,9 @@ import { PhotoPicker } from './ui/PhotoPicker';
 import { ShareStoryProvider } from './athlete/ShareStory';
 import { AchievementsPanel, AchievementsStrip, useAthleteAchievements } from './athlete/AthleteAchievements';
 import type { StoryCard, StoryPerson } from '../lib/storyCard';
-import type { AthleteCompetitionResult } from '../lib/competitions';
+import type { AthleteCompetitionResult, CompetitionPlacement } from '../lib/competitions';
 import { pendingCompetitionResults } from '../lib/competitions';
-import type { TrainingStickerData } from '../lib/trainingSticker';
+import type { PhotoStickerInfo, TrainingStickerData } from '../lib/trainingSticker';
 import { PseRecord, PsrRecord, WeightRecord } from '../types';
 import { isSupabaseConfigured } from '../lib/supabase';
 import { uploadOwnAthletePhoto } from '../lib/photos';
@@ -78,7 +78,7 @@ type Overlay =
   | { kind: 'peso' }
   | { kind: 'pse'; trainingType?: string; duration?: number; sessionId?: string }
   | { kind: 'treino'; id: string; name: string }
-  | { kind: 'resultado'; competition: AthleteCompetitionResult }
+  | { kind: 'resultado'; competition: AthleteCompetitionResult; placement?: CompetitionPlacement | null }
   | null;
 
 const hm = (t?: string | null) => (t ? t.slice(0, 5) : '');
@@ -318,7 +318,7 @@ export const AthleteArea: React.FC = () => {
     [competitionResults.rows, today]
   );
   // Foto pós-treino com a figurinha: pedida ao enviar a PSE ou pelo botão "Postar" do treino
-  const [pendingTraining, setPendingTraining] = useState<TrainingStickerData | null>(null);
+  const [pendingTraining, setPendingTraining] = useState<PhotoStickerInfo | null>(null);
   const clearPendingTraining = useCallback(() => setPendingTraining(null), []);
   // Cartão de resultado pedido dentro da tela de registro: abre depois que ela fecha
   const [pendingStory, setPendingStory] = useState<StoryCard | null>(null);
@@ -617,10 +617,12 @@ export const AthleteArea: React.FC = () => {
             <CompetitionResultDialog
               token={token}
               competition={overlay.competition}
+              initialPlacement={overlay.placement}
               onClose={closeOverlay}
               onSaved={competitionResults.reload}
-              onShare={(card) => {
-                setPendingStory(card);
+              onShare={(medal) => {
+                // Foto com a medalha (mesmo fluxo da foto pós-treino): abre depois que esta tela fecha
+                setPendingTraining(medal);
                 closeOverlay();
               }}
             />
@@ -728,7 +730,7 @@ export const AthleteArea: React.FC = () => {
             resultCard={
               <AthletePendingResultCard
                 pending={pendingResultToday}
-                onRegister={(competition) => openOverlay({ kind: 'resultado', competition })}
+                onRegister={(competition, placement) => openOverlay({ kind: 'resultado', competition, placement })}
               />
             }
             onShareTraining={(s, p) => setPendingTraining(trainingStickerInfo(p, s))}

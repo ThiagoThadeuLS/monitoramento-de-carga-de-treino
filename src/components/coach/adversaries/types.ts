@@ -24,6 +24,8 @@ export interface Observacao {
   autor_tipo: 'atleta' | 'tecnico';
   texto: string;
   created_at: string;
+  /** Quando o autor corrigiu o texto (null = nunca editado) */
+  editado_em?: string | null;
 }
 
 /** Ficha sendo cadastrada (sem id) ou editada */

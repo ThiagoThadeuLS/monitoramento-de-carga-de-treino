@@ -26,6 +26,8 @@ interface Props {
   onToggleHidden: () => void;
   /** Devolve true se a observação foi salva (para limpar a caixa) */
   onAddObservation: (texto: string) => Promise<boolean>;
+  /** Devolve true se a correção foi salva (para fechar a edição) */
+  onUpdateObservation: (obsId: string, texto: string) => Promise<boolean>;
   onDeleteObservation: (obsId: string) => void;
 }
 
@@ -44,11 +46,22 @@ export const AdversaryDetailSheet: React.FC<Props> = ({
   onDelete,
   onToggleHidden,
   onAddObservation,
+  onUpdateObservation,
   onDeleteObservation,
 }) => {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [texto, setTexto] = useState('');
   const [sending, setSending] = useState(false);
+  // Observação sendo editada (id + texto em edição)
+  const [editingObs, setEditingObs] = useState<{ id: string; texto: string } | null>(null);
+  const [savingObs, setSavingObs] = useState(false);
+
+  const saveEdit = async () => {
+    if (!editingObs || !editingObs.texto.trim()) return;
+    setSavingObs(true);
+    if (await onUpdateObservation(editingObs.id, editingObs.texto.trim())) setEditingObs(null);
+    setSavingObs(false);
+  };
 
   const send = async () => {
     if (!texto.trim()) return;
@@ -100,21 +113,66 @@ export const AdversaryDetailSheet: React.FC<Props> = ({
                   <div className="flex items-center justify-between text-[10px]">
                     <AuthorBadge tipo={obs.autor_tipo} long />
                     <div className="flex items-center gap-2">
-                      <span className="text-slate-500">{obsDate(obs.created_at)}</span>
-                      {obs.autor_id === currentUserId && (
-                        <button
-                          type="button"
-                          onClick={() => onDeleteObservation(obs.id)}
-                          className="text-slate-500 hover:text-red-400 transition-colors"
-                          title="Apagar esta observação"
-                          aria-label="Apagar esta observação"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                      <span className="text-slate-500">
+                        {obsDate(obs.created_at)}
+                        {obs.editado_em && <span className="italic"> • editado</span>}
+                      </span>
+                      {obs.autor_id === currentUserId && !readOnly && editingObs?.id !== obs.id && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setEditingObs({ id: obs.id, texto: obs.texto })}
+                            className="text-slate-500 hover:text-sky-300 transition-colors"
+                            title="Editar esta observação"
+                            aria-label="Editar esta observação"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onDeleteObservation(obs.id)}
+                            className="text-slate-500 hover:text-red-400 transition-colors"
+                            title="Apagar esta observação"
+                            aria-label="Apagar esta observação"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </>
                       )}
                     </div>
                   </div>
-                  <p className="text-slate-200 whitespace-pre-wrap">{obs.texto}</p>
+                  {editingObs?.id === obs.id ? (
+                    <div className="space-y-2">
+                      <textarea
+                        autoFocus
+                        rows={3}
+                        maxLength={2000}
+                        value={editingObs.texto}
+                        onChange={(e) => setEditingObs({ id: obs.id, texto: e.target.value })}
+                        aria-label="Editar observação"
+                        className={`${inputCls} text-xs resize-y`}
+                      />
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setEditingObs(null)}
+                          className="px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 text-[11px] font-bold"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={saveEdit}
+                          disabled={savingObs || !editingObs.texto.trim() || editingObs.texto.trim() === obs.texto}
+                          className="px-3 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 text-[11px] font-bold flex items-center gap-1 disabled:opacity-50"
+                        >
+                          {savingObs && <Loader2 className="w-3 h-3 animate-spin" />} Salvar
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-slate-200 whitespace-pre-wrap">{obs.texto}</p>
+                  )}
                 </div>
               ))}
             </div>

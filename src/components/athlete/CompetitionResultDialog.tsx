@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
-import { CheckCircle2, Heart, Loader2, Medal, Share2, Sparkles } from 'lucide-react';
+import { Camera, CheckCircle2, Heart, Loader2, Medal, Sparkles } from 'lucide-react';
 import {
   AthleteCompetitionResult,
   COMPETITION_PLACEMENTS,
   CompetitionPlacement,
   PLACEMENT_EMOJI,
+  NO_PLACEMENT_LABEL,
   PLACEMENT_LABEL,
   saveAthleteCompetitionResult,
 } from '../../lib/competitions';
-import type { StoryCard } from '../../lib/storyCard';
+import type { MedalStickerData } from '../../lib/trainingSticker';
 
 interface Props {
   token: string;
@@ -16,8 +17,10 @@ interface Props {
   onClose: () => void;
   /** Recarrega a lista (o cartão de pendências some sozinho) */
   onSaved: () => void;
-  /** Pede o cartão de compartilhar: ele abre depois que esta tela fechar */
-  onShare: (card: StoryCard) => void;
+  /** Pede a foto com a medalha: ela abre depois que esta tela fechar */
+  onShare: (medal: MedalStickerData) => void;
+  /** Resultado já tocado na caixa do Hoje (só vale para quem ainda não registrou) */
+  initialPlacement?: CompetitionPlacement | null;
 }
 
 type Saved = {
@@ -39,9 +42,9 @@ const parseCount = (value: string): number | null => {
 const validCount = (n: number | null): n is number => n !== null && Number.isInteger(n) && n >= 0;
 
 /** Registro/edição do resultado da competição pelo próprio atleta (nunca apaga). */
-export const CompetitionResultDialog: React.FC<Props> = ({ token, competition, onClose, onSaved, onShare }) => {
+export const CompetitionResultDialog: React.FC<Props> = ({ token, competition, onClose, onSaved, onShare, initialPlacement }) => {
   const existing = competition.result;
-  const [placement, setPlacement] = useState<CompetitionPlacement | null | undefined>(existing ? existing.colocacao : undefined);
+  const [placement, setPlacement] = useState<CompetitionPlacement | null | undefined>(existing ? existing.colocacao : initialPlacement);
   const [statsOn, setStatsOn] = useState(existing?.lutas !== null && existing?.lutas !== undefined);
   const [lutas, setLutas] = useState(existing?.lutas !== null && existing?.lutas !== undefined ? String(existing.lutas) : '');
   const [vitorias, setVitorias] = useState(
@@ -62,7 +65,7 @@ export const CompetitionResultDialog: React.FC<Props> = ({ token, competition, o
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (placement === undefined) {
-      setError('Escolha sua colocação (ou "Sem colocação").');
+      setError('Escolha sua colocação (ou "Dessa vez não deu").');
       return;
     }
 
@@ -107,7 +110,7 @@ export const CompetitionResultDialog: React.FC<Props> = ({ token, competition, o
 
   if (saved) {
     const placed = saved.colocacao !== null;
-    const card: StoryCard | null = placed
+    const card: MedalStickerData | null = placed
       ? {
           kind: 'resultado',
           nome: competition.nome,
@@ -140,7 +143,7 @@ export const CompetitionResultDialog: React.FC<Props> = ({ token, competition, o
                 onClick={() => onShare(card!)}
                 className="flex-1 py-3 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 text-sm font-black flex items-center justify-center gap-2"
               >
-                <Share2 className="w-4 h-4" /> Compartilhar meu resultado
+                <Camera className="w-4 h-4" /> Tirar foto com a medalha
               </button>
               <button
                 type="button"
@@ -223,7 +226,7 @@ export const CompetitionResultDialog: React.FC<Props> = ({ token, competition, o
             }`}
           >
             <Medal className="w-4 h-4 opacity-70" aria-hidden="true" />
-            Sem colocação
+            {NO_PLACEMENT_LABEL}
           </button>
         </div>
         <p className="text-[11px] text-slate-500">Tudo bem se não subiu ao pódio: registre do jeito que foi.</p>

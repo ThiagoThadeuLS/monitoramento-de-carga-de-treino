@@ -95,8 +95,11 @@ export function parseCompetitionPlacement(value: unknown): CompetitionPlacement 
   return isCompetitionPlacement(n) ? n : null;
 }
 
+/** Como o atleta vê o resultado sem colocação (competiu, mas não subiu ao pódio). */
+export const NO_PLACEMENT_LABEL = 'Dessa vez não deu';
+
 export function competitionPlacementLabel(value: CompetitionPlacement | null | undefined): string {
-  return isCompetitionPlacement(value) ? PLACEMENT_LABEL[value] : 'Sem colocação';
+  return isCompetitionPlacement(value) ? PLACEMENT_LABEL[value] : NO_PLACEMENT_LABEL;
 }
 
 /** Cartão de Stories do resultado. "Sem colocação" não gera cartão (só a mensagem de apoio no app). */

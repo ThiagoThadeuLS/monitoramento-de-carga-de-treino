@@ -67,7 +67,7 @@ describe('colocações', () => {
   it('rotula também o resultado sem colocação', () => {
     expect(competitionPlacementLabel(1)).toBe('1º lugar');
     expect(competitionPlacementLabel(7)).toBe('7º lugar');
-    expect(competitionPlacementLabel(null)).toBe('Sem colocação');
+    expect(competitionPlacementLabel(null)).toBe('Dessa vez não deu');
   });
 });
 

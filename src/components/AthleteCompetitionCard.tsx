@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle, CalendarDays, CheckCircle2, ChevronDown, ChevronUp, Clock, MapPin,
-  Scale, Share2, ShieldCheck, Target, TrendingDown, TrendingUp, Trophy,
+  Scale, Share2, ShieldCheck, Target, Tent, TrendingDown, TrendingUp, Trophy,
 } from 'lucide-react';
 import { useShareStory } from './athlete/ShareStory';
-import { AthleteCompetition, listAthleteCompetitions } from '../lib/competitions';
+import { AthleteCompetition, eventEndDate, fieldTrainingRange, isFieldTraining, listAthleteCompetitions } from '../lib/competitions';
 import { getAthleteHistory } from '../lib/athleteAuth';
 import { addDaysISO, todayISO } from '../lib/date';
 import { DailyStatsChart } from './coach/DailyStatsChart';
@@ -53,6 +53,8 @@ export const AthleteCompetitionCard: React.FC<AthleteCompetitionCardProps> = ({ 
   const [weights, setWeights] = useState<WeightPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [showChart, setShowChart] = useState(false);
+  // Resumido numa linha; abre sozinho quando o peso pede atenção (null = segue o status)
+  const [expanded, setExpanded] = useState<boolean | null>(null);
   // Depois da primeira carga, uma nova pesagem atualiza o cartão sem fazê-lo sumir.
   const loadedOnce = useRef(false);
 
@@ -95,8 +97,16 @@ export const AthleteCompetitionCard: React.FC<AthleteCompetitionCardProps> = ({ 
     };
   }, [token, refreshKey, today]);
 
+  // Treinamentos de campo que ainda não acabaram: aviso próprio, sem pesagem
+  const camps = useMemo(
+    () => competitions.filter((c) => isFieldTraining(c) && eventEndDate(c) >= today).sort((a, b) => a.data.localeCompare(b.data)),
+    [competitions, today]
+  );
   const upcoming = useMemo(
-    () => competitions.filter((c) => c.data_pesagem >= today).sort((a, b) => a.data_pesagem.localeCompare(b.data_pesagem)),
+    () =>
+      competitions
+        .filter((c): c is AthleteCompetition & { data_pesagem: string } => !isFieldTraining(c) && !!c.data_pesagem && c.data_pesagem >= today)
+        .sort((a, b) => a.data_pesagem.localeCompare(b.data_pesagem)),
     [competitions, today]
   );
   const next = upcoming[0] ?? null;
@@ -129,7 +139,40 @@ export const AthleteCompetitionCard: React.FC<AthleteCompetitionCardProps> = ({ 
     };
   }, [weights, today]);
 
-  if (!token || loading || !next || !plan) return null;
+  if (!token || loading) return null;
+
+  // Aviso do treinamento de campo (igual ao da competição, sem pesagem nem peso)
+  const campCards = camps.map((c) => {
+    const until = daysBetweenISO(today, c.data);
+    const running = until <= 0;
+    return (
+      <section key={c.id} className="rounded-2xl border border-emerald-500/30 bg-gradient-to-br from-slate-900 to-emerald-950/40 p-3.5 flex items-center gap-3">
+        <span className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center flex-shrink-0 border ${running ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-200' : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-200'}`}>
+          {running ? (
+            <Tent className="w-5 h-5" />
+          ) : (
+            <>
+              <span className="text-sm font-black leading-none">{until}</span>
+              <span className="text-[8px] uppercase font-bold">{until === 1 ? 'dia' : 'dias'}</span>
+            </>
+          )}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-300 flex items-center gap-1">
+            <Tent className="w-3 h-3" /> {running ? 'Treinamento de campo em andamento' : 'Treinamento de campo'}
+          </span>
+          <span className="block text-sm font-bold text-white break-words">{c.nome}</span>
+          <span className="block text-[11px] text-slate-400">
+            {fieldTrainingRange(c)}
+            {c.local ? ` • ${c.local}` : ''}
+          </span>
+          {c.observacoes && <span className="block text-[11px] text-slate-300 mt-1 whitespace-pre-wrap break-words">{c.observacoes}</span>}
+        </span>
+      </section>
+    );
+  });
+
+  if (!next || !plan) return campCards.length ? <div className="space-y-3">{campCards}</div> : null;
 
   const days = daysBetweenISO(today, next.data_pesagem);
   const style = STATUS_STYLE[plan.status];
@@ -142,11 +185,52 @@ export const AthleteCompetitionCard: React.FC<AthleteCompetitionCardProps> = ({ 
     else document.getElementById('weight-entry')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
+  const open = expanded ?? (plan.status === 'risco' || plan.status === 'atencao');
+
+  if (!open) {
+    return (
+      <div className="space-y-3">
+      {campCards}
+      <section className="rounded-2xl border border-slate-700 bg-gradient-to-br from-slate-900 to-sky-950/40 overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          aria-expanded={false}
+          className="w-full p-3.5 flex items-center gap-3 text-left hover:bg-slate-800/30 transition-colors"
+        >
+          <span className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center flex-shrink-0 border ${days <= 7 ? 'bg-amber-500/15 border-amber-500/40 text-amber-200' : 'bg-sky-500/15 border-sky-500/40 text-sky-200'}`}>
+            <span className="text-sm font-black leading-none">{Math.max(0, days)}</span>
+            <span className="text-[8px] uppercase font-bold">{days === 1 ? 'dia' : 'dias'}</span>
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="text-[10px] uppercase font-bold tracking-wider text-amber-300 flex items-center gap-1">
+              <Trophy className="w-3 h-3" /> Próxima competição • pesagem {shortDate(next.data_pesagem)}
+            </span>
+            <span className="block text-sm font-bold text-white truncate">{next.nome}</span>
+          </span>
+          <span className={`text-[10px] uppercase font-bold px-2 py-1 rounded-lg border flex-shrink-0 ${style.box}`}>{WEIGHT_STATUS_LABEL[plan.status]}</span>
+          <ChevronDown className="w-4 h-4 text-slate-400 flex-shrink-0" />
+        </button>
+      </section>
+      </div>
+    );
+  }
+
   return (
+    <div className="space-y-3">
+    {campCards}
     <section className="rounded-3xl border border-slate-700 bg-gradient-to-br from-slate-900 via-slate-900 to-sky-950/40 shadow-2xl overflow-hidden">
       <div className="p-4 sm:p-5 space-y-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
+            <button
+              type="button"
+              onClick={() => setExpanded(false)}
+              className="mb-1 text-[10px] font-bold text-slate-400 hover:text-white flex items-center gap-1"
+              aria-expanded
+            >
+              <ChevronUp className="w-3 h-3" /> Resumir
+            </button>
             <p className="text-[10px] uppercase font-bold tracking-wider text-amber-300 flex items-center gap-1.5">
               <Trophy className="w-3.5 h-3.5" /> Próxima competição
             </p>
@@ -339,5 +423,6 @@ export const AthleteCompetitionCard: React.FC<AthleteCompetitionCardProps> = ({ 
         </p>
       </div>
     </section>
+    </div>
   );
 };

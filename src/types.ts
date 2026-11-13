@@ -65,14 +65,18 @@ export interface TrainingSession {
   updated_at?: string;
 }
 
-/** Competição cadastrada pela comissão técnica. */
+/** Competição ou treinamento de campo cadastrado pela comissão técnica. */
 export interface Competition {
   id: string;
   nome: string;
-  /** Data da competição (AAAA-MM-DD). */
+  /** 'competicao' (padrão) ou 'campo' = treinamento de campo (sem pesagem, com início e fim). */
+  tipo?: 'competicao' | 'campo';
+  /** Data da competição ou início do treinamento de campo (AAAA-MM-DD). */
   data: string;
-  /** Data da pesagem oficial (AAAA-MM-DD). */
-  data_pesagem: string;
+  /** Último dia do treinamento de campo (null = um dia só). Competições não usam. */
+  data_fim?: string | null;
+  /** Data da pesagem oficial (AAAA-MM-DD). Treinamento de campo não tem (null). */
+  data_pesagem: string | null;
   hora_pesagem?: string | null;
   local?: string | null;
   observacoes?: string | null;

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pencil, Share2, Trophy } from 'lucide-react';
+import { Camera, Pencil, Trophy } from 'lucide-react';
 import {
   AthleteCompetitionResult,
   PLACEMENT_EMOJI,
@@ -78,12 +78,12 @@ export const AthleteCompetitionResults: React.FC<{
                 {card && share && (
                   <button
                     type="button"
-                    onClick={() => share.openStory(card)}
+                    onClick={() => share.openTrainingShare(card)}
                     className="p-2 rounded-lg bg-slate-950 border border-slate-700 text-sky-300 hover:text-sky-200"
-                    title="Compartilhar meu resultado"
-                    aria-label={`Compartilhar o resultado de ${row.nome}`}
+                    title="Foto com a medalha"
+                    aria-label={`Foto com a medalha de ${row.nome}`}
                   >
-                    <Share2 className="w-3.5 h-3.5" />
+                    <Camera className="w-3.5 h-3.5" />
                   </button>
                 )}
                 <button

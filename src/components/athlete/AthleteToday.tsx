@@ -165,10 +165,7 @@ export const AthleteToday: React.FC<Props> = ({ home, loading, error, onReload, 
 
   return (
     <div className="space-y-5">
-      {competitionCard}
-      {resultCard}
-      {highlights}
-
+      {/* O que falta responder vem primeiro; resultado da competição, competição e conquistas depois */}
       <section data-tour="athlete-today" className="space-y-2.5">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-black text-white uppercase tracking-wide">
@@ -220,6 +217,10 @@ export const AthleteToday: React.FC<Props> = ({ home, loading, error, onReload, 
           {home.pse.length > 0 ? `PSE de outro treino (${home.pse.length} enviada${home.pse.length > 1 ? 's' : ''} hoje)` : 'PSE de outro treino'}
         </button>
       </section>
+
+      {resultCard}
+      {competitionCard}
+      {highlights}
     </div>
   );
 };

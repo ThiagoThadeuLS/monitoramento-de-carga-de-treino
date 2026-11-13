@@ -118,7 +118,14 @@ export const PeriodCharts: React.FC<Props> = ({
   const statAt = (delta: number) => PSE_STATS[(idx + delta + PSE_STATS.length) % PSE_STATS.length];
 
   return (
-    <div data-tour="period-charts" className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+    // PSR (como o atleta chega) em cima; PSE (como foi o treino) embaixo
+    <div data-tour="period-charts" className="grid grid-cols-1 gap-4">
+      <DailyStatsChart
+        title="Média de PSR do grupo por dia"
+        subtitle={`Recuperação (1–10) • ${periodLabel}${groupLabel}`}
+        dates={days}
+        lines={psrLines}
+      />
       <DailyStatsChart
         title={pseView === 'grouped' ? `${pseStatInfo.title} do grupo por dia` : `${pseStatInfo.title} por tipo de treino`}
         subtitle={`Esforço (1–10) • ${periodLabel} • ${typesLabel}${groupLabel} • sem contar quem não treinou`}
@@ -152,12 +159,6 @@ export const PeriodCharts: React.FC<Props> = ({
             </button>
           </div>
         }
-      />
-      <DailyStatsChart
-        title="Média de PSR do grupo por dia"
-        subtitle={`Recuperação (1–10) • ${periodLabel}${groupLabel}`}
-        dates={days}
-        lines={psrLines}
       />
     </div>
   );

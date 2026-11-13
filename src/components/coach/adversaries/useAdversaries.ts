@@ -4,6 +4,7 @@ import {
   addAthleteObservation,
   deleteAthleteAdversary,
   deleteAthleteObservation,
+  updateAthleteObservation,
   listAthleteAdversaries,
   saveAthleteAdversary,
   setAthleteAdversaryHidden,
@@ -173,6 +174,24 @@ export function useAdversaries(athleteToken?: string) {
     await reload();
   }
 
+  /** O autor corrige o texto de uma observação já enviada */
+  async function updateObservation(obsId: string, texto: string) {
+    if (!supabase) throw new Error('Supabase não configurado.');
+    if (athleteToken) {
+      await updateAthleteObservation(athleteToken, obsId, texto);
+    } else {
+      const { data, error } = await supabase
+        .from('adversario_observacoes')
+        .update({ texto, editado_em: new Date().toISOString() })
+        .eq('id', obsId)
+        .select('id');
+      if (error) throw new Error(`Erro ao editar observação: ${error.message}`);
+      // Com RLS, edição bloqueada não dá erro: só não altera nada
+      if (!data?.length) throw new Error('Não foi possível editar (você só pode editar as suas próprias anotações).');
+    }
+    await reload();
+  }
+
   async function deleteObservation(obsId: string) {
     if (athleteToken) {
       await deleteAthleteObservation(athleteToken, obsId);
@@ -213,6 +232,7 @@ export function useAdversaries(athleteToken?: string) {
     save,
     remove,
     addObservation,
+    updateObservation,
     deleteObservation,
     setHidden,
   };

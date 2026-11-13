@@ -1,6 +1,7 @@
 import React from 'react';
 import { ShieldCheck, User } from 'lucide-react';
 import { ClubCrest, PLATFORM_NAME, clubInitials, useClub } from '../lib/club';
+import { HeaderSlot, useHeaderSlotUsed } from '../lib/headerSlot';
 
 interface HeaderProps {
   currentView: 'athlete' | 'coach';
@@ -9,6 +10,9 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({ currentView, onViewChange }) => {
   const { club } = useClub();
+  // Com os botões do painel no cabeçalho, a troca Atleta/Treinador fica só com os ícones no celular
+  const slotUsed = useHeaderSlotUsed();
+  const label = slotUsed ? 'hidden sm:inline' : '';
   const todayFormatted = new Intl.DateTimeFormat('pt-BR', {
     weekday: 'short',
     day: 'numeric',
@@ -17,7 +21,7 @@ export const Header: React.FC<HeaderProps> = ({ currentView, onViewChange }) => 
 
   return (
     <header className="border-b border-slate-800 bg-slate-950/80 backdrop-blur sticky top-0 z-30">
-      <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between gap-3">
+      <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between gap-3">
         {/* Clube de quem está logado (ou a plataforma, antes do login) */}
         <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
           <ClubCrest club={club} className="w-8 h-9 sm:w-9 sm:h-10 flex-shrink-0" />
@@ -38,6 +42,10 @@ export const Header: React.FC<HeaderProps> = ({ currentView, onViewChange }) => 
           </div>
         </div>
 
+        <div className="flex items-center gap-2 flex-shrink-0">
+        {/* Busca e menu do treinador (quando o painel está aberto) */}
+        <HeaderSlot />
+
         {/* View Switcher (Atleta vs Treinador) */}
         <div className="flex items-center bg-slate-900 border border-slate-800 p-1 rounded-xl flex-shrink-0">
           <button
@@ -50,7 +58,7 @@ export const Header: React.FC<HeaderProps> = ({ currentView, onViewChange }) => 
             }`}
           >
             <User className="w-3.5 h-3.5" />
-            <span>Atleta</span>
+            <span className={label}>Atleta</span>
           </button>
 
           <button
@@ -63,8 +71,9 @@ export const Header: React.FC<HeaderProps> = ({ currentView, onViewChange }) => 
             }`}
           >
             <ShieldCheck className="w-3.5 h-3.5" />
-            <span>Treinador</span>
+            <span className={label}>Treinador</span>
           </button>
+        </div>
         </div>
       </div>
     </header>
