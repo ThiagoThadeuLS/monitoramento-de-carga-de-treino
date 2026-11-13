@@ -8,6 +8,7 @@ import { resetAthletePassword } from '../../lib/athleteAuth';
 import { invalidateClubAthletes } from '../../lib/athletes';
 import { useClub } from '../../lib/club';
 import { Avatar } from '../ui/Avatar';
+import { WhoopTag, useWhoopConnected } from './WhoopTag';
 import { PhotoPicker } from '../ui/PhotoPicker';
 import { removePhoto, removePhotoFolder, uploadPhoto } from '../../lib/photos';
 
@@ -78,6 +79,7 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
   const [resettingPassword, setResettingPassword] = useState(false);
   const [modalError, setModalError] = useState('');
   const [feedbackMsg, setFeedbackMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const whoopIds = useWhoopConnected();
 
   // Categorias disponíveis baseadas no Sexo e Classe atuais do modal
   const availableWeights = useMemo(() => {
@@ -405,7 +407,7 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
                       <h4 className="text-base font-bold text-white leading-tight break-words">
                         {athlete.nome}
                       </h4>
-                      <Badges athlete={athlete} />
+                      <Badges athlete={athlete} whoop={whoopIds.has(athlete.id)} />
                       <p className="text-xs text-slate-400 mt-0.5">
                         {athlete.categoria || 'Geral'} • {athlete.sexo || 'Não informado'}
                       </p>
@@ -502,7 +504,7 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
                             ) : (
                               athlete.nome
                             )}
-                            <Badges athlete={athlete} />
+                            <Badges athlete={athlete} whoop={whoopIds.has(athlete.id)} />
                           </div>
                         </div>
                       </td>
@@ -790,9 +792,10 @@ export const AthleteManagement: React.FC<AthleteManagementProps> = ({
   );
 };
 
-const Badges: React.FC<{ athlete: AthleteRow }> = ({ athlete }) =>
-  athlete.active === false || !athlete.terms_accepted_at ? (
+const Badges: React.FC<{ athlete: AthleteRow; whoop?: boolean }> = ({ athlete, whoop = false }) =>
+  athlete.active === false || !athlete.terms_accepted_at || whoop ? (
     <span className="flex flex-wrap gap-1 mt-1">
+      {whoop && <WhoopTag />}
       {athlete.active === false && (
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-bold">Inativo</span>
       )}

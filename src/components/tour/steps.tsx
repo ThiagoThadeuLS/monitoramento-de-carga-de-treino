@@ -390,6 +390,17 @@ export function coachTourSteps(nome: string, isAdmin: boolean, go: (area: CoachT
       body: <p>Registre as avaliações de dobras de cada atleta e acompanhe o % de gordura ao longo do tempo.</p>,
     },
     {
+      target: 'coach-content',
+      before: to('elenco', 'whoop'),
+      title: 'Elenco: WHOOP',
+      body: (
+        <p>
+          Atletas que conectaram a pulseira WHOOP, com recuperação, HRV, sono e strain do último dia. Eles também aparecem com a etiqueta{' '}
+          <B>WHOOP</B> nas listas, e a ficha deles mostra os gráficos dos últimos 30 dias.
+        </p>
+      ),
+    },
+    {
       target: 'schedule-reminders',
       before: to('config', 'notificacoes'),
       title: 'Configurações: notificações',

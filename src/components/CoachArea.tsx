@@ -1,7 +1,7 @@
 import React, { Suspense, useEffect, useRef, useState } from 'react';
 import {
   LogOut, BarChart3, Users, Loader2, LineChart, CalendarDays, Shield, AlertTriangle, UserCog, Settings2, UsersRound, Palette, Gauge,
-  Dumbbell, Trophy, Home, Activity, BellRing,
+  Dumbbell, Trophy, Home, Activity, BellRing, HeartPulse,
 } from 'lucide-react';
 import { InHeader } from '../lib/headerSlot';
 import { AthleteSearch, CoachMenu } from './coach/CoachMenu';
@@ -39,6 +39,7 @@ const AthleteProfile = lazyNamed(() => import('./coach/AthleteProfile'), (m) => 
 const ReportBuilder = lazyNamed(() => import('./coach/report/ReportBuilder'), (m) => m.ReportBuilder);
 const WeightReminderSettings = lazyNamed(() => import('./coach/WeightReminderSettings'), (m) => m.WeightReminderSettings);
 const PushStatusCard = lazyNamed(() => import('./coach/PushStatusCard'), (m) => m.PushStatusCard);
+const WhoopAthletes = lazyNamed(() => import('./coach/WhoopAthletes'), (m) => m.WhoopAthletes);
 const Tour = lazyNamed(() => import('./tour/Tour'), (m) => m.Tour);
 
 type CoachAreaId = 'hoje' | 'analises' | 'planejamento' | 'elenco' | 'config';
@@ -81,6 +82,7 @@ const AREAS: {
       { id: 'atletas', label: 'Atletas', icon: Users },
       { id: 'grupos', label: 'Grupos', icon: UsersRound },
       { id: 'corpo', label: 'Composição corporal', icon: Activity },
+      { id: 'whoop', label: 'WHOOP', icon: HeartPulse },
       { id: 'adversarios', label: 'Adversários', icon: Shield },
     ],
   },
@@ -475,6 +477,7 @@ export const CoachArea: React.FC<{ recovery?: boolean }> = ({ recovery = false }
         )}
         {pane('elenco/grupos', <GroupManagement />)}
         {pane('elenco/corpo', <BodyComposition />)}
+        {pane('elenco/whoop', <WhoopAthletes onOpenProfile={setProfileId} />)}
         {pane('elenco/adversarios', <AdversaryManagement />)}
         {isAdmin && pane('config/treinadores', <TeamManagement currentUserId={session.user.id} club={coach!.club} onClubChanged={reloadProfile} />)}
         {isAdmin && pane('config/cores', <ThemeSettings />)}

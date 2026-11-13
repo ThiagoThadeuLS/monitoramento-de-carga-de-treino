@@ -8,6 +8,7 @@ import { fetchClubAthletes } from '../../lib/athletes';
 import { useClub } from '../../lib/club';
 import { resolveSelection, selectionLabel } from './GroupFilter';
 import { AnalysisFilterValue } from './AnalysisFilter';
+import { WhoopTag, useWhoopConnected } from './WhoopTag';
 import { DailyStatsChart } from './DailyStatsChart';
 import { MONOTONY_LIMIT, ZONE_INFO, dailyLoads, format2, formatUA, groupSeries, loadMetrics, sessionLoad } from '../../lib/load';
 import { brDate, downloadCsv, fileSlug, toCsv } from '../../lib/export';
@@ -82,6 +83,7 @@ export const LoadAnalysis: React.FC<{ filter: AnalysisFilterValue; onOpenProfile
   const [error, setError] = useState('');
   const [sort, setSort] = useState<SortKey>('acwr');
   const [help, setHelp] = useState(false);
+  const whoopIds = useWhoopConnected();
   const { groups } = useClubGroups();
   const { club } = useClub();
   const clubId = club?.id ?? null;
@@ -257,6 +259,7 @@ export const LoadAnalysis: React.FC<{ filter: AnalysisFilterValue; onOpenProfile
                           <p className="font-bold text-white text-sm truncate">
                             {r.nome}
                             {r.m.insufficient && r.m.acwr !== null ? ' *' : ''}
+                            {whoopIds.has(r.id) && <WhoopTag className="ml-1.5" />}
                           </p>
                           {zoneBadge(r)}
                         </div>
@@ -288,6 +291,7 @@ export const LoadAnalysis: React.FC<{ filter: AnalysisFilterValue; onOpenProfile
                           <td className="py-3 px-4 font-bold text-white">
                             {r.nome}
                             {r.m.insufficient && r.m.acwr !== null ? <span className="text-slate-500" title="Menos de 3 semanas de dados"> *</span> : null}
+                            {whoopIds.has(r.id) && <WhoopTag className="ml-1.5" />}
                           </td>
                           <td className="py-3 px-3 text-right tabular-nums">{formatUA(r.m.acute)}</td>
                           <td className="py-3 px-3 text-right tabular-nums">{formatUA(r.m.chronic)}</td>

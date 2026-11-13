@@ -3,6 +3,7 @@ import { LogOut, Search, Settings2, X } from 'lucide-react';
 import { Avatar } from '../ui/Avatar';
 import { PhotoPicker } from '../ui/PhotoPicker';
 import { ClubAthlete, fetchClubAthletes } from '../../lib/athletes';
+import { WhoopTag, useWhoopConnected } from './WhoopTag';
 
 /** Fecha o painel ao clicar fora ou apertar Esc. */
 function useDismiss(open: boolean, close: () => void) {
@@ -28,6 +29,7 @@ export const AthleteSearch: React.FC<{ clubId: string; onOpen: (athleteId: strin
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [list, setList] = useState<ClubAthlete[]>([]);
+  const whoopIds = useWhoopConnected();
   const close = React.useCallback(() => setOpen(false), []);
   const ref = useDismiss(open, close);
 
@@ -90,7 +92,9 @@ export const AthleteSearch: React.FC<{ clubId: string; onOpen: (athleteId: strin
                 >
                   <Avatar name={a.nome} src={a.photo_url} className="w-8 h-8" textClassName="text-[10px]" />
                   <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-semibold text-white truncate">{a.nome}</span>
+                    <span className="block text-sm font-semibold text-white truncate">
+                      {a.nome} {whoopIds.has(a.id) && <WhoopTag />}
+                    </span>
                     <span className="block text-[11px] text-slate-400">
                       {[a.classe, a.categoria].filter(Boolean).join(' • ')}
                       {a.active === false && ' • inativo'}

@@ -19,6 +19,7 @@ import { fetchRange } from './period/shared';
 import { DayAlerts } from './period/DayAlerts';
 import { PushRow, pushProblem } from './PushStatusCard';
 import { Avatar } from '../ui/Avatar';
+import { WhoopTag, useWhoopConnected } from './WhoopTag';
 
 interface AthleteDailyStatus {
   athlete: Athlete;
@@ -66,6 +67,7 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({ onEditAthlete, onO
   const [onlyAttention, setOnlyAttention] = useState(false);
   const [showAllAttention, setShowAllAttention] = useState(false);
   const [showLight, setShowLight] = useState(false);
+  const whoopIds = useWhoopConnected();
   const [showDetails, setShowDetails] = useState(false);
 
   const [loadError, setLoadError] = useState('');
@@ -256,14 +258,18 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({ onEditAthlete, onO
   const attentionList = showLight ? attention : serious;
   const attentionVisible = showAllAttention ? attentionList : attentionList.slice(0, 6);
 
-  const nameButton = (athlete: Athlete, cls: string) =>
-    onOpenProfile ? (
-      <button type="button" onClick={() => onOpenProfile(athlete.id)} className={`${cls} text-left hover:text-sky-300 hover:underline`} title="Abrir a ficha do atleta">
-        {athlete.nome}
-      </button>
-    ) : (
-      <p className={cls}>{athlete.nome}</p>
-    );
+  const nameButton = (athlete: Athlete, cls: string) => (
+    <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+      {onOpenProfile ? (
+        <button type="button" onClick={() => onOpenProfile(athlete.id)} className={`${cls} text-left hover:text-sky-300 hover:underline`} title="Abrir a ficha do atleta">
+          {athlete.nome}
+        </button>
+      ) : (
+        <span className={cls}>{athlete.nome}</span>
+      )}
+      {whoopIds.has(athlete.id) && <WhoopTag />}
+    </span>
+  );
 
   return (
     <div className="space-y-5">

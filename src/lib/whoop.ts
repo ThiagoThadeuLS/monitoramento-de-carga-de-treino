@@ -109,6 +109,53 @@ export const syncWhoop = (athleteId: string) => call({ action: 'sync', athlete_i
 /** Revoga o acesso na WHOOP e apaga a conexão e os dados do atleta. */
 export const disconnectWhoop = (token: string) => call({ action: 'disconnect' }, token);
 
+/** Atleta do clube com o WHOOP conectado (lista da comissão e etiqueta "WHOOP"). */
+export interface WhoopAthlete {
+  athlete_id: string;
+  nome: string;
+  photo_url?: string | null;
+  classe?: string | null;
+  categoria?: string | null;
+  active?: boolean;
+  whoop_name?: string | null;
+  connected_at?: string | null;
+  last_sync_at?: string | null;
+  sync_error?: boolean;
+  /** Último dia com números (null = nenhum dia importado ainda) */
+  last_day: Pick<WhoopDay, 'date' | 'recovery_score' | 'hrv_ms' | 'resting_hr' | 'sleep_hours' | 'sleep_performance' | 'strain'> | null;
+  /** Média de recuperação dos últimos 7 dias */
+  recovery_7d: number | null;
+}
+
+const TTL_MS = 2 * 60 * 1000;
+let cache: { at: number; promise: Promise<WhoopAthlete[]> } | null = null;
+
+/**
+ * Atletas do clube que conectaram o WHOOP (guardado por 2 minutos).
+ * Banco sem a função nova: lista vazia (as telas seguem sem a etiqueta).
+ */
+export function listWhoopAthletes(force = false): Promise<WhoopAthlete[]> {
+  if (!supabase) return Promise.resolve([]);
+  if (!force && cache && Date.now() - cache.at < TTL_MS) return cache.promise;
+  const promise = (async () => {
+    const { data, error } = await supabase!.rpc('club_whoop_athletes');
+    if (error) {
+      if (messageFor(error.message) === MESSAGES.whoop_sem_servidor) return [];
+      throw new Error(messageFor(error.message) ?? 'Não foi possível carregar os atletas com WHOOP.');
+    }
+    return ((data ?? []) as WhoopAthlete[]).map((a) => ({ ...a, recovery_7d: whoopNumber(a.recovery_7d) }));
+  })();
+  cache = { at: Date.now(), promise };
+  promise.catch(() => {
+    if (cache?.promise === promise) cache = null;
+  });
+  return promise;
+}
+
+/** Recuperação da WHOOP: verde (67+), amarela (34–66) ou vermelha (até 33). */
+export const recoveryTone = (v: number | null) =>
+  v === null ? 'text-slate-500' : v >= 67 ? 'text-emerald-300' : v >= 34 ? 'text-amber-300' : 'text-rose-300';
+
 /** Números vindo do banco podem chegar como texto (numeric). */
 export const whoopNumber = (value: unknown): number | null => {
   if (value === null || value === undefined || value === '') return null;

@@ -232,6 +232,28 @@ function gerar() {
 }
 
 const { t: db, G } = gerar();
+
+// WHOOP fictício: 5 atletas conectados, 30 dias de números (sempre os mesmos)
+const WHOOP_IDS = [0, 2, 11, 18, 22].map((k) => db.athletes[k].id);
+const whoopDays = (id: string) => {
+  const seed = id.charCodeAt(id.length - 1) + id.charCodeAt(id.length - 2);
+  return Array.from({ length: 30 }, (_, k) => {
+    const w = Math.sin((k + seed) / 3);
+    return {
+      date: addDaysISO(todayISO(), -k),
+      recovery_score: Math.round(58 + w * 26),
+      hrv_ms: Math.round(70 + w * 18),
+      resting_hr: Math.round(52 - w * 5),
+      spo2: 96.5,
+      sleep_hours: Math.round((7.1 + w * 0.9) * 10) / 10,
+      sleep_performance: Math.round(82 + w * 12),
+      sleep_efficiency: 91,
+      strain: Math.round((13 + Math.cos((k + seed) / 2) * 4) * 10) / 10,
+      day_kj: Math.round(9800 + w * 1800),
+      steps: Math.round(9000 + w * 3000),
+    };
+  });
+};
 const ATLETA = db.athletes[18]; // Mariana Couto Ribeiro
 const TOKEN = 'demo-token-mariana';
 
@@ -447,6 +469,23 @@ const RPC: Record<string, (a: Row) => any> = {
     return null;
   },
   coach_competition_results_overview: () => [],
+  // WHOOP: alguns atletas conectados, com 30 dias de números
+  club_whoop_athletes: () =>
+    WHOOP_IDS.map((id) => {
+      const a = db.athletes.find((x) => x.id === id)!;
+      const days = whoopDays(id);
+      const last7 = days.slice(0, 7).map((d) => d.recovery_score);
+      return {
+        athlete_id: id, nome: a.nome, photo_url: null, classe: a.classe, categoria: a.categoria, active: true,
+        whoop_name: a.nome.split(' ')[0], connected_at: stamp(addDaysISO(todayISO(), -40), '10:00'),
+        last_sync_at: stamp(todayISO(), '06:30'), sync_error: false, last_day: days[0],
+        recovery_7d: Math.round(last7.reduce((s, v) => s + v, 0) / last7.length),
+      };
+    }).sort((x, y) => x.nome.localeCompare(y.nome)),
+  club_whoop_status: (args) =>
+    WHOOP_IDS.includes(args.p_athlete_id)
+      ? { connected: true, whoop_name: 'WHOOP', connected_at: stamp(addDaysISO(todayISO(), -40), '10:00'), last_sync_at: stamp(todayISO(), '06:30'), last_error: null, days: whoopDays(args.p_athlete_id) }
+      : { connected: false, days: [] },
   athlete_list_adversarios: () => ({
     me: ATLETA.id,
     adversarios: db.adversarios.filter((a) => a.sexo === 'Feminino'),

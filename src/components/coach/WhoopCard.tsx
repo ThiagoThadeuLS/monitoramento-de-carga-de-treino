@@ -2,8 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { AlertCircle, HeartPulse, Loader2, RefreshCw } from 'lucide-react';
 import { useDialogs } from '../ui/Dialogs';
 import { brDate } from '../../lib/export';
-import { brDateOfStamp } from '../../lib/date';
-import { coachWhoop, syncWhoop, whoopNumber, type WhoopDay, type WhoopStatus } from '../../lib/whoop';
+import { addDaysISO, brDateOfStamp, todayISO } from '../../lib/date';
+import { coachWhoop, listWhoopAthletes, recoveryTone, syncWhoop, whoopNumber, type WhoopDay, type WhoopStatus } from '../../lib/whoop';
+import { DailyStatsChart } from './DailyStatsChart';
 
 /**
  * WHOOP na ficha do atleta (comissão técnica): recuperação, HRV, FC de repouso,
@@ -35,6 +36,8 @@ export const WhoopCard: React.FC<{ athleteId: string }> = ({ athleteId }) => {
     try {
       await syncWhoop(athleteId);
       setStatus(await coachWhoop(athleteId));
+      // A lista "WHOOP" do Elenco mostra o último dia: busca de novo na próxima vez
+      listWhoopAthletes(true).catch(() => undefined);
       notify('WHOOP atualizado.', 'success');
     } catch (err) {
       setError((err as Error).message);
@@ -43,7 +46,14 @@ export const WhoopCard: React.FC<{ athleteId: string }> = ({ athleteId }) => {
     }
   };
 
-  const days = (status?.days ?? []).slice(0, 7);
+  const all = status?.days ?? [];
+  const days = all.slice(0, 7);
+  const last = all[0] ?? null;
+
+  // Gráficos: os últimos 30 dias, do mais antigo para o mais novo (dia sem leitura = vazio)
+  const chartDates = Array.from({ length: 30 }, (_, k) => addDaysISO(todayISO(), -(29 - k)));
+  const byDate = new Map(all.map((d) => [d.date, d]));
+  const seriesOf = (pick: (d: WhoopDay) => unknown) => chartDates.map((date) => (byDate.has(date) ? n(pick(byDate.get(date)!)) : null));
 
   return (
     <section className="bg-slate-900/90 border border-slate-800 rounded-2xl overflow-hidden">
@@ -89,7 +99,70 @@ export const WhoopCard: React.FC<{ athleteId: string }> = ({ athleteId }) => {
             depois da primeira noite com a pulseira.
           </p>
         ) : (
+          <div className="space-y-4">
+          {/* Último dia lido */}
+          {last && (
+            <div>
+              <p className="text-[10px] uppercase font-bold tracking-wider text-slate-500 mb-2">
+                Último dia: {brDate(last.date)}
+                {status.whoop_name ? ` • conta ${status.whoop_name}` : ''}
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                <Tile label="Recuperação" value={num(n(last.recovery_score), '%')} tone={recoveryTone(n(last.recovery_score))} />
+                <Tile label="HRV" value={num(n(last.hrv_ms), ' ms', 0)} />
+                <Tile label="FC repouso" value={num(n(last.resting_hr), ' bpm', 0)} />
+                <Tile
+                  label="Sono"
+                  value={num(n(last.sleep_hours), ' h', 1)}
+                  hint={n(last.sleep_performance) !== null ? `${num(n(last.sleep_performance), '%')} do necessário` : undefined}
+                />
+                <Tile label="Strain" value={num(n(last.strain), '', 1)} hint={n(last.day_kj) !== null ? `${num(n(last.day_kj), ' kJ')}` : undefined} />
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <DailyStatsChart
+              title="Recuperação WHOOP"
+              subtitle="% • últimos 30 dias"
+              dates={chartDates}
+              scale="auto"
+              unit="%"
+              references={[
+                { value: 67, label: '67', color: '#34d399' },
+                { value: 34, label: '34', color: '#f87171' },
+              ]}
+              lines={[{ key: 'rec', label: 'Recuperação', color: '#fb7185', shape: 'circle', values: seriesOf((d) => d.recovery_score) }]}
+            />
+            <DailyStatsChart
+              title="HRV e FC de repouso"
+              subtitle="ms e bpm • últimos 30 dias"
+              dates={chartDates}
+              scale="auto"
+              lines={[
+                { key: 'hrv', label: 'HRV (ms)', color: '#38bdf8', shape: 'circle', values: seriesOf((d) => d.hrv_ms) },
+                { key: 'fc', label: 'FC repouso (bpm)', color: '#a78bfa', shape: 'square', values: seriesOf((d) => d.resting_hr) },
+              ]}
+            />
+            <DailyStatsChart
+              title="Sono"
+              subtitle="horas por noite • últimos 30 dias"
+              dates={chartDates}
+              scale="auto"
+              unit="h"
+              lines={[{ key: 'sono', label: 'Sono', color: '#818cf8', shape: 'circle', values: seriesOf((d) => d.sleep_hours) }]}
+            />
+            <DailyStatsChart
+              title="Strain do dia"
+              subtitle="0 a 21 • últimos 30 dias"
+              dates={chartDates}
+              scale="auto"
+              lines={[{ key: 'strain', label: 'Strain', color: '#f59e0b', shape: 'square', values: seriesOf((d) => d.strain) }]}
+            />
+          </div>
+
           <div className="overflow-x-auto -mx-1">
+            <p className="text-[10px] uppercase font-bold tracking-wider text-slate-500 mb-1 px-1">Últimos 7 dias</p>
             <table className="w-full text-[11px] min-w-[520px]">
               <thead>
                 <tr className="text-slate-500 text-[10px] uppercase tracking-wider">
@@ -108,6 +181,7 @@ export const WhoopCard: React.FC<{ athleteId: string }> = ({ athleteId }) => {
                 ))}
               </tbody>
             </table>
+          </div>
           </div>
         )}
 
@@ -141,3 +215,11 @@ const Row: React.FC<{ day: WhoopDay }> = ({ day }) => {
 
 const num = (value: number | null, suffix = '', digits = 0) =>
   value === null ? '—' : `${value.toFixed(digits).replace('.', ',')}${suffix}`;
+
+const Tile: React.FC<{ label: string; value: string; tone?: string; hint?: string }> = ({ label, value, tone = 'text-white', hint }) => (
+  <div className="rounded-xl bg-slate-950/70 border border-slate-800 p-2.5">
+    <p className="text-[10px] uppercase font-bold text-slate-500">{label}</p>
+    <p className={`text-lg font-black leading-tight ${tone}`}>{value}</p>
+    {hint && <p className="text-[10px] text-slate-500 truncate">{hint}</p>}
+  </div>
+);

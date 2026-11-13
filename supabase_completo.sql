@@ -5128,11 +5128,58 @@
                ) order by m.date desc)
         from public.whoop_metrics m
         where m.athlete_id = p_athlete_id
-          and m.date >= public.training_today() - 13
+          and m.date >= public.training_today() - 29 -- 30 dias (gráficos da ficha)
       ), '[]'::json)
     );
   end;
   $$;
+
+  -- Atletas do clube que conectaram o WHOOP: etiqueta nas listas e a lista "WHOOP" da comissão.
+  -- Traz o último dia com números e a média de recuperação dos últimos 7 dias (sem tokens).
+  create or replace function public.club_whoop_athletes()
+  returns json
+  language plpgsql
+  stable
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_club uuid := public.current_club_id();
+  begin
+    if v_club is null then
+      raise exception 'nao_autorizado';
+    end if;
+
+    return coalesce((
+      select json_agg(x order by x.nome)
+      from (
+        select a.id as athlete_id, a.nome, a.photo_url, a.classe, a.categoria, a.active,
+               c.whoop_name, c.connected_at, c.last_sync_at, (c.last_error is not null) as sync_error,
+               (
+                 select json_build_object(
+                   'date', m.date, 'recovery_score', m.recovery_score, 'hrv_ms', m.hrv_ms, 'resting_hr', m.resting_hr,
+                   'sleep_hours', m.sleep_hours, 'sleep_performance', m.sleep_performance, 'strain', m.strain
+                 )
+                 from public.whoop_metrics m
+                 where m.athlete_id = a.id
+                 order by m.date desc
+                 limit 1
+               ) as last_day,
+               (
+                 select round(avg(m.recovery_score))
+                 from public.whoop_metrics m
+                 where m.athlete_id = a.id and m.date >= public.training_today() - 6 and m.recovery_score is not null
+               ) as recovery_7d
+        from public.whoop_connections c
+        join public.athletes a on a.id = c.athlete_id
+        where a.club_id = v_club
+      ) x
+    ), '[]'::json);
+  end;
+  $$;
+
+  revoke execute on function public.club_whoop_athletes() from public, anon;
+  grant execute on function public.club_whoop_athletes() to authenticated;
 
   -- O atleta vê a própria conexão e os próprios números (o banco acha quem é pelo token).
   create or replace function public.athlete_whoop(p_token uuid)

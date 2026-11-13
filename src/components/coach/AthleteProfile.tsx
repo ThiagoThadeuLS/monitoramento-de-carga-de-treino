@@ -9,6 +9,7 @@ import { mean } from '../../lib/stats';
 import { brDate, downloadCsv, fileSlug, formatKg, localTime, toCsv } from '../../lib/export';
 import { Avatar } from '../ui/Avatar';
 import { WhoopCard } from './WhoopCard';
+import { WhoopTag, useWhoopConnected } from './WhoopTag';
 
 type ProfileAthlete = Athlete & { terms_accepted_at?: string | null };
 
@@ -27,6 +28,7 @@ const daysBetween = (from: string, to: string) => {
 /** Ficha individual (treinador): evolução de carga, ACWR, PSE, PSR e peso de um atleta. */
 export const AthleteProfile: React.FC<{ athleteId: string; onClose: () => void }> = ({ athleteId, onClose }) => {
   const [range, setRange] = useState(30);
+  const whoopIds = useWhoopConnected();
   const [athlete, setAthlete] = useState<ProfileAthlete | null>(null);
   const [pse, setPse] = useState<PseRecord[]>([]);
   const [psr, setPsr] = useState<PsrRecord[]>([]);
@@ -160,6 +162,7 @@ export const AthleteProfile: React.FC<{ athleteId: string; onClose: () => void }
                 {athlete.active === false && (
                   <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 border border-slate-700 font-bold">Inativo</span>
                 )}
+                {whoopIds.has(athlete.id) && <WhoopTag />}
                 {athlete.terms_accepted_at ? (
                   <span className="text-[10px] px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 font-semibold flex items-center gap-1">
                     <ShieldCheck className="w-3 h-3" /> Termo aceito em {brDate(athlete.terms_accepted_at.slice(0, 10))}
