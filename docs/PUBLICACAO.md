@@ -22,7 +22,7 @@ Este guia cobre a publicação do **Carga** nas lojas usando o mesmo código Rea
 
 1. Conta no **Apple Developer Program** (US$ 99/ano) e acesso ao **App Store Connect**.
 2. Conta no **Google Play Console** (US$ 25 único).
-3. Conta no **OneSignal** (plano gratuito atende o piloto).
+3. Conta no **OneSignal** (o plano gratuito atende o piloto; veja custos e limites na seção 2).
 4. Projeto no **Firebase** (gratuito) para o FCM do Android.
 5. Um Mac com **Xcode** e um computador com **Android Studio** para gerar os builds assinados.
 6. Chave de assinatura Android (keystore) — guarde com backup. Com Play App Signing, ela é a chave de upload; se for perdida, o Google pode permitir um reset, mas o processo é lento e nem sempre está disponível.
@@ -81,6 +81,33 @@ O projeto já tem `App.entitlements` com `aps-environment` e o App Group. No Xco
    - Passo a passo detalhado, incluindo Bundle ID, assinatura e ordem das Build Phases: **seção 9.7**.
 
 > O Capacitor 8 usa Swift Package Manager. O OneSignal já está resolvido via SPM, então não é necessário `pod install`.
+
+### Custos e limites do OneSignal
+
+O OneSignal **não é usado pela versão web**; ele atende apenas os apps iOS/Android. Por isso, o limite de web push do OneSignal não se aplica a este projeto.
+
+**Plano Free (US$ 0/mês)** — suficiente para o piloto:
+
+- push mobile ilimitado para organizações com até **1.000 MAU** (usuários ativos mensais);
+- envios ilimitados pela API;
+- MAU é qualquer pessoa que abriu o app mobile nos últimos 30 dias, **mesmo sem ter aceitado notificações**; a conta soma todos os clubes;
+- web push do OneSignal: até 10.000 inscritos por envio (não usado aqui).
+
+**Growth (a partir de US$ 19/mês)** — necessário se passar de 1.000 MAU ou precisar de recursos extras:
+
+- cobrança por MAU de mobile push (atualmente US$ 0,012/MAU);
+- confirme o valor no simulador do OneSignal antes de contratar.
+
+**Outros custos da publicação:**
+
+- Apple Developer: US$ 99/ano.
+- Google Play Console: US$ 25 único.
+- Firebase/FCM: US$ 0.
+- Supabase/Vercel: mantidos como estão.
+
+> Valores consultados em 15/11/2026. Preços podem mudar; confira [onesignal.com/pricing](https://onesignal.com/pricing) antes de contratar.
+
+O plano Free é US$ 0, mas o app nativo só recebe push depois que o OneSignal estiver configurado com APNs/FCM e o build tiver `VITE_ONESIGNAL_APP_ID`. Sem isso, a web continua normal e o app nativo mostra “notificações não configuradas”.
 
 ## 3. Android
 
