@@ -1,4 +1,6 @@
 import { supabase } from './supabase';
+import { isNativeApp } from './nativeApp';
+import { nativeEnablePush, nativePushState, nativeRelinkPush } from './nativePush';
 
 // Chave pública VAPID (a privada fica só no Supabase, como segredo da função enviar-lembretes)
 const VAPID_PUBLIC_KEY = (import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined) ?? '';
@@ -30,7 +32,10 @@ export const isMobileDevice = () =>
   isIOS() || /Android|Mobi|iPhone|iPod/i.test(navigator.userAgent);
 
 export const isStandalone = () =>
-  window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone === true;
+  // No app das lojas não existe "navegador": ele já é o app instalado.
+  isNativeApp() ||
+  window.matchMedia('(display-mode: standalone)').matches ||
+  (navigator as any).standalone === true;
 
 // Android/Chrome: guarda o pedido de instalação para o botão "Instalar app"
 let installPrompt: any = null;
@@ -62,6 +67,8 @@ export async function promptInstall(): Promise<boolean> {
 
 /** Registra o service worker (chamado ao abrir o app). */
 export function registerServiceWorker() {
+  // No app nativo o OneSignal cuida dos avisos; o service worker é só da versão web.
+  if (isNativeApp()) return;
   if (!('serviceWorker' in navigator)) return;
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').catch((err) => console.warn('Service worker não registrado:', err));
@@ -94,6 +101,8 @@ function sameServerKey(sub: PushSubscription): boolean {
 }
 
 export async function getPushState(): Promise<PushState> {
+  // App das lojas: permissão e assinatura são controladas pelo OneSignal.
+  if (isNativeApp()) return nativePushState();
   // No celular, só funciona como app instalado: a notificação aparece com o nome e o ícone do app
   // (e não como "Chrome"), e o Android não a trata como possível spam de site.
   if (isMobileDevice() && !isStandalone()) return 'needs-install';
@@ -126,6 +135,7 @@ async function saveSubscription(token: string, sub: PushSubscription) {
  * ela é descartada e o app pede para o atleta ativar de novo (gera uma nova).
  */
 export async function relinkPush(token: string): Promise<'ok' | 'expired'> {
+  if (isNativeApp()) return nativeRelinkPush(token);
   if (!('serviceWorker' in navigator) || !supabase) return 'ok';
   const sub = await currentSubscription().catch(() => null);
   if (!sub) return 'ok';
@@ -142,6 +152,7 @@ export const IOS_PUSH_FAILED = 'ios_push_falhou';
 
 /** Pede permissão, cria a assinatura neste aparelho e salva para o atleta logado. */
 export async function enablePush(token: string): Promise<PushState> {
+  if (isNativeApp()) return nativeEnablePush(token);
   const permission = await Notification.requestPermission();
   if (permission !== 'granted') return permission === 'denied' ? 'denied' : 'off';
 

@@ -4,6 +4,7 @@
 //
 // Segredos necessários (Edge Functions -> Secrets):
 //   VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT (ex.: mailto:contato@seudominio.com)
+//   ONESIGNAL_APP_ID, ONESIGNAL_REST_API_KEY (apps iOS/Android; sem eles só a web recebe)
 // SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY já existem automaticamente.
 import webpush from 'npm:web-push@3.6.7';
 import { createClient } from 'npm:@supabase/supabase-js@2.49.1';
@@ -29,6 +30,14 @@ function configureVapid(): string | null {
   }
 }
 const vapidError = configureVapid();
+
+// OneSignal (apps iOS/Android). O app liga o aparelho ao id do atleta (External ID);
+// aqui mandamos o lembrete para esse id. Sem os segredos, o envio nativo é ignorado
+// e a versão web continua funcionando normalmente.
+const cleanSecret = (v: string | undefined) => (v ?? '').trim().replace(/^["']|["']$/g, '');
+const ONESIGNAL_APP_ID = cleanSecret(Deno.env.get('ONESIGNAL_APP_ID'));
+const ONESIGNAL_REST_API_KEY = cleanSecret(Deno.env.get('ONESIGNAL_REST_API_KEY'));
+const ONESIGNAL_READY = Boolean(ONESIGNAL_APP_ID && ONESIGNAL_REST_API_KEY);
 
 interface Due {
   athlete_id: string;
@@ -56,11 +65,44 @@ const MAX_FAILURES = 5;
 // Passo a passo no fim da parte 7 do supabase_completo.sql.
 const CRON_SECRET = (Deno.env.get('CRON_SECRET') ?? '').trim();
 
+/**
+ * Envia o lembrete para o aparelho do atleta no OneSignal.
+ * O id do atleta é o External ID definido pelo app no login (OneSignal.login).
+ * Sem inscrição nativa, a API responde com 0 destinatários: não é erro.
+ */
+async function sendOneSignal(item: Due): Promise<{ ok: boolean; detail?: string }> {
+  try {
+    const res = await fetch('https://api.onesignal.com/notifications', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Key ${ONESIGNAL_REST_API_KEY}`,
+      },
+      body: JSON.stringify({
+        app_id: ONESIGNAL_APP_ID,
+        include_aliases: { external_id: [item.athlete_id] },
+        target_channel: 'push',
+        headings: { en: item.title, pt: item.title },
+        contents: { en: item.body, pt: item.body },
+        data: { url: item.url },
+        // O mesmo lembrete substitui o anterior em vez de acumular na gaveta
+        collapse_id: `${item.kind}-${item.ref}`.slice(0, 64),
+      }),
+    });
+    if (res.ok) return { ok: true };
+    return { ok: false, detail: (await res.text()).slice(0, 300) };
+  } catch (err) {
+    return { ok: false, detail: (err as Error).message.slice(0, 300) };
+  }
+}
+
 Deno.serve(async (req) => {
   if (CRON_SECRET && req.headers.get('x-cron-secret') !== CRON_SECRET) {
     return Response.json({ ok: false, error: 'não autorizado' }, { status: 401 });
   }
-  if (vapidError) return Response.json({ ok: false, step: 'segredos', error: vapidError }, { status: 500 });
+  if (vapidError && !ONESIGNAL_READY) {
+    return Response.json({ ok: false, step: 'segredos', error: vapidError }, { status: 500 });
+  }
   const { data: due, error } = await supabase.rpc('push_due_reminders');
   if (error) return Response.json({ ok: false, step: 'push_due_reminders', error: error.message }, { status: 500 });
   const items = (due ?? []) as Due[];
@@ -82,13 +124,26 @@ Deno.serve(async (req) => {
   let sent = 0;
   let failed = 0;
   let expiredCount = 0;
+  let nativeSent = 0;
+  let nativeFailed = 0;
   const okIds = new Set<string>();
   // Resultado de cada aparelho (gravado no fim): o treinador vê quem não está recebendo e por quê
   const results: { id: string; expire: boolean; failures: number; error: string }[] = [];
 
   // Envia um lembrete para todos os aparelhos do atleta
   async function sendItem(item: Due) {
-    const targets = subs.filter((s) => s.athlete_id === item.athlete_id);
+    // Sem VAPID configurado, não tenta a web (o envio nativo pode estar ativo).
+    const targets = vapidError ? [] : subs.filter((s) => s.athlete_id === item.athlete_id);
+
+    if (ONESIGNAL_READY) {
+      const result = await sendOneSignal(item);
+      if (result.ok) nativeSent++;
+      else {
+        nativeFailed++;
+        console.error('OneSignal falhou', result.detail);
+      }
+    }
+
     const payload = JSON.stringify({
       title: item.title,
       body: item.body,
@@ -156,5 +211,13 @@ Deno.serve(async (req) => {
       ),
   );
 
-  return Response.json({ ok: true, due: items.length, sent, failed, expired: expiredCount });
+  return Response.json({
+    ok: true,
+    due: items.length,
+    sent,
+    failed,
+    expired: expiredCount,
+    native: ONESIGNAL_READY ? { sent: nativeSent, failed: nativeFailed } : { skipped: true },
+    web: vapidError ? { skipped: true } : { sent, failed },
+  });
 });

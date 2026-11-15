@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { nativePushLogout } from './nativePush';
 import { onlyCpfDigits } from './cpf';
 import type { ClubInfo } from './club';
 import { FOLD_SITES, FoldValues, Sexo } from './bodyFat';
@@ -140,6 +141,7 @@ export async function restoreAthleteSession(): Promise<AthleteSession | null> {
   if (error) throw toAuthError(error);
   if (!data) {
     writeToken(null);
+    await nativePushLogout();
     return null;
   }
   return parseSession(data);
@@ -156,6 +158,8 @@ export async function setAthletePassword(token: string, newPassword: string): Pr
 
 export async function logoutAthlete(token: string): Promise<void> {
   writeToken(null);
+  // No app das lojas, desliga o aparelho do atleta no OneSignal (o próximo login religa).
+  await nativePushLogout();
   if (supabase) await supabase.rpc('athlete_logout', { p_token: token });
 }
 

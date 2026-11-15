@@ -3,6 +3,7 @@ import { AlertCircle, HeartPulse, Loader2, Link2, RefreshCw, Unlink } from 'luci
 import { useDialogs } from '../ui/Dialogs';
 import { brDate } from '../../lib/export';
 import { brDateOfStamp } from '../../lib/date';
+import { openExternalUrl } from '../../lib/native';
 import {
   athleteWhoop,
   disconnectWhoop,
@@ -50,7 +51,8 @@ export const WhoopCard: React.FC<{ token: string }> = ({ token }) => {
     setBusy('conectar');
     setError('');
     try {
-      window.location.href = await startWhoopConnection(token);
+      // No app das lojas abre no navegador do celular (a autorização da WHOOP não volta para o WebView).
+      await openExternalUrl(await startWhoopConnection(token));
     } catch (err) {
       setError((err as Error).message);
       setBusy('');

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Notificações push (OneSignal). O Xcode troca para production na assinatura de distribuição. -->
+	<key>aps-environment</key>
+	<string>development</string>
+	<!-- Mesmo App Group do OneSignalNotificationServiceExtension: badges e entrega confirmada. -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.br.com.monitoramentocarga.app.onesignal</string>
+	</array>
+</dict>
+</plist>

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { BellRing, Bell, BellOff, Loader2, Share, PlusSquare, LogOut, RefreshCw, Smartphone, Download, MoreVertical } from 'lucide-react';
+import { isNativeApp } from '../lib/native';
 import {
   IOS_PUSH_FAILED,
   PushState,
@@ -189,7 +190,11 @@ export const NotificationGate: React.FC<NotificationGateProps> = ({ token, state
           </div>
         )}
 
-        {state === 'unsupported' && isIOS() && isStandalone() ? (
+        {state === 'unsupported' && isNativeApp() ? (
+          <p className="text-sm text-amber-300">
+            As notificações ainda não estão configuradas nesta versão do app. Avise a comissão técnica.
+          </p>
+        ) : state === 'unsupported' && isIOS() && isStandalone() ? (
           iosTooOld() ? (
             <div className="space-y-3">
               <p className="text-sm text-amber-300">

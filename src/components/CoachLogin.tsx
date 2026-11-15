@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Lock, Mail, Eye, EyeOff, ShieldCheck, AlertCircle, Loader2, KeyRound, ArrowLeft, CheckCircle2 } from 'lucide-react';
 import { ClubCrest } from '../lib/club';
 import { supabase } from '../lib/supabase';
+import { authRedirectUrl } from '../lib/native';
 
 interface CoachLoginProps {
   onLoginSuccess: () => void;
@@ -86,7 +87,8 @@ export const CoachLogin: React.FC<CoachLoginProps> = ({
     setLoading(true);
     setErrorMsg('');
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
-      redirectTo: `${window.location.origin}/?${RESET_PARAM}=1`,
+      // No app nativo, o link abre na versão web (o endereço do WebView não é público).
+      redirectTo: authRedirectUrl(RESET_PARAM),
     });
     setLoading(false);
     if (error) {

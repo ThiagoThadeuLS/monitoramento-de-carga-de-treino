@@ -38,6 +38,13 @@ coverage
 # Vercel
 .vercel
 
+# Apps nativos: credenciais e assinatura (nunca versionar)
+android/keystore.properties
+android/app/google-services.json
+ios/App/App/GoogleService-Info.plist
+*.jks
+*.keystore
+
 # Supabase CLI (estado local do projeto vinculado)
 supabase/.temp
 
