@@ -37,6 +37,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   senha_ja_definida: 'Sua senha já foi definida. Entre novamente com ela.',
   pse_motivo_nao_treinou: 'Informe o motivo de não ter treinado.',
   pse_duracao_valida: 'A duração precisa ficar entre 1 e 600 minutos.',
+  treino_invalido: 'Esse treino não está disponível para você hoje. Atualize a tela e tente de novo.',
   termo_pendente: 'Você precisa aceitar o termo de uso dos dados antes de continuar.',
   fora_do_prazo: 'Só dá para corrigir respostas enviadas hoje.',
   registro_nao_encontrado: 'Registro não encontrado.',
@@ -72,6 +73,11 @@ function toAuthError(error: { message?: string } | null): AthleteAuthError {
     );
   }
   return new AthleteAuthError('erro', 'Falha na comunicação com o servidor. Tente novamente.');
+}
+
+/** Banco ainda sem uma função/parâmetro novo (PostgREST não achou a assinatura). */
+function isMissingFunction(error: { code?: string; message?: string } | null): boolean {
+  return error?.code === 'PGRST202' || !!error?.message?.includes('Could not find the function');
 }
 
 function client() {
@@ -236,7 +242,7 @@ type NewRecord<T> = Omit<T, 'id' | 'created_at' | 'athlete_id'>;
 
 // O banco descobre o atleta pelo token; athlete_id nunca vem do navegador.
 export async function submitPse(token: string, r: NewRecord<PseRecord>): Promise<void> {
-  const { error } = await client().rpc('athlete_submit_pse', {
+  const base = {
     p_token: token,
     p_date: r.date,
     p_training_type: r.training_type ?? null,
@@ -244,8 +250,30 @@ export async function submitPse(token: string, r: NewRecord<PseRecord>): Promise
     p_did_not_train: r.did_not_train,
     p_observations: r.observations ?? null,
     p_duration_minutes: r.did_not_train ? null : r.duration_minutes ?? null,
-  });
-  if (error) throw toAuthError(error);
+  };
+
+  let { error } = await client().rpc(
+    'athlete_submit_pse',
+    r.training_session_id ? { ...base, p_training_session_id: r.training_session_id } : base
+  );
+
+  // Banco ainda uma versão atrás (sem a coluna do treino): envia no formato antigo
+  // em vez de perder a resposta do atleta. O tipo do treino continua sendo gravado.
+  if (error && r.training_session_id && isMissingFunction(error)) {
+    ({ error } = await client().rpc('athlete_submit_pse', base));
+  }
+
+  if (error) {
+    const err = toAuthError(error);
+    // Ao enviar PSE, nunca falar em "login do atleta": a mensagem confunde e não ajuda
+    if (err.code === 'migracao_pendente') {
+      throw new AthleteAuthError(
+        'migracao_pendente',
+        'Não foi possível salvar sua PSE agora. Tente de novo em instantes; se continuar, avise a comissão técnica.'
+      );
+    }
+    throw err;
+  }
 }
 
 export async function submitPsr(token: string, r: NewRecord<PsrRecord>): Promise<void> {
@@ -585,7 +613,7 @@ export interface AthleteHome {
   psr: { id: string; created_at: string } | null;
   weight: { id: string; weight: number; created_at: string } | null;
   lastWeight: { weight: number; date: string } | null;
-  pse: { id: string; training_type: string | null; rpe_score: number | null; did_not_train: boolean; duration_minutes: number | null; created_at: string }[];
+  pse: { id: string; training_type: string | null; training_session_id: string | null; rpe_score: number | null; did_not_train: boolean; duration_minutes: number | null; created_at: string }[];
   /** Hoje é dia de pesagem do clube */
   weighDay: boolean;
   /** O clube tem exercícios com PR (mostra a aba de PRs) */

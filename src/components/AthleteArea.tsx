@@ -126,9 +126,18 @@ const VIEWS: { id: View; label: string; icon: typeof Home }[] = [
 
 // Link dos lembretes (/?aba=...): abre direto o formulário certo
 const INITIAL = (() => {
-  const aba = new URLSearchParams(window.location.search).get('aba') ?? '';
+  const params = new URLSearchParams(window.location.search);
+  const aba = params.get('aba') ?? '';
+  // O lembrete de PSE leva o treino (?treino=<id>) para o "Não treinei" valer só para ele
+  const treino = params.get('treino') ?? '';
   const overlay: Overlay =
-    aba === 'pse' ? { kind: 'pse' } : aba === 'psr' ? { kind: 'psr' } : aba === 'peso' ? { kind: 'peso' } : null;
+    aba === 'pse'
+      ? { kind: 'pse', sessionId: treino || undefined }
+      : aba === 'psr'
+      ? { kind: 'psr' }
+      : aba === 'peso'
+      ? { kind: 'peso' }
+      : null;
   const view: View =
     aba === 'agenda' ? 'agenda' : aba === 'prs' ? 'prs' : aba === 'adversarios' ? 'rivais' : aba === 'historico' ? 'historico' : 'hoje';
   return { aba, overlay, view };
@@ -591,6 +600,8 @@ export const AthleteArea: React.FC = () => {
         />
       );
     }
+    const pseSession =
+      overlay.kind === 'pse' && overlay.sessionId ? home?.sessions.find((s) => s.id === overlay.sessionId) : undefined;
     return (
       <div className="space-y-4">
         <button type="button" onClick={closeOverlay} className="flex items-center gap-2 text-sm font-bold text-slate-300 hover:text-white">
@@ -604,9 +615,11 @@ export const AthleteArea: React.FC = () => {
               athleteName={displayName}
               onSubmit={handlePseSubmit}
               scheduledDurations={scheduledDurations}
-              suggestedType={overlay.trainingType ?? autoType}
-              skipTrainingType={overlay.trainingType}
-              initialDuration={overlay.duration}
+              suggestedType={overlay.trainingType ?? pseSession?.training_type ?? autoType}
+              skipTrainingType={overlay.trainingType ?? pseSession?.training_type}
+              initialDuration={overlay.duration ?? (pseSession ? sessionMinutes(pseSession) : undefined)}
+              sessionId={overlay.sessionId}
+              sessions={home?.sessions ?? []}
             />
           )}
           {overlay.kind === 'psr' && <PsrForm athleteId={athlete.id} athleteName={displayName} onSubmit={handlePsrSubmit} />}

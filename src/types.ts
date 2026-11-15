@@ -17,6 +17,8 @@ export interface PseRecord {
   athlete_id: string;
   date: string;
   training_type?: string; // 'Treino Técnico' | 'Treino Randori' | 'Treino Físico'
+  /** Treino do dia que esta PSE responde (permite dois treinos do mesmo tipo no mesmo dia) */
+  training_session_id?: string | null;
   rpe_score: number | null; // 1-10 (null if did_not_train)
   did_not_train: boolean;
   observations?: string;

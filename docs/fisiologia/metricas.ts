@@ -24,6 +24,7 @@ export interface PseRecord {
   athlete_id: string;
   date: string; // AAAA-MM-DD
   training_type?: string; // 'Treino Técnico' | 'Treino Randori' | 'Treino Físico'
+  training_session_id?: string | null; // treino exato que a PSE responde (respostas novas)
   rpe_score: number | null; // 1 a 10 (escala de Foster / CR-10); null quando "não treinei"
   did_not_train: boolean; // "não treinei" (com motivo)
   duration_minutes?: number | null; // 1 a 600 min (o app sugere a duração do treino do cronograma)
@@ -388,21 +389,40 @@ export function sessionMinutes(s: { start_time: string; end_time?: string | null
 
 /**
  * Liga cada treino programado à PSE do mesmo tipo, na ordem do horário (a primeira PSE enviada
- * vai para o primeiro treino). "Não treinei" sem tipo vale para todos os treinos do dia.
+ * vai para o primeiro treino). PSE com training_session_id responde exatamente aquele treino.
+ * "Não treinei" antigo, sem vínculo e sem tipo, vale para todos os treinos do dia.
  */
 export function matchPseToSessions(sessions: TrainingSession[], records: PseRecord[]): Map<string, PseRecord> {
   const ordered = [...sessions].sort((a, b) => a.start_time.localeCompare(b.start_time));
   const recs = [...records].sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''));
   const used = new Set<PseRecord>();
   const out = new Map<string, PseRecord>();
+  const byId = new Map(ordered.map((s) => [s.id, s]));
+
+  // 1. Vínculo explícito com o treino (funciona com dois treinos do mesmo tipo no dia)
+  for (const r of recs) {
+    if (used.has(r) || !r.training_session_id) continue;
+    const session = byId.get(r.training_session_id);
+    if (session && !out.has(session.id)) {
+      used.add(r);
+      out.set(session.id, r);
+    }
+  }
+
+  // 2. Respostas antigas (sem vínculo): casa pelo tipo, na ordem do horário
   for (const s of ordered) {
-    const rec = recs.find((r) => !used.has(r) && !!r.training_type && r.training_type === s.training_type);
+    if (out.has(s.id)) continue;
+    const rec = recs.find(
+      (r) => !used.has(r) && !r.training_session_id && !!r.training_type && r.training_type === s.training_type
+    );
     if (rec) {
       used.add(rec);
       out.set(s.id, rec);
     }
   }
-  const wholeDay = recs.find((r) => r.did_not_train && !r.training_type);
+
+  // 3. "Não treinei" antigo sem tipo: cobre o resto do dia
+  const wholeDay = recs.find((r) => !used.has(r) && !r.training_session_id && r.did_not_train && !r.training_type);
   if (wholeDay) for (const s of ordered) if (!out.has(s.id)) out.set(s.id, wholeDay);
   return out;
 }

@@ -93,7 +93,7 @@ Os gráficos de período resumem cada dia com média, mediana ou moda das respos
 - **Moda:** com empate, a linha mostra o maior valor e a dica mostra todos.
 - **Alerta de PSE alta:** PSE acima de 6 no dia escolhido.
 - **Alerta de PSR baixa:** pelo menos um dos 6 itens abaixo de 5 no dia escolhido.
-- **Respostas em falta:** só conta dias com treino no cronograma destinado ao atleta e depois do prazo do clube (padrão 22h). Espera-se 1 PSR por dia de treino e 1 PSE por treino; resposta depois do prazo aparece como "atrasada". Cada treino programado é ligado à PSE do mesmo tipo, na ordem do horário; "não treinei" sem tipo vale para todos os treinos do dia.
+- **Respostas em falta:** só conta dias com treino no cronograma destinado ao atleta e depois do prazo do clube (padrão 22h). Espera-se 1 PSR por dia de treino e 1 PSE por treino; resposta depois do prazo aparece como "atrasada". Cada PSE é ligada ao treino exato que o atleta abriu (inclusive dois treinos do mesmo tipo no dia); respostas antigas, sem esse vínculo, ainda são ligadas pelo tipo e, se forem "não treinei" sem tipo, valem para todos os treinos do dia.
 
 ## Peso e plano até a pesagem
 

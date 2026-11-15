@@ -17,11 +17,22 @@ interface PseFormProps {
   initialDuration?: number;
   /** Feedback ou observações iniciais vindas da execução do treino */
   initialObservations?: string;
+  /** Treino que a PSE está respondendo (aberto pelo cartão do treino ou pela notificação) */
+  sessionId?: string;
+  /** Treinos de hoje destinados a este atleta (para escolher qual treino a PSE responde) */
+  sessions?: PseSessionOption[];
   /**
-   * PSE aberta a partir de um treino do dia: "Não treinei" vale só para esse treino
-   * (grava o tipo dele). Sem isso, "Não treinei" vale para o dia todo.
+   * Tipo do treino que a PSE está respondendo, quando já se sabe.
+   * Mantido para o "Não treinei" gravado com o tipo (compatível com o histórico).
    */
   skipTrainingType?: string;
+}
+
+export interface PseSessionOption {
+  id: string;
+  name?: string;
+  training_type: string;
+  start_time: string;
 }
 
 const TRAINING_TYPES = [
@@ -51,12 +62,27 @@ export const PseForm: React.FC<PseFormProps> = ({
   suggestedType,
   initialDuration,
   initialObservations,
+  sessionId,
+  sessions,
   skipTrainingType,
 }) => {
   const [trainingType, setTrainingType] = useState<string>(
     suggestedType ?? (initialDuration ? 'Treino Físico' : 'Treino Técnico')
   );
   const [typeTouched, setTypeTouched] = useState(false);
+  // "Não treinei" aberto sem treino definido: qual treino do dia o atleta não fez
+  const [notTrainedSessionId, setNotTrainedSessionId] = useState('');
+
+  // Trocar de treino (ou abrir a PSE por outro caminho) recomeça a escolha
+  useEffect(() => {
+    setNotTrainedSessionId('');
+    setTypeTouched(false);
+  }, [sessionId]);
+
+  // Dia com um treino só: "Não treinei" já aponta para ele (com 2+, o atleta escolhe)
+  useEffect(() => {
+    if (!sessionId && sessions?.length === 1) setNotTrainedSessionId(sessions[0].id);
+  }, [sessionId, sessions]);
   useEffect(() => {
     if (suggestedType && !typeTouched) setTrainingType(suggestedType);
   }, [suggestedType, typeTouched]);
@@ -95,6 +121,24 @@ export const PseForm: React.FC<PseFormProps> = ({
 
   const currentScaleInfo = FOSTER_SCALE_LABELS[rpeScore] || FOSTER_SCALE_LABELS[5];
 
+  const sessionById = (id?: string) => (id ? sessions?.find((s) => s.id === id) : undefined);
+  const linkedSession = sessionById(sessionId);
+  const notTrainedSession = sessionById(notTrainedSessionId);
+  const hasSessions = (sessions?.length ?? 0) > 0;
+  // Sem treino definido e com treino no dia: o atleta precisa dizer qual não fez
+  const notTrainedNeedsChoice = didNotTrain && !sessionId && hasSessions && !notTrainedSessionId;
+
+  // Treino que a resposta aponta (quando dá para saber)
+  const submitSessionId = didNotTrain
+    ? sessionId ?? notTrainedSession?.id ?? null
+    : sessionId && (!linkedSession || linkedSession.training_type === trainingType)
+    ? sessionId
+    : null;
+  // "Não treinei" também grava o tipo, para o histórico e os lembretes antigos
+  const submitTrainingType = didNotTrain
+    ? notTrainedSession?.training_type ?? linkedSession?.training_type ?? skipTrainingType ?? (hasSessions ? trainingType : undefined)
+    : trainingType;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!athleteId) {
@@ -103,6 +147,10 @@ export const PseForm: React.FC<PseFormProps> = ({
     }
     if (didNotTrain && !observations.trim()) {
       setErrorMsg('Informe o motivo de não ter treinado.');
+      return;
+    }
+    if (notTrainedNeedsChoice) {
+      setErrorMsg('Escolha qual treino você não fez.');
       return;
     }
     if (!didNotTrain && durationError) {
@@ -118,7 +166,8 @@ export const PseForm: React.FC<PseFormProps> = ({
     const error = await onSubmit({
       athlete_id: athleteId,
       date: todayStr,
-      training_type: didNotTrain ? skipTrainingType : trainingType,
+      training_type: submitTrainingType,
+      training_session_id: submitSessionId,
       did_not_train: didNotTrain,
       rpe_score: didNotTrain ? null : rpeScore,
       observations: observations.trim() || undefined,
@@ -153,26 +202,51 @@ export const PseForm: React.FC<PseFormProps> = ({
       </div>
 
       {/* Toggle: Não Treinou */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 flex items-center justify-between transition-all">
-        <div className="pr-4">
-          <p className="text-sm font-semibold text-white">{skipTrainingType ? 'Não fez este treino?' : 'Não treinou hoje?'}</p>
-          <p className="text-xs text-slate-400">
-            {didNotTrain
-              ? skipTrainingType
-                ? `Vale só para este treino (${skipTrainingType}).`
-                : 'Vale para todos os treinos de hoje.'
-              : 'Ative esta opção em caso de folga, lesão, dispensa ou viagem.'}
-          </p>
+      <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 transition-all">
+        <div className="flex items-center justify-between">
+          <div className="pr-4">
+            <p className="text-sm font-semibold text-white">{sessionId ? 'Não fez este treino?' : 'Não treinou?'}</p>
+            <p className="text-xs text-slate-400">
+              {didNotTrain
+                ? sessionId
+                  ? `Vale só para este treino${linkedSession ? ` (${linkedSession.training_type})` : ''}.`
+                  : hasSessions
+                  ? 'Escolha abaixo qual treino você não fez.'
+                  : 'Sem treino programado para hoje.'
+                : 'Ative esta opção em caso de folga, lesão, dispensa ou viagem.'}
+            </p>
+          </div>
+          <label className="relative inline-flex items-center cursor-pointer">
+            <input
+              type="checkbox"
+              checked={didNotTrain}
+              onChange={(e) => setDidNotTrain(e.target.checked)}
+              className="sr-only peer"
+            />
+            <div className="w-14 h-7 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-amber-500"></div>
+          </label>
         </div>
-        <label className="relative inline-flex items-center cursor-pointer">
-          <input
-            type="checkbox"
-            checked={didNotTrain}
-            onChange={(e) => setDidNotTrain(e.target.checked)}
-            className="sr-only peer"
-          />
-          <div className="w-14 h-7 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-amber-500"></div>
-        </label>
+
+        {didNotTrain && !sessionId && hasSessions && (
+          <div className="mt-3 space-y-1.5">
+            <label htmlFor="pse-treino-nao-feito" className="block text-[10px] uppercase font-bold tracking-wider text-slate-400">
+              Qual treino você não fez?
+            </label>
+            <select
+              id="pse-treino-nao-feito"
+              value={notTrainedSessionId}
+              onChange={(e) => setNotTrainedSessionId(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+            >
+              <option value="">Escolha o treino</option>
+              {sessions!.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.start_time.slice(0, 5)} · {s.name || s.training_type} ({s.training_type})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
       {!didNotTrain ? (

@@ -12,6 +12,35 @@ describe('matchPseToSessions', () => {
     expect([...m.keys()]).toEqual(['manha']);
   });
 
+  it('PSE com training_session_id marca exatamente aquele treino (mesmo tipo no dia)', () => {
+    const m = matchPseToSessions(
+      [manha, tarde],
+      [{ training_session_id: 'tarde', training_type: 'Treino Técnico', did_not_train: false, created_at: '1' }]
+    );
+    expect([...m.keys()]).toEqual(['tarde']);
+  });
+
+  it('"Não treinei" com training_session_id não cobre o outro treino do dia', () => {
+    const m = matchPseToSessions(
+      [manha, tarde],
+      [{ training_session_id: 'manha', training_type: 'Treino Técnico', did_not_train: true, created_at: '1' }]
+    );
+    expect(m.has('manha')).toBe(true);
+    expect(m.has('tarde')).toBe(false);
+  });
+
+  it('o vínculo explícito vence a ordem dos treinos do mesmo tipo', () => {
+    const m = matchPseToSessions(
+      [manha, tarde],
+      [
+        { training_session_id: 'tarde', training_type: 'Treino Técnico', did_not_train: false, created_at: '2' },
+        { training_type: 'Treino Técnico', did_not_train: false, created_at: '1' },
+      ]
+    );
+    expect(m.get('tarde')?.created_at).toBe('2');
+    expect(m.get('manha')?.created_at).toBe('1');
+  });
+
   it('"Não treinei" enviado a partir de um treino marca só aquele treino', () => {
     const m = matchPseToSessions([manha, fisico], [{ training_type: 'Treino Físico', did_not_train: true, created_at: '1' }]);
     expect(m.has('fisico')).toBe(true);

@@ -391,7 +391,8 @@
     p_rpe_score integer,
     p_did_not_train boolean,
     p_observations text,
-    p_duration_minutes integer default null
+    p_duration_minutes integer default null,
+    p_training_session_id uuid default null
   )
   returns void
   language plpgsql
@@ -399,12 +400,42 @@
   security definer
   set search_path = ''
   as $$
+  declare
+    v_me uuid := public._athlete_ready(p_token);
+    v_club uuid;
+    v_today date := public.training_today();
+    v_session_id uuid;
+    v_session_type text;
+    v_session_club uuid;
+    v_session_date date;
+    v_applies boolean;
+    v_type text := p_training_type;
   begin
-    insert into public.pse_records (athlete_id, date, training_type, rpe_score, did_not_train, observations, duration_minutes)
+    select a.club_id into v_club from public.athletes a where a.id = v_me;
+
+    -- Quando a PSE vem de um treino, ele precisa ser do clube, de hoje e destinado ao atleta
+    if p_training_session_id is not null then
+      select s.id, s.training_type, s.club_id, s.date, public.session_applies_to(s, v_me)
+        into v_session_id, v_session_type, v_session_club, v_session_date, v_applies
+      from public.training_sessions s
+      where s.id = p_training_session_id;
+
+      if v_session_id is null
+         or v_session_club is distinct from v_club
+         or v_session_date <> v_today
+         or not coalesce(v_applies, false) then
+        raise exception 'treino_invalido';
+      end if;
+
+      v_type := v_session_type;
+    end if;
+
+    insert into public.pse_records (athlete_id, date, training_type, training_session_id, rpe_score, did_not_train, observations, duration_minutes)
     values (
-      public._athlete_ready(p_token),
-      public.training_today(),
-      p_training_type,
+      v_me,
+      v_today,
+      v_type,
+      p_training_session_id,
       p_rpe_score,
       coalesce(p_did_not_train, false),
       p_observations,
@@ -412,6 +443,10 @@
     );
   end;
   $$;
+
+  -- Remove a versão antiga (7 argumentos) depois de a nova existir, para não deixar
+  -- duas funções com o mesmo nome (chamadas de 7 argumentos ficariam ambíguas).
+  drop function if exists public.athlete_submit_pse(uuid, date, text, integer, boolean, text, integer);
 
   -- Envio de PSR pelo atleta logado: uma por dia (hoje, horário de Brasília; p_date é ignorado).
   -- Para corrigir, o atleta apaga a resposta de hoje no Histórico e envia de novo.
@@ -506,7 +541,7 @@
   grant execute on function public.athlete_get_session(uuid) to anon, authenticated;
   grant execute on function public.athlete_set_password(uuid, text) to anon, authenticated;
   grant execute on function public.athlete_logout(uuid) to anon, authenticated;
-  grant execute on function public.athlete_submit_pse(uuid, date, text, integer, boolean, text, integer) to anon, authenticated;
+  grant execute on function public.athlete_submit_pse(uuid, date, text, integer, boolean, text, integer, uuid) to anon, authenticated;
   grant execute on function public.athlete_submit_psr(uuid, date, integer, integer, integer, integer, integer, integer) to anon, authenticated;
   grant execute on function public.athlete_submit_weight(uuid, date, numeric) to anon, authenticated;
   grant execute on function public.coach_reset_athlete_password(uuid) to authenticated;
@@ -537,6 +572,11 @@
 
   -- "Esconder anotações": o treinador vê as anotações; os atletas não recebem o texto
   alter table public.training_sessions add column if not exists hide_notes boolean not null default false;
+
+  -- Qual treino do dia a PSE responde (permite dois treinos do mesmo tipo no mesmo dia)
+  alter table public.pse_records add column if not exists training_session_id uuid
+    references public.training_sessions(id) on delete set null;
+  create index if not exists pse_records_session_idx on public.pse_records (training_session_id);
 
   -- Mantém updated_at atualizado em cada edição
   create or replace function public.training_sessions_touch()
@@ -2372,16 +2412,25 @@
       select t.athlete_id, 'pse'::text as kind, t.id::text as ref,
             'Registre sua PSE'::text as title,
             format('Como foi o %s? Leva só alguns segundos.', t.name) as body,
-            '/?aba=pse'::text as url
+            '/?aba=pse&treino=' || t.id::text as url
       from treinos t
       where v_time >= coalesce(t.end_time, t.start_time + interval '90 minutes') + interval '20 minutes'
         and not exists (
           select 1 from public.pse_records p
           where p.athlete_id = t.athlete_id and p.date = v_today
-            -- "Não treinei" sem treino vale para o dia todo; com treino, só para aquele tipo
-            and ((p.did_not_train and (p.training_type is null or p.training_type = t.training_type))
-                or (p.training_type = t.training_type
-                    and p.created_at >= ((v_today + t.start_time) at time zone 'America/Sao_Paulo')))
+            and (
+              -- Resposta vinculada a este treino: cobre só ele
+              p.training_session_id = t.id
+              -- Registros antigos (sem vínculo): mantém a regra por tipo
+              or (
+                p.training_session_id is null
+                and (
+                  (p.did_not_train and (p.training_type is null or p.training_type = t.training_type))
+                  or (p.training_type = t.training_type
+                      and p.created_at >= ((v_today + t.start_time) at time zone 'America/Sao_Paulo'))
+                )
+              )
+            )
         )
     ),
     psr as (
@@ -2698,7 +2747,7 @@
     end if;
     return json_build_object(
       'pse', coalesce((select json_agg(row_to_json(x) order by x.date, x.created_at) from (
-        select id, date, training_type, rpe_score, did_not_train, observations, duration_minutes, created_at
+        select id, date, training_type, training_session_id, rpe_score, did_not_train, observations, duration_minutes, created_at
         from public.pse_records where athlete_id = v_id and date between v_from and p_to) x), '[]'::json),
       'psr', coalesce((select json_agg(row_to_json(x) order by x.date, x.created_at) from (
         select id, date, psr_score, fatigue_score, sleep_score, muscle_soreness_score, stress_score, mood_score, created_at
@@ -4188,7 +4237,8 @@
       ),
       'pse', coalesce((
         select json_agg(json_build_object(
-                 'id', p.id, 'training_type', p.training_type, 'rpe_score', p.rpe_score,
+                 'id', p.id, 'training_type', p.training_type, 'training_session_id', p.training_session_id,
+                 'rpe_score', p.rpe_score,
                  'did_not_train', p.did_not_train, 'duration_minutes', p.duration_minutes, 'created_at', p.created_at
                ) order by p.created_at)
         from public.pse_records p
