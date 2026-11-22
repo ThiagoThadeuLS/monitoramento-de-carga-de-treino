@@ -27,7 +27,7 @@ const CompetitionRiskCard = lazyNamed(() => import('./coach/CompetitionRiskCard'
 const PeriodAnalysis = lazyNamed(() => import('./coach/PeriodAnalysis'), (m) => m.PeriodAnalysis);
 const LoadAnalysis = lazyNamed(() => import('./coach/LoadAnalysis'), (m) => m.LoadAnalysis);
 const TrainingSchedule = lazyNamed(() => import('./coach/TrainingSchedule'), (m) => m.TrainingSchedule);
-const PhysicalWorkoutBuilder = lazyNamed(() => import('./coach/PhysicalWorkoutBuilder'), (m) => m.PhysicalWorkoutBuilder);
+const PhysicalArea = lazyNamed(() => import('./coach/physical/PhysicalArea'), (m) => m.PhysicalArea);
 const BodyComposition = lazyNamed(() => import('./coach/BodyComposition'), (m) => m.BodyComposition);
 const CompetitionManagement = lazyNamed(() => import('./coach/CompetitionManagement'), (m) => m.CompetitionManagement);
 const AthleteManagement = lazyNamed(() => import('./coach/AthleteManagement'), (m) => m.AthleteManagement);
@@ -466,7 +466,7 @@ export const CoachArea: React.FC<{ recovery?: boolean }> = ({ recovery = false }
         {pane('analises/carga', <LoadAnalysis filter={analysisFilter} onOpenProfile={setProfileId} />)}
         {pane('analises/relatorio', <ReportBuilder coachName={coach!.nome} filter={analysisFilter} />)}
         {pane('planejamento/agenda', <TrainingSchedule onOpenWorkout={(id: string) => { setWorkoutSession(id); go('planejamento', 'fisica'); }} />)}
-        {pane('planejamento/fisica', <PhysicalWorkoutBuilder sessionId={workoutSession} />)}
+        {pane('planejamento/fisica', <PhysicalArea sessionId={workoutSession} />)}
         {pane('planejamento/competicoes', <CompetitionManagement />)}
         {pane(
           'elenco/atletas',

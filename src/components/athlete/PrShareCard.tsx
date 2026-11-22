@@ -253,8 +253,8 @@ async function drawCard(canvas: HTMLCanvasElement, { athlete, pr, prs, novo, clu
   if (hist.length > 1) {
     deltaTexto =
       delta > 0.01
-        ? `+${kg(delta)} kg desde ${shortDate(hist[0]?.created_at)}`
-        : `evolução desde ${shortDate(hist[0]?.created_at)}`;
+        ? `+${kg(delta)} kg desde ${shortDate(hist[0]?.data ?? hist[0]?.created_at)}`
+        : `evolução desde ${shortDate(hist[0]?.data ?? hist[0]?.created_at)}`;
   }
   write(ctx, deltaTexto, W / 2, 1438, 30, accent, 700);
 
@@ -265,7 +265,7 @@ async function drawCard(canvas: HTMLCanvasElement, { athlete, pr, prs, novo, clu
   const right = W - 120;
   if (valores.length >= 2) {
     write(ctx, 'EVOLUÇÃO', left, chartTop - 16, 23, faint, 800, 'left');
-    write(ctx, `${shortDate(hist[0]?.created_at)} → hoje`, right, chartTop - 16, 23, faint, 500, 'right');
+    write(ctx, `${shortDate(hist[0]?.data ?? hist[0]?.created_at)} → hoje`, right, chartTop - 16, 23, faint, 500, 'right');
     const max = Math.max(...valores);
     const min = Math.min(...valores);
     const span = max - min || 1;

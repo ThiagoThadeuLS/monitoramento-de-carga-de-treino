@@ -4721,6 +4721,15 @@
   create index if not exists athlete_pr_history_athlete_idx
     on public.athlete_pr_history (athlete_id, created_at);
 
+  -- Dia do registro (o atleta pode lançar um PR de outro dia e corrigir a data).
+  -- Registros antigos ganham o dia em que foram gravados (horário de Brasília).
+  alter table public.athlete_pr_history add column if not exists data date;
+  update public.athlete_pr_history
+    set data = (created_at at time zone 'America/Sao_Paulo')::date
+  where data is null;
+  alter table public.athlete_pr_history alter column data set default public.training_today();
+  alter table public.athlete_pr_history alter column data set not null;
+
   -- Clube do histórico = clube do atleta (mesma regra das respostas)
   create or replace function public.athlete_pr_history_set_club()
   returns trigger
@@ -4740,7 +4749,9 @@
   create trigger athlete_pr_history_set_club before insert on public.athlete_pr_history
     for each row execute function public.athlete_pr_history_set_club();
 
-  -- Cada PR criado ou alterado entra no histórico (só quando a carga muda)
+  -- Cada PR criado ou alterado entra no histórico (só quando a carga muda).
+  -- As funções que editam o histórico (parte 20) recalculam o PR atual a partir dele
+  -- e ligam "app.pr_sync" para essa conta não virar um registro novo.
   create or replace function public.athlete_prs_log_history()
   returns trigger
   language plpgsql
@@ -4748,6 +4759,9 @@
   set search_path = ''
   as $$
   begin
+    if coalesce(current_setting('app.pr_sync', true), '') = 'on' then
+      return new;
+    end if;
     if tg_op = 'INSERT' then
       insert into public.athlete_pr_history (club_id, athlete_id, exercicio, peso_pr)
       values (new.club_id, new.athlete_id, new.exercicio, new.peso_pr);
@@ -4765,8 +4779,9 @@
     for each row execute function public.athlete_prs_log_history();
 
   -- PRs que já existiam ganham o primeiro ponto (só se ainda não tiverem nenhum)
-  insert into public.athlete_pr_history (club_id, athlete_id, exercicio, peso_pr, created_at)
-  select p.club_id, p.athlete_id, p.exercicio, p.peso_pr, coalesce(p.updated_at, p.created_at, now())
+  insert into public.athlete_pr_history (club_id, athlete_id, exercicio, peso_pr, created_at, data)
+  select p.club_id, p.athlete_id, p.exercicio, p.peso_pr, coalesce(p.updated_at, p.created_at, now()),
+         (coalesce(p.updated_at, p.created_at, now()) at time zone 'America/Sao_Paulo')::date
   from public.athlete_prs p
   where not exists (
     select 1 from public.athlete_pr_history h
@@ -4812,14 +4827,15 @@
           'peso_pr', p.peso_pr,
           'updated_at', p.updated_at,
           'history', coalesce((
-            select json_agg(json_build_object('peso_pr', h.peso_pr, 'created_at', h.created_at) order by h.created_at)
+            select json_agg(json_build_object('id', h.id, 'peso_pr', h.peso_pr, 'data', h.data, 'created_at', h.created_at)
+                            order by h.data, h.created_at)
             from (
-              select hh.peso_pr, hh.created_at
+              select hh.id, hh.peso_pr, hh.data, hh.created_at
               from public.athlete_pr_history hh
               where hh.athlete_id = p.athlete_id
                 and lower(trim(hh.exercicio)) = lower(trim(p.exercicio))
-              order by hh.created_at desc
-              limit 50
+              order by hh.data desc, hh.created_at desc
+              limit 200
             ) h
           ), '[]'::json)
         ) order by lower(p.exercicio))
@@ -5297,5 +5313,284 @@
   --
   -- 09:00 UTC = 06:00 em Brasília. Requer as extensões pg_cron e pg_net.
   -- Para parar: select cron.unschedule('sincronizar-whoop');
+
+  notify pgrst, 'reload schema';
+
+  -- ############################################################
+  -- PARTE 20. PRs EDITÁVEIS E TESTES FÍSICOS
+  -- * O histórico de PRs (athlete_pr_history) passa a ser a lista de registros do
+  --   atleta: ele inclui um registro (com o dia), corrige a carga/data ou apaga um
+  --   registro errado. O PR atual (athlete_prs, usado nas fichas) é sempre o registro
+  --   mais recente de cada exercício; apagar o último registro tira o PR.
+  -- * Testes físicos além do PR: barra (repetições máximas), barra em isometria
+  --   (tempo máximo, em segundos), beep test (nível e vaivém) e CMJ (altura em cm).
+  --   O atleta registra pelas funções athlete_*; a comissão lê e registra pelo RLS.
+  -- ############################################################
+
+  create index if not exists athlete_pr_history_exercicio_idx
+    on public.athlete_pr_history (athlete_id, lower(trim(exercicio)), data);
+
+  -- PR atual = registro mais recente do exercício (sem registro: sem PR)
+  create or replace function public._athlete_pr_sync(p_athlete uuid, p_exercicio text)
+  returns void
+  language plpgsql
+  volatile
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_last public.athlete_pr_history;
+  begin
+    perform set_config('app.pr_sync', 'on', true);
+    select h.* into v_last
+    from public.athlete_pr_history h
+    where h.athlete_id = p_athlete and lower(trim(h.exercicio)) = lower(trim(p_exercicio))
+    order by h.data desc, h.created_at desc
+    limit 1;
+    if v_last.id is null then
+      delete from public.athlete_prs p
+      where p.athlete_id = p_athlete and lower(trim(p.exercicio)) = lower(trim(p_exercicio));
+    else
+      update public.athlete_prs p
+        set peso_pr = v_last.peso_pr, exercicio = v_last.exercicio, updated_at = now()
+      where p.athlete_id = p_athlete and lower(trim(p.exercicio)) = lower(trim(p_exercicio));
+      if not found then
+        insert into public.athlete_prs (athlete_id, exercicio, peso_pr) values (p_athlete, v_last.exercicio, v_last.peso_pr);
+      end if;
+    end if;
+    perform set_config('app.pr_sync', 'off', true);
+  end;
+  $$;
+
+  -- Novo registro de PR (exercício do catálogo do clube que pede PR)
+  create or replace function public.athlete_add_pr_entry(p_token uuid, p_exercicio text, p_peso numeric, p_data date)
+  returns uuid
+  language plpgsql
+  volatile
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_me uuid := public._athlete_ready(p_token);
+    v_nome text;
+    v_data date := coalesce(p_data, public.training_today());
+    v_id uuid;
+  begin
+    if p_peso is null or p_peso <= 0 or p_peso > 500 then
+      raise exception 'pr_invalido';
+    end if;
+    if v_data > public.training_today() or v_data < public.training_today() - 3650 then
+      raise exception 'data_invalida';
+    end if;
+    select e.nome into v_nome
+    from public.club_exercises e
+    join public.athletes a on a.id = v_me and a.club_id = e.club_id
+    where e.exige_pr and lower(trim(e.nome)) = lower(trim(coalesce(p_exercicio, '')))
+    limit 1;
+    if v_nome is null then
+      raise exception 'exercicio_invalido';
+    end if;
+    insert into public.athlete_pr_history (athlete_id, exercicio, peso_pr, data)
+    values (v_me, v_nome, round(p_peso, 2), v_data)
+    returning id into v_id;
+    perform public._athlete_pr_sync(v_me, v_nome);
+    return v_id;
+  end;
+  $$;
+
+  -- Corrige a carga e/ou o dia de um registro do próprio atleta
+  create or replace function public.athlete_update_pr_entry(p_token uuid, p_id uuid, p_peso numeric, p_data date)
+  returns void
+  language plpgsql
+  volatile
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_me uuid := public._athlete_ready(p_token);
+    v_exercicio text;
+  begin
+    if p_peso is null or p_peso <= 0 or p_peso > 500 then
+      raise exception 'pr_invalido';
+    end if;
+    if p_data is null or p_data > public.training_today() or p_data < public.training_today() - 3650 then
+      raise exception 'data_invalida';
+    end if;
+    update public.athlete_pr_history
+      set peso_pr = round(p_peso, 2), data = p_data
+    where id = p_id and athlete_id = v_me
+    returning exercicio into v_exercicio;
+    if v_exercicio is null then
+      raise exception 'registro_nao_encontrado';
+    end if;
+    perform public._athlete_pr_sync(v_me, v_exercicio);
+  end;
+  $$;
+
+  -- Apaga um registro do próprio atleta (o PR atual passa a ser o anterior)
+  create or replace function public.athlete_delete_pr_entry(p_token uuid, p_id uuid)
+  returns void
+  language plpgsql
+  volatile
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_me uuid := public._athlete_ready(p_token);
+    v_exercicio text;
+  begin
+    delete from public.athlete_pr_history
+    where id = p_id and athlete_id = v_me
+    returning exercicio into v_exercicio;
+    if v_exercicio is null then
+      raise exception 'registro_nao_encontrado';
+    end if;
+    perform public._athlete_pr_sync(v_me, v_exercicio);
+  end;
+  $$;
+
+  revoke execute on function public._athlete_pr_sync(uuid, text) from public, anon, authenticated;
+  revoke execute on function public.athlete_add_pr_entry(uuid, text, numeric, date) from public;
+  revoke execute on function public.athlete_update_pr_entry(uuid, uuid, numeric, date) from public;
+  revoke execute on function public.athlete_delete_pr_entry(uuid, uuid) from public;
+  grant execute on function public.athlete_add_pr_entry(uuid, text, numeric, date) to anon, authenticated;
+  grant execute on function public.athlete_update_pr_entry(uuid, uuid, numeric, date) to anon, authenticated;
+  grant execute on function public.athlete_delete_pr_entry(uuid, uuid) to anon, authenticated;
+
+  -- ------------------------------------------------------------
+  -- Testes físicos
+  --   barra_reps = repetições máximas na barra (número inteiro)
+  --   barra_iso  = tempo máximo em isometria na barra (segundos)
+  --   beep       = beep test: valor = nível (1 a 21), estagio = vaivém do nível (opcional)
+  --   cmj        = salto com contramovimento: altura em centímetros
+  -- ------------------------------------------------------------
+  create table if not exists public.physical_tests (
+    id uuid primary key default gen_random_uuid(),
+    club_id uuid references public.clubs(id) on delete cascade,
+    athlete_id uuid not null references public.athletes(id) on delete cascade,
+    teste text not null check (teste in ('barra_reps', 'barra_iso', 'beep', 'cmj')),
+    data date not null default public.training_today(),
+    valor numeric(6,2) not null,
+    estagio integer,
+    created_at timestamp with time zone not null default now(),
+    updated_at timestamp with time zone not null default now(),
+    constraint physical_tests_valor_check check (
+      (teste = 'barra_reps' and valor >= 0 and valor <= 100 and valor = trunc(valor) and estagio is null)
+      or (teste = 'barra_iso' and valor > 0 and valor <= 600 and estagio is null)
+      or (teste = 'beep' and valor >= 1 and valor <= 21 and valor = trunc(valor) and (estagio is null or estagio between 1 and 16))
+      or (teste = 'cmj' and valor > 0 and valor <= 120 and estagio is null)
+    )
+  );
+  create index if not exists physical_tests_athlete_idx on public.physical_tests (athlete_id, teste, data);
+  create index if not exists physical_tests_club_idx on public.physical_tests (club_id, data);
+
+  -- Clube do teste = clube do atleta (mesma regra das respostas)
+  drop trigger if exists physical_tests_set_club on public.physical_tests;
+  create trigger physical_tests_set_club before insert or update of athlete_id on public.physical_tests
+    for each row execute function public.records_set_club();
+
+  alter table public.physical_tests enable row level security;
+  revoke all on public.physical_tests from anon;
+  grant select, insert, update, delete on public.physical_tests to authenticated;
+  drop policy if exists "Clube: leitura" on public.physical_tests;
+  create policy "Clube: leitura" on public.physical_tests
+    for select to authenticated using (club_id = (select public.current_club_id()));
+  drop policy if exists "Clube: inclusão" on public.physical_tests;
+  create policy "Clube: inclusão" on public.physical_tests
+    for insert to authenticated with check (club_id = (select public.current_club_id()) and (select public.support_club_id()) is null);
+  drop policy if exists "Clube: alteração" on public.physical_tests;
+  create policy "Clube: alteração" on public.physical_tests
+    for update to authenticated
+    using (club_id = (select public.current_club_id()) and (select public.support_club_id()) is null)
+    with check (club_id = (select public.current_club_id()));
+  drop policy if exists "Clube: exclusão" on public.physical_tests;
+  create policy "Clube: exclusão" on public.physical_tests
+    for delete to authenticated using (club_id = (select public.current_club_id()) and (select public.support_club_id()) is null);
+
+  -- Testes do atleta logado (do mais novo para o mais antigo)
+  create or replace function public.athlete_list_tests(p_token uuid)
+  returns json
+  language plpgsql
+  stable
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_me uuid := public._athlete_ready(p_token);
+  begin
+    return coalesce((
+      select json_agg(json_build_object('id', t.id, 'teste', t.teste, 'data', t.data, 'valor', t.valor,
+                                        'estagio', t.estagio, 'created_at', t.created_at)
+                      order by t.data desc, t.created_at desc)
+      from (
+        select * from public.physical_tests x
+        where x.athlete_id = v_me
+        order by x.data desc, x.created_at desc
+        limit 500
+      ) t
+    ), '[]'::json);
+  end;
+  $$;
+
+  -- Inclui (p_id nulo) ou corrige um teste do próprio atleta
+  create or replace function public.athlete_save_test(p_token uuid, p_id uuid, p_teste text, p_data date, p_valor numeric, p_estagio integer)
+  returns uuid
+  language plpgsql
+  volatile
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_me uuid := public._athlete_ready(p_token);
+    v_id uuid;
+  begin
+    if p_data is null or p_data > public.training_today() or p_data < public.training_today() - 3650 then
+      raise exception 'data_invalida';
+    end if;
+    begin
+      if p_id is null then
+        insert into public.physical_tests (athlete_id, teste, data, valor, estagio)
+        values (v_me, p_teste, p_data, p_valor, p_estagio)
+        returning id into v_id;
+      else
+        update public.physical_tests
+          set teste = p_teste, data = p_data, valor = p_valor, estagio = p_estagio, updated_at = now()
+        where id = p_id and athlete_id = v_me
+        returning id into v_id;
+        if v_id is null then
+          raise exception 'registro_nao_encontrado';
+        end if;
+      end if;
+    exception
+      when check_violation or not_null_violation then
+        raise exception 'teste_invalido';
+    end;
+    return v_id;
+  end;
+  $$;
+
+  create or replace function public.athlete_delete_test(p_token uuid, p_id uuid)
+  returns void
+  language plpgsql
+  volatile
+  security definer
+  set search_path = ''
+  as $$
+  declare
+    v_me uuid := public._athlete_ready(p_token);
+  begin
+    delete from public.physical_tests where id = p_id and athlete_id = v_me;
+    if not found then
+      raise exception 'registro_nao_encontrado';
+    end if;
+  end;
+  $$;
+
+  revoke execute on function public.athlete_list_tests(uuid) from public;
+  revoke execute on function public.athlete_save_test(uuid, uuid, text, date, numeric, integer) from public;
+  revoke execute on function public.athlete_delete_test(uuid, uuid) from public;
+  grant execute on function public.athlete_list_tests(uuid) to anon, authenticated;
+  grant execute on function public.athlete_save_test(uuid, uuid, text, date, numeric, integer) to anon, authenticated;
+  grant execute on function public.athlete_delete_test(uuid, uuid) to anon, authenticated;
 
   notify pgrst, 'reload schema';

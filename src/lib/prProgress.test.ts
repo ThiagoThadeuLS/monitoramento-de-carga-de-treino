@@ -42,4 +42,23 @@ describe('buildPrProgress', () => {
     expect(p.points).toEqual([{ date: '2026-11-01', peso: 60 }]);
     expect(p.gainPct).toBe(0);
   });
+
+  it('usa o dia informado pelo atleta e lista cada registro com o id', () => {
+    const p = buildPrProgress(
+      [
+        // lançado depois, mas com data de teste mais antiga
+        { id: 'b', peso_pr: 100, data: '2026-10-20', created_at: '2026-11-05T12:00:00Z' },
+        { id: 'a', peso_pr: 90, data: '2026-09-10', created_at: '2026-11-05T11:00:00Z' },
+        { id: 'c', peso_pr: 95, data: '2026-10-20', created_at: '2026-11-05T13:00:00Z' },
+      ],
+      95
+    );
+    expect(p.points).toEqual([
+      { date: '2026-09-10', peso: 90 },
+      { date: '2026-10-20', peso: 95 },
+    ]);
+    expect(p.steps.map((s) => s.id)).toEqual(['c', 'b', 'a']);
+    expect(p.steps[0].diff).toBe(-5);
+    expect(p.improvements).toBe(1);
+  });
 });

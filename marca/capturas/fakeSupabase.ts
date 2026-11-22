@@ -75,7 +75,7 @@ function gerar() {
     clubs: [CLUB], coaches: [], athletes: [], athlete_groups: [], athlete_group_members: [], training_sessions: [],
     pse_records: [], psr_records: [], weight_records: [], adversarios: [], adversario_observacoes: [], adversario_ocultos: [],
     competitions: [], club_reminder_settings: [], club_exercises: [], workout_prescriptions: [], workout_templates: [],
-    body_compositions: [], athlete_prs: [], escudos: [],
+    body_compositions: [], athlete_prs: [], athlete_pr_history: [], physical_tests: [], escudos: [],
   };
   t.coaches.push({ user_id: COACH_ID, club_id: CLUB_ID, nome: 'Paula Rezende', email: 'paula@carga.app', photo_url: null, role: 'admin', active: true, must_change_password: false, created_at: stamp(addDaysISO(today, -90), '09:00') });
   t.coaches.push({ user_id: 'c0ac0000-0000-4000-8000-000000000002', club_id: CLUB_ID, nome: 'Marcos Lima', email: 'marcos@carga.app', photo_url: null, role: 'treinador', active: true, must_change_password: false, created_at: stamp(addDaysISO(today, -80), '09:00') });
@@ -227,6 +227,33 @@ function gerar() {
   t.competitions.push({ id: uid(), club_id: CLUB_ID, tipo: 'campo', nome: 'Treinamento de campo — seleção mineira', data: addDaysISO(today, 9), data_fim: addDaysISO(today, 13), data_pesagem: null, hora_pesagem: null, local: 'Pindamonhangaba (SP)', observacoes: 'Levar quimono reserva e documento.', audience: 'todos', target_group_ids: [], target_athlete_ids: [], created_at: stamp(addDaysISO(today, -5), '10:00') });
   t.adversario_observacoes.push({ id: uid(), adversario_id: t.adversarios[2].id, autor_id: COACH_ID, autor_tipo: 'tecnico', texto: 'Pegada forte na manga esquerda.', created_at: stamp(addDaysISO(today, -6), '10:00'), editado_em: null });
   t.competitions.push({ id: uid(), club_id: CLUB_ID, tipo: 'competicao', nome: 'Campeonato Mineiro Sênior', data: addDaysISO(today, 18), data_pesagem: addDaysISO(today, 17), hora_pesagem: '18:00:00', local: 'Belo Horizonte', observacoes: null, audience: 'incluir', target_group_ids: [G.sel], target_athlete_ids: [], created_at: stamp(addDaysISO(today, -20), '10:00') });
+
+  // PRs e testes físicos do elenco (histórico de ~4 meses)
+  const basePr: Record<string, number> = { 'Agachamento livre': 1.35, 'Supino reto': 0.85, 'Levantamento terra': 1.6, 'Arremesso': 0.8 };
+  for (const p of perfis) {
+    if (p.perfil === 'inativo') continue;
+    const kg = Number(String(p.categoria).replace(/[+-]/g, '')) + (p.sexo === 'Feminino' ? -6 : 4);
+    Object.entries(basePr).forEach(([ex, fator], k) => {
+      if ((p.i + k) % 7 === 0) return; // alguns atletas sem PR nesse exercício
+      const n = 2 + ((p.i + k) % 4);
+      let peso = Math.round((kg * fator * (p.sexo === 'Feminino' ? 0.75 : 1)) / 2.5) * 2.5;
+      for (let j = 0; j < n; j++) {
+        const data = addDaysISO(today, -120 + j * 28 + ((p.i + k) % 9));
+        t.athlete_pr_history.push({ id: uid(), club_id: CLUB_ID, athlete_id: p.id, exercicio: ex, peso_pr: peso, data, created_at: stamp(data, '10:00') });
+        if (j < n - 1) peso += random() < 0.8 ? 2.5 * (1 + Math.floor(random() * 3)) : -2.5;
+      }
+      t.athlete_prs.push({ id: uid(), club_id: CLUB_ID, athlete_id: p.id, exercicio: ex, peso_pr: peso, updated_at: stamp(today, '10:00') });
+    });
+    if (p.i % 5 === 4) continue; // alguns sem teste
+    for (let j = 0; j < 3; j++) {
+      const data = addDaysISO(today, -84 + j * 35);
+      const fem = p.sexo === 'Feminino';
+      t.physical_tests.push({ id: uid(), club_id: CLUB_ID, athlete_id: p.id, teste: 'barra_reps', data, valor: Math.round((fem ? 6 : 12) + j + random() * 4), estagio: null, created_at: stamp(data, '08:00') });
+      t.physical_tests.push({ id: uid(), club_id: CLUB_ID, athlete_id: p.id, teste: 'barra_iso', data, valor: Math.round((fem ? 35 : 50) + j * 4 + random() * 10), estagio: null, created_at: stamp(data, '08:05') });
+      t.physical_tests.push({ id: uid(), club_id: CLUB_ID, athlete_id: p.id, teste: 'beep', data, valor: (fem ? 9 : 11) + Math.floor(j / 2 + random()), estagio: 1 + Math.floor(random() * 9), created_at: stamp(data, '08:10') });
+      t.physical_tests.push({ id: uid(), club_id: CLUB_ID, athlete_id: p.id, teste: 'cmj', data, valor: Math.round(((fem ? 32 : 42) + j * 1.2 + random() * 5) * 10) / 10, estagio: null, created_at: stamp(data, '08:15') });
+    }
+  }
 
   return { t, G, perfis };
 }
@@ -381,13 +408,23 @@ const sessaoAtleta = () => ({
   club: { id: CLUB.id, nome: CLUB.nome, escudo_url: CLUB.escudo_url },
   terms: { accepted_at: ATLETA.terms_accepted_at, version: TERMS_VERSION }, tutorial_pending: false,
 });
-const prsAtleta = () => [
-  ['Agachamento livre', [95, 100, 105, 110, 115, 120]], ['Supino reto', [55, 60, 62.5, 65, 70]],
-  ['Levantamento terra', [110, 120, 125, 135, 140]], ['Arremesso', [55, 60, 65, 70]],
-].map(([exercicio, serie]: any, k) => ({
-  id: `pr-${k}`, exercicio, peso_pr: serie[serie.length - 1], updated_at: stamp(addDaysISO(todayISO(), -4 - k * 3), '10:00'),
-  history: serie.map((p: number, j: number) => ({ peso_pr: p, created_at: stamp(addDaysISO(todayISO(), -70 + j * 13 - k), '10:00') })),
-}));
+const prsAtleta = () =>
+  db.athlete_prs
+    .filter((p) => p.athlete_id === ATLETA.id)
+    .map((p) => ({
+      ...p,
+      history: db.athlete_pr_history
+        .filter((h) => h.athlete_id === ATLETA.id && h.exercicio === p.exercicio)
+        .sort((a, b) => cmp(a.data, b.data) || cmp(a.created_at, b.created_at)),
+    }));
+// PR atual = registro mais recente (igual ao banco)
+const syncPr = (exercicio: string) => {
+  const last = db.athlete_pr_history
+    .filter((h) => h.athlete_id === ATLETA.id && h.exercicio === exercicio)
+    .sort((a, b) => cmp(b.data, a.data) || cmp(b.created_at, a.created_at))[0];
+  db.athlete_prs = db.athlete_prs.filter((p) => !(p.athlete_id === ATLETA.id && p.exercicio === exercicio));
+  if (last) db.athlete_prs.push({ id: 'pr-' + exercicio, club_id: CLUB.id, athlete_id: ATLETA.id, exercicio, peso_pr: last.peso_pr, updated_at: new Date().toISOString() });
+};
 
 const RPC: Record<string, (a: Row) => any> = {
   athlete_login: () => sessaoAtleta(),
@@ -423,6 +460,41 @@ const RPC: Record<string, (a: Row) => any> = {
     weight: doAtleta('weight_records').filter((r) => r.date >= a.p_from && r.date <= a.p_to),
   }),
   athlete_list_prs: () => ({ catalog: db.club_exercises.filter((e) => e.exige_pr).map((e) => ({ id: e.id, nome: e.nome })), prs: prsAtleta() }),
+  athlete_add_pr_entry: (a) => {
+    const id = crypto.randomUUID();
+    db.athlete_pr_history.push({ id, club_id: CLUB.id, athlete_id: ATLETA.id, exercicio: a.p_exercicio, peso_pr: a.p_peso, data: a.p_data, created_at: new Date().toISOString() });
+    syncPr(a.p_exercicio);
+    return id;
+  },
+  athlete_update_pr_entry: (a) => {
+    const h = db.athlete_pr_history.find((x) => x.id === a.p_id);
+    if (h) {
+      Object.assign(h, { peso_pr: a.p_peso, data: a.p_data });
+      syncPr(h.exercicio);
+    }
+    return null;
+  },
+  athlete_delete_pr_entry: (a) => {
+    const h = db.athlete_pr_history.find((x) => x.id === a.p_id);
+    db.athlete_pr_history = db.athlete_pr_history.filter((x) => x.id !== a.p_id);
+    if (h) syncPr(h.exercicio);
+    return null;
+  },
+  athlete_list_tests: () => doAtleta('physical_tests').sort((a, b) => cmp(b.data, a.data)),
+  athlete_save_test: (a) => {
+    const row = { teste: a.p_teste, data: a.p_data, valor: a.p_valor, estagio: a.p_estagio };
+    if (a.p_id) {
+      Object.assign(db.physical_tests.find((x) => x.id === a.p_id) ?? {}, row);
+      return a.p_id;
+    }
+    const id = crypto.randomUUID();
+    db.physical_tests.push({ id, club_id: CLUB.id, athlete_id: ATLETA.id, created_at: new Date().toISOString(), ...row });
+    return id;
+  },
+  athlete_delete_test: (a) => {
+    db.physical_tests = db.physical_tests.filter((x) => x.id !== a.p_id);
+    return null;
+  },
   athlete_get_workout: (a) => ({
     prescriptions: db.workout_prescriptions.filter((p) => p.training_session_id === a.p_session).sort((x, y) => x.posicao - y.posicao),
     prs: prsAtleta().map((p) => ({ exercicio: p.exercicio, peso_pr: p.peso_pr })),

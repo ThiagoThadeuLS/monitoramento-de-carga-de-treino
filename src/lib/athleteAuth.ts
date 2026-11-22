@@ -3,6 +3,7 @@ import { onlyCpfDigits } from './cpf';
 import type { ClubInfo } from './club';
 import { FOLD_SITES, FoldValues, Sexo } from './bodyFat';
 import { PseRecord, PsrRecord, TrainingSession, WeightRecord } from '../types';
+import { normalizeTests, type PhysicalTestEntry, type PhysicalTestKind } from './physicalTests';
 
 // Login do atleta: CPF + senha, validados por funções no banco
 // (ver supabase_completo.sql). Atletas não usam o Supabase Auth,
@@ -50,6 +51,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   peso_ja_enviado: 'Você já registrou o peso hoje. Para corrigir, apague o registro de hoje no Histórico e envie de novo.',
   pr_invalido: 'Informe uma carga maior que zero e de até 500 kg.',
   exercicio_invalido: 'Esse exercício não está no catálogo do clube (ou não pede PR).',
+  data_invalida: 'Escolha um dia até hoje (não vale data futura).',
+  teste_invalido: 'Confira o resultado do teste (valor fora do esperado).',
   foto_invalida: 'Não foi possível ler a foto. Tente outra imagem (JPG, PNG ou WEBP).',
   foto_grande: 'A foto ficou grande demais. Tente outra imagem.',
   foto_sem_servidor: 'O envio de fotos ainda não foi ativado no servidor. Avise a comissão técnica.',
@@ -424,7 +427,11 @@ export interface CatalogExercise {
 }
 
 export interface AthletePrPoint {
+  /** Registro do histórico (o atleta pode corrigir ou apagar) */
+  id?: string;
   peso_pr: number;
+  /** Dia do registro (AAAA-MM-DD) */
+  data?: string;
   created_at?: string;
 }
 
@@ -447,9 +454,57 @@ export async function listAthletePrs(token: string): Promise<{ catalog: CatalogE
     prs: (d.prs ?? []).map((p) => ({
       ...p,
       peso_pr: Number(p.peso_pr),
-      history: (p.history ?? []).map((h) => ({ peso_pr: Number(h.peso_pr), created_at: h.created_at })),
+      history: (p.history ?? []).map((h) => ({ id: h.id, peso_pr: Number(h.peso_pr), data: h.data, created_at: h.created_at })),
     })),
   };
+}
+
+/** Novo registro de PR (com o dia do teste). O PR atual vira o registro mais recente. */
+export async function addAthletePrEntry(token: string, exercicio: string, peso: number, data: string): Promise<string> {
+  const { data: id, error } = await client().rpc('athlete_add_pr_entry', { p_token: token, p_exercicio: exercicio, p_peso: peso, p_data: data });
+  if (error) throw toAuthError(error);
+  return id as string;
+}
+
+/** Corrige a carga e/ou o dia de um registro do histórico. */
+export async function updateAthletePrEntry(token: string, id: string, peso: number, data: string): Promise<void> {
+  const { error } = await client().rpc('athlete_update_pr_entry', { p_token: token, p_id: id, p_peso: peso, p_data: data });
+  if (error) throw toAuthError(error);
+}
+
+/** Apaga um registro do histórico (apagar o último tira o PR do exercício). */
+export async function deleteAthletePrEntry(token: string, id: string): Promise<void> {
+  const { error } = await client().rpc('athlete_delete_pr_entry', { p_token: token, p_id: id });
+  if (error) throw toAuthError(error);
+}
+
+/** Testes físicos do atleta logado, do mais novo para o mais antigo. */
+export async function listAthleteTests(token: string): Promise<PhysicalTestEntry[]> {
+  const { data, error } = await client().rpc('athlete_list_tests', { p_token: token });
+  if (error) throw toAuthError(error);
+  return normalizeTests((data ?? []) as PhysicalTestEntry[]);
+}
+
+/** Inclui (id nulo) ou corrige um teste físico do atleta. */
+export async function saveAthleteTest(
+  token: string,
+  entry: { id?: string | null; teste: PhysicalTestKind; data: string; valor: number; estagio?: number | null }
+): Promise<string> {
+  const { data: id, error } = await client().rpc('athlete_save_test', {
+    p_token: token,
+    p_id: entry.id ?? null,
+    p_teste: entry.teste,
+    p_data: entry.data,
+    p_valor: entry.valor,
+    p_estagio: entry.estagio ?? null,
+  });
+  if (error) throw toAuthError(error);
+  return id as string;
+}
+
+export async function deleteAthleteTest(token: string, id: string): Promise<void> {
+  const { error } = await client().rpc('athlete_delete_test', { p_token: token, p_id: id });
+  if (error) throw toAuthError(error);
 }
 
 /** Grava ou atualiza o PR (carga de 1 repetição, em kg) num exercício do catálogo. */

@@ -2,7 +2,10 @@ import { stampInAppZone } from './date';
 
 /** Um ponto do histórico como vem do banco (athlete_list_prs). */
 export interface PrHistoryInput {
+  id?: string;
   peso_pr: number;
+  /** Dia do registro (AAAA-MM-DD); sem ele vale o dia de created_at */
+  data?: string;
   created_at?: string;
 }
 
@@ -12,8 +15,10 @@ export interface PrDayPoint {
   peso: number;
 }
 
-/** Cada mudança de carga, da mais nova para a mais antiga. */
+/** Cada registro, do mais novo para o mais antigo. */
 export interface PrStep extends PrDayPoint {
+  /** Registro do histórico (para corrigir ou apagar) */
+  id?: string;
   /** Diferença para o registro anterior (null = primeiro registro). */
   diff: number | null;
 }
@@ -41,14 +46,14 @@ const round1 = (v: number) => Math.round(v * 10) / 10;
 /** Evolução de um PR a partir do histórico do banco e da carga atual. */
 export function buildPrProgress(history: PrHistoryInput[], current: number, updatedAt?: string): PrProgress {
   const entries = history
-    .map((h) => ({ date: stampInAppZone(h.created_at)[0], peso: Number(h.peso_pr), at: h.created_at ?? '' }))
+    .map((h) => ({ id: h.id, date: h.data || stampInAppZone(h.created_at)[0], peso: Number(h.peso_pr), at: h.created_at ?? '' }))
     .filter((h) => h.date && Number.isFinite(h.peso) && h.peso > 0)
-    .sort((a, b) => a.at.localeCompare(b.at));
+    .sort((a, b) => a.date.localeCompare(b.date) || a.at.localeCompare(b.at));
 
   // Sem histórico (banco antigo): só o PR atual
   if (entries.length === 0) {
     const date = stampInAppZone(updatedAt)[0];
-    if (date) entries.push({ date, peso: current, at: updatedAt ?? '' });
+    if (date) entries.push({ id: undefined, date, peso: current, at: updatedAt ?? '' });
   }
 
   // Um ponto por dia: vale o último registro do dia (correções no mesmo dia não viram "evolução")
@@ -59,8 +64,15 @@ export function buildPrProgress(history: PrHistoryInput[], current: number, upda
     else points.push({ date: e.date, peso: e.peso });
   }
 
-  const steps: PrStep[] = points.map((p, i) => ({ ...p, diff: i === 0 ? null : round1(p.peso - points[i - 1].peso) }));
-  const ups = steps.filter((s) => s.diff !== null && s.diff > 0);
+  // Evolução: por dia. Lista de registros: um por um (dá para corrigir cada registro).
+  const dayDiffs = points.map((p, i) => (i === 0 ? null : round1(p.peso - points[i - 1].peso)));
+  const ups = points.filter((_, i) => (dayDiffs[i] ?? 0) > 0);
+  const steps: PrStep[] = entries.map((e, i) => ({
+    id: e.id,
+    date: e.date,
+    peso: e.peso,
+    diff: i === 0 ? null : round1(e.peso - entries[i - 1].peso),
+  }));
   const first = points[0] ?? null;
 
   return {
