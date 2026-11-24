@@ -37,6 +37,9 @@ const DEFAULT_METRICS = [
  * única de todos os atletas passava do tamanho que o navegador aguenta e saía em branco.
  * As bibliotecas de PDF só são baixadas aqui, na hora de gerar.
  */
+/** Largura da "janela" usada para montar a imagem do relatório (maior que os 1100 px dele). */
+const REPORT_RENDER_WIDTH = 1280;
+
 async function buildPdf(root: HTMLElement, filename: string) {
   const [{ default: JsPdf }, { default: html2canvas }] = await Promise.all([import('jspdf'), import('html2canvas')]);
   const pdf = new JsPdf('p', 'pt', 'a4');
@@ -53,18 +56,27 @@ async function buildPdf(root: HTMLElement, filename: string) {
 
   const parts = Array.from(root.querySelectorAll<HTMLElement>('[data-report-page]'));
   for (const [i, el] of parts.entries()) {
-    // A prévia aparece reduzida na tela (transform: scale). O html2canvas mede as palavras já
-    // reduzidas e desenha as letras no tamanho real: o texto saía encavalado. Na cópia que
-    // vira imagem, a redução é tirada.
+    // O texto saía encavalado quando a posição medida das palavras não batia com o tamanho
+    // desenhado das letras. Duas causas, tiradas na cópia que vira imagem:
+    // - a prévia aparece reduzida na tela (transform: scale);
+    // - no celular (Android), o Chrome aumenta sozinho o texto de blocos largos ("font
+    //   boosting"). A cópia é montada com largura de computador, sem ajuste automático de
+    //   texto e com max-height em tudo (o que impede o Chrome de aumentar a letra).
     const canvas = await html2canvas(el, {
       scale: 2,
       useCORS: true,
       backgroundColor: '#ffffff',
+      windowWidth: REPORT_RENDER_WIDTH,
       onclone: (doc) => {
         doc.querySelectorAll<HTMLElement>('[data-report-scale]').forEach((node) => {
           node.style.transform = 'none';
           node.style.scale = 'none';
         });
+        const style = doc.createElement('style');
+        style.textContent =
+          'html, body { -webkit-text-size-adjust: 100% !important; text-size-adjust: 100% !important; }' +
+          '[data-report-root], [data-report-root] * { -webkit-text-size-adjust: 100% !important; text-size-adjust: 100% !important; max-height: 1000000px; }';
+        doc.head.appendChild(style);
       },
     });
     const pxPerPt = canvas.width / usableW;

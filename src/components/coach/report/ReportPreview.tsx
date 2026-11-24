@@ -107,7 +107,20 @@ export const ReportPreview = forwardRef<HTMLDivElement, Props>(({ club, coachNam
   };
 
   return (
-    <div ref={ref} style={{ width: 1100, maxWidth: 1100, background: '#ffffff', color: '#0f172a', fontFamily: 'Inter, system-ui, -apple-system, BlinkMacSystemFont, sans-serif' }}>
+    <div
+      ref={ref}
+      data-report-root
+      style={{
+        width: 1100,
+        maxWidth: 1100,
+        background: '#ffffff',
+        color: '#0f172a',
+        fontFamily: 'Inter, system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+        // Celular: sem aumento automático do texto (a prévia e o PDF ficam iguais)
+        WebkitTextSizeAdjust: '100%',
+        textSizeAdjust: '100%',
+      }}
+    >
       <div style={{ padding: 40 }}>
         {/* data-report-page: cada parte vira imagem própria no PDF (atleta começa em página nova) */}
         <div data-report-page="cabecalho">
