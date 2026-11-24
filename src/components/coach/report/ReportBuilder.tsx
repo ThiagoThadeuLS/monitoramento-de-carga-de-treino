@@ -53,7 +53,20 @@ async function buildPdf(root: HTMLElement, filename: string) {
 
   const parts = Array.from(root.querySelectorAll<HTMLElement>('[data-report-page]'));
   for (const [i, el] of parts.entries()) {
-    const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+    // A prévia aparece reduzida na tela (transform: scale). O html2canvas mede as palavras já
+    // reduzidas e desenha as letras no tamanho real: o texto saía encavalado. Na cópia que
+    // vira imagem, a redução é tirada.
+    const canvas = await html2canvas(el, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: '#ffffff',
+      onclone: (doc) => {
+        doc.querySelectorAll<HTMLElement>('[data-report-scale]').forEach((node) => {
+          node.style.transform = 'none';
+          node.style.scale = 'none';
+        });
+      },
+    });
     const pxPerPt = canvas.width / usableW;
     const heightPt = canvas.height / pxPerPt;
     if (!empty && (i > 1 || y + heightPt > bottom)) newPage();
@@ -306,7 +319,7 @@ export const ReportBuilder: React.FC<Props> = ({ coachName, filter }) => {
 
           <div className="bg-slate-950 border border-slate-800 rounded-2xl overflow-auto">
             <div className="w-full flex justify-center py-4">
-              <div className="origin-top scale-[0.6] sm:scale-[0.7] md:scale-[0.8] lg:scale-[0.9] xl:scale-100">
+              <div data-report-scale className="origin-top scale-[0.6] sm:scale-[0.7] md:scale-[0.8] lg:scale-[0.9] xl:scale-100">
                 <ReportPreview ref={previewRef} club={club} coachName={coachName} periodLabel={periodLabel} state={state} athletesData={athletesData} />
               </div>
             </div>
