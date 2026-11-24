@@ -1,4 +1,4 @@
-import { forwardRef } from 'react';
+import { forwardRef, type CSSProperties } from 'react';
 import { ClubInfo } from '../../../lib/club';
 import { PseRecord, PsrRecord } from '../../../types';
 import { sessionLoad } from '../../../lib/load';
@@ -123,7 +123,7 @@ export const ReportPreview = forwardRef<HTMLDivElement, Props>(({ club, coachNam
     >
       <div style={{ padding: 40 }}>
         {/* data-report-page: cada parte vira imagem própria no PDF (atleta começa em página nova) */}
-        <div data-report-page="cabecalho">
+        <div data-report-page="cabecalho" data-report-block>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
             {club?.escudo_url ? (
@@ -134,7 +134,7 @@ export const ReportPreview = forwardRef<HTMLDivElement, Props>(({ club, coachNam
               </div>
             )}
             <div>
-              <div style={{ fontSize: 20, fontWeight: 900 }}>{club?.nome || 'Clube'}</div>
+              <div style={{ fontSize: 20, fontWeight: 900, ...WRAP }}>{club?.nome || 'Clube'}</div>
               <div style={{ fontSize: 12, color: '#475569' }}>Relatório de Carga, Bem-Estar e Acompanhamento</div>
             </div>
           </div>
@@ -146,17 +146,17 @@ export const ReportPreview = forwardRef<HTMLDivElement, Props>(({ club, coachNam
         </div>
 
         {(state.notesGerais || state.notesLesoes) && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: state.notesGerais && state.notesLesoes ? 'minmax(0, 1fr) minmax(0, 1fr)' : 'minmax(0, 1fr)', gap: 16, marginBottom: 24 }}>
             {state.notesGerais && (
-              <div style={{ border: '1px solid #e2e8f0', borderRadius: 16, padding: 18 }}>
+              <div style={{ border: '1px solid #e2e8f0', borderRadius: 16, padding: 18, minWidth: 0 }}>
                 <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 8 }}>Anotações gerais</div>
-                <div style={{ fontSize: 12, lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{state.notesGerais}</div>
+                <div style={{ fontSize: 12, lineHeight: 1.7, whiteSpace: 'pre-wrap', ...WRAP }}>{state.notesGerais}</div>
               </div>
             )}
             {state.notesLesoes && (
-              <div style={{ border: '1px solid #fecaca', borderRadius: 16, padding: 18, background: '#fef2f2' }}>
+              <div style={{ border: '1px solid #fecaca', borderRadius: 16, padding: 18, background: '#fef2f2', minWidth: 0 }}>
                 <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 8, color: '#991b1b' }}>Anotações sobre lesões</div>
-                <div style={{ fontSize: 12, lineHeight: 1.7, whiteSpace: 'pre-wrap', color: '#7f1d1d' }}>{state.notesLesoes}</div>
+                <div style={{ fontSize: 12, lineHeight: 1.7, whiteSpace: 'pre-wrap', color: '#7f1d1d', ...WRAP }}>{state.notesLesoes}</div>
               </div>
             )}
           </div>
@@ -165,10 +165,10 @@ export const ReportPreview = forwardRef<HTMLDivElement, Props>(({ club, coachNam
 
         {athletesData.map((item) => (
           <div key={item.athlete.id} data-report-page="atleta" style={{ marginBottom: 40 }}>
-            <div style={{ border: '1px solid #e2e8f0', borderRadius: 18, padding: 18, display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22 }}>
+            <div data-report-block style={{ border: '1px solid #e2e8f0', borderRadius: 18, padding: 18, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: 22 }}>
               <div>
                 <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.12em', color: '#64748b' }}>Atleta</div>
-                <div style={{ fontSize: 24, fontWeight: 900 }}>{item.athlete.nome}</div>
+                <div style={{ fontSize: 24, fontWeight: 900, ...WRAP }}>{item.athlete.nome}</div>
                 {(item.athlete.categoria || item.athlete.classe) && (
                   <div style={{ fontSize: 12, color: '#475569', marginTop: 2 }}>{[item.athlete.categoria, item.athlete.classe].filter(Boolean).join(' • ')}</div>
                 )}
@@ -182,7 +182,7 @@ export const ReportPreview = forwardRef<HTMLDivElement, Props>(({ club, coachNam
             {enabled.map((metric) => {
               const chartData = buildChartData(item.athlete.id, metric.id);
               return (
-                <div key={metric.id} style={{ border: '1px solid #e2e8f0', borderRadius: 18, marginBottom: 18, overflow: 'hidden' }}>
+                <div key={metric.id} data-report-block style={{ border: '1px solid #e2e8f0', borderRadius: 18, marginBottom: 18, overflow: 'hidden' }}>
                   <div style={{ padding: '14px 20px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div style={{ fontSize: 14, fontWeight: 800 }}>{metricLabel[metric.id] || metric.label}</div>
                     <div style={{ fontSize: 11, color: '#475569' }}>{metric.view === 'chart' ? `Gráfico • ${CHART_LABEL[metric.chartKind] ?? metric.chartKind}` : 'Tabela'}</div>
@@ -218,11 +218,11 @@ export const ReportPreview = forwardRef<HTMLDivElement, Props>(({ club, coachNam
               );
             })}
 
-            <div style={{ border: '1px solid #e2e8f0', borderRadius: 18, overflow: 'hidden' }}>
+            <div data-report-block style={{ border: '1px solid #e2e8f0', borderRadius: 18, overflow: 'hidden' }}>
               <div style={{ padding: '14px 20px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
                 <div style={{ fontSize: 14, fontWeight: 800 }}>Detalhamento PSE / PSR</div>
               </div>
-              <div style={{ padding: 18, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <div style={{ padding: 18, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 16, alignItems: 'start' }}>
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>PSE</div>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
@@ -242,7 +242,7 @@ export const ReportPreview = forwardRef<HTMLDivElement, Props>(({ club, coachNam
                         .map((r, i) => (
                           <tr key={i}>
                             <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0' }}>{brDate(r.date)}</td>
-                            <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0' }}>{r.training_type || '-'}</td>
+                            <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', ...WRAP }}>{r.training_type || '-'}</td>
                             <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', textAlign: 'center' }}>{r.did_not_train ? '—' : r.rpe_score ?? '-'}</td>
                             <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', textAlign: 'center' }}>{r.did_not_train ? '—' : r.duration_minutes ?? '-'}</td>
                             <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', textAlign: 'center' }}>{r.did_not_train ? '—' : sessionLoad(r) ?? '-'}</td>
@@ -291,5 +291,8 @@ export const ReportPreview = forwardRef<HTMLDivElement, Props>(({ club, coachNam
     </div>
   );
 });
+
+// Texto sem espaço (ex.: "aaaa...") quebra dentro da caixa em vez de vazar
+const WRAP: CSSProperties = { overflowWrap: "anywhere", wordBreak: "break-word" };
 
 ReportPreview.displayName = 'ReportPreview';

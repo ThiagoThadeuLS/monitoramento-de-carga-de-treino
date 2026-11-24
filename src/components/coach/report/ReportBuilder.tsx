@@ -31,21 +31,31 @@ const DEFAULT_METRICS = [
   { id: 'humor', label: 'Humor por dia', enabled: false, view: 'table' as const, chartKind: 'radar' as ChartKind },
 ];
 
-/**
- * Gera o PDF por partes: o cabeçalho e cada atleta viram uma imagem própria, e cada atleta
- * começa numa página nova (o primeiro fica embaixo do cabeçalho, se couber). Uma imagem
- * única de todos os atletas passava do tamanho que o navegador aguenta e saía em branco.
- * As bibliotecas de PDF só são baixadas aqui, na hora de gerar.
- */
 /** Largura da "janela" usada para montar a imagem do relatório (maior que os 1100 px dele). */
 const REPORT_RENDER_WIDTH = 1280;
 
+/** Posição (em px, sem a redução da prévia na tela) de um elemento dentro de outro. */
+function rangeIn(el: Element, box: DOMRect, ratio: number) {
+  const r = el.getBoundingClientRect();
+  return { top: (r.top - box.top) * ratio, bottom: (r.bottom - box.top) * ratio };
+}
+
+/**
+ * Gera o PDF por blocos (cabeçalho, cartão do atleta, cada gráfico/tabela e o detalhamento).
+ * Cada parte (cabeçalho e cada atleta) vira uma imagem só; a imagem é cortada nas bordas dos
+ * blocos. Bloco que não cabe no resto da página vai inteiro para a página seguinte; só um
+ * bloco maior que uma página inteira (tabela longa) é dividido, e sempre entre duas linhas
+ * da tabela. Cada atleta começa numa página nova (o primeiro fica embaixo do cabeçalho, se
+ * couber). As bibliotecas de PDF só são baixadas aqui, na hora de gerar.
+ */
 async function buildPdf(root: HTMLElement, filename: string) {
   const [{ default: JsPdf }, { default: html2canvas }] = await Promise.all([import('jspdf'), import('html2canvas')]);
   const pdf = new JsPdf('p', 'pt', 'a4');
   const margin = 20;
+  const gap = 10;
   const usableW = pdf.internal.pageSize.getWidth() - margin * 2;
   const bottom = pdf.internal.pageSize.getHeight() - margin;
+  const pageH = bottom - margin;
   let y = margin;
   let empty = true;
   const newPage = () => {
@@ -54,15 +64,15 @@ async function buildPdf(root: HTMLElement, filename: string) {
     empty = true;
   };
 
-  const parts = Array.from(root.querySelectorAll<HTMLElement>('[data-report-page]'));
-  for (const [i, el] of parts.entries()) {
+  const sections = Array.from(root.querySelectorAll<HTMLElement>('[data-report-page]'));
+  for (const [i, section] of sections.entries()) {
     // O texto saía encavalado quando a posição medida das palavras não batia com o tamanho
     // desenhado das letras. Duas causas, tiradas na cópia que vira imagem:
     // - a prévia aparece reduzida na tela (transform: scale);
     // - no celular (Android), o Chrome aumenta sozinho o texto de blocos largos ("font
     //   boosting"). A cópia é montada com largura de computador, sem ajuste automático de
     //   texto e com max-height em tudo (o que impede o Chrome de aumentar a letra).
-    const canvas = await html2canvas(el, {
+    const canvas = await html2canvas(section, {
       scale: 2,
       useCORS: true,
       backgroundColor: '#ffffff',
@@ -80,20 +90,56 @@ async function buildPdf(root: HTMLElement, filename: string) {
       },
     });
     const pxPerPt = canvas.width / usableW;
-    const heightPt = canvas.height / pxPerPt;
-    if (!empty && (i > 1 || y + heightPt > bottom)) newPage();
-    // Parte maior que a página (atleta com muitas métricas): continua nas páginas seguintes
-    for (let srcY = 0; srcY < canvas.height; ) {
-      const slicePx = Math.min(canvas.height - srcY, Math.floor((bottom - y) * pxPerPt));
-      const slice = document.createElement('canvas');
-      slice.width = canvas.width;
-      slice.height = slicePx;
-      slice.getContext('2d')!.drawImage(canvas, 0, srcY, canvas.width, slicePx, 0, 0, canvas.width, slicePx);
-      pdf.addImage(slice.toDataURL('image/jpeg', 0.92), 'JPEG', margin, y, usableW, slicePx / pxPerPt);
-      srcY += slicePx;
-      y += slicePx / pxPerPt + 12;
-      empty = false;
-      if (srcY < canvas.height) newPage();
+    const box = section.getBoundingClientRect();
+    const ratio = section.offsetHeight / (box.height || 1);
+    const toPx = (v: number) => Math.round((v * canvas.height) / (section.offsetHeight || 1));
+
+    // Faixas da imagem a colocar no PDF: um bloco por vez (sem as margens entre eles)
+    const found = Array.from(section.querySelectorAll<HTMLElement>('[data-report-block]'));
+    const blocks = section.hasAttribute('data-report-block') || found.length === 0 ? [section] : found;
+    // Linhas de tabela: um bloco alto só é cortado onde nenhuma linha atravessa
+    const rows = Array.from(section.querySelectorAll('tr')).map((tr) => rangeIn(tr, box, ratio));
+    const safeCuts = rows
+      .map((r) => r.bottom)
+      .filter((cut) => !rows.some((o) => o.top < cut - 0.5 && o.bottom > cut + 0.5))
+      .map(toPx)
+      .sort((a, b) => a - b);
+
+    // Atleta novo: página nova (o primeiro pode ficar embaixo do cabeçalho)
+    if (i > 1 && !empty) newPage();
+
+    for (const block of blocks) {
+      const r = block === section ? { top: 0, bottom: section.offsetHeight } : rangeIn(block, box, ratio);
+      const from = Math.max(0, toPx(r.top));
+      const to = Math.min(canvas.height, toPx(r.bottom));
+      const heightPt = (to - from) / pxPerPt;
+      // Bloco que não cabe no resto da página: vai para a próxima (se ele couber numa
+      // página inteira, ou se já estamos na metade de baixo da página)
+      if (!empty && y + heightPt > bottom && (heightPt <= pageH || y > margin + pageH * 0.5)) newPage();
+
+      for (let srcY = from; srcY < to; ) {
+        const room = Math.floor((bottom - y) * pxPerPt);
+        if (room < 40 && !empty) {
+          newPage();
+          continue;
+        }
+        let end = Math.min(to, srcY + room);
+        if (end < to) {
+          // Corta no fim da última linha de tabela que cabe (sem partir linha)
+          const cut = safeCuts.filter((c) => c > srcY + 40 && c <= end).pop();
+          if (cut) end = cut;
+        }
+        const slicePx = end - srcY;
+        const slice = document.createElement('canvas');
+        slice.width = canvas.width;
+        slice.height = slicePx;
+        slice.getContext('2d')!.drawImage(canvas, 0, srcY, canvas.width, slicePx, 0, 0, canvas.width, slicePx);
+        pdf.addImage(slice.toDataURL('image/jpeg', 0.92), 'JPEG', margin, y, usableW, slicePx / pxPerPt);
+        srcY = end;
+        y += slicePx / pxPerPt + gap;
+        empty = false;
+        if (srcY < to) newPage();
+      }
     }
   }
   pdf.save(filename);
@@ -330,14 +376,52 @@ export const ReportBuilder: React.FC<Props> = ({ coachName, filter }) => {
           </div>
 
           <div className="bg-slate-950 border border-slate-800 rounded-2xl overflow-auto">
-            <div className="w-full flex justify-center py-4">
-              <div data-report-scale className="origin-top scale-[0.6] sm:scale-[0.7] md:scale-[0.8] lg:scale-[0.9] xl:scale-100">
+            <div className="w-full py-4 px-2">
+              <ScaledPreview>
                 <ReportPreview ref={previewRef} club={club} coachName={coachName} periodLabel={periodLabel} state={state} athletesData={athletesData} />
-              </div>
+              </ScaledPreview>
             </div>
           </div>
         </div>
       )}
+    </div>
+  );
+};
+
+const PREVIEW_WIDTH = 1100;
+
+/**
+ * Prévia do relatório reduzida para caber na largura da tela (celular, tablet ou computador),
+ * sem cortar as laterais. A altura acompanha a redução (não sobra espaço em branco embaixo).
+ */
+const ScaledPreview: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const outerRef = useRef<HTMLDivElement>(null);
+  const innerRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+  const [height, setHeight] = useState(0);
+
+  useEffect(() => {
+    const outer = outerRef.current;
+    const inner = innerRef.current;
+    if (!outer || !inner) return;
+    const update = () => {
+      setScale(Math.min(1, outer.clientWidth / PREVIEW_WIDTH));
+      setHeight(inner.offsetHeight);
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(outer);
+    ro.observe(inner);
+    return () => ro.disconnect();
+  }, []);
+
+  return (
+    <div ref={outerRef} className="w-full">
+      <div className="mx-auto overflow-hidden" style={{ width: PREVIEW_WIDTH * scale, height: height * scale }}>
+        <div ref={innerRef} data-report-scale style={{ width: PREVIEW_WIDTH, transform: `scale(${scale})`, transformOrigin: 'top left' }}>
+          {children}
+        </div>
+      </div>
     </div>
   );
 };
