@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { X, Loader2, AlertCircle, Download, Scale, Gauge, Activity, ShieldCheck, ShieldAlert, Ban, StickyNote } from 'lucide-react';
+import { X, Loader2, AlertCircle, Download, Scale, Gauge, Activity, ShieldCheck, ShieldAlert, Ban, StickyNote, Share2 } from 'lucide-react';
+import { ShareSchedule } from './ShareSchedule';
 import { supabase } from '../../lib/supabase';
 import { addDaysISO, todayISO } from '../../lib/date';
 import { Athlete, PseRecord, PsrRecord, WeightRecord } from '../../types';
@@ -35,6 +36,7 @@ export const AthleteProfile: React.FC<{ athleteId: string; onClose: () => void }
   const [weight, setWeight] = useState<WeightRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [sharing, setSharing] = useState(false);
   const today = todayISO();
   const from = addDaysISO(today, -(range - 1));
   const loadFrom = addDaysISO(from, -27); // histórico para a carga crônica do primeiro dia
@@ -64,12 +66,16 @@ export const AthleteProfile: React.FC<{ athleteId: string; onClose: () => void }
     };
   }, [athleteId, from, loadFrom, today]);
 
-  // Fecha com Esc
+  // Fecha com Esc (com a programação aberta, o Esc fecha só ela)
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (sharing) setSharing(false);
+      else onClose();
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, sharing]);
 
   const days = useMemo(() => daysBetween(from, today), [from, today]);
   const perAthlete = useMemo(() => dailyLoads(pse), [pse]);
@@ -198,9 +204,17 @@ export const AthleteProfile: React.FC<{ athleteId: string; onClose: () => void }
           </div>
           <button
             type="button"
+            onClick={() => setSharing(true)}
+            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold"
+            title="Compartilhar a programação da semana em texto"
+          >
+            <Share2 className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Compartilhar</span> programação
+          </button>
+          <button
+            type="button"
             onClick={exportCsv}
             disabled={loading}
-            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold disabled:opacity-50"
           >
             <Download className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Exportar</span> CSV
           </button>
@@ -314,6 +328,11 @@ export const AthleteProfile: React.FC<{ athleteId: string; onClose: () => void }
           )}
         </div>
       </div>
+      {sharing && (
+        <div onClick={(e) => e.stopPropagation()}>
+          <ShareSchedule athleteId={athleteId} athleteName={athlete?.nome ?? 'Atleta'} onClose={() => setSharing(false)} />
+        </div>
+      )}
     </div>
   );
 };
